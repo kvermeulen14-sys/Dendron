@@ -61,6 +61,7 @@ export function AgendaBoard({
   const [pending, startTransition] = useTransition();
   const [weekOffset, setWeekOffset] = useState(0);
 
+  const vandaagIso = useMemo(() => naarIsoDatum(new Date()), []);
   const dezeWeekMaandag = useMemo(() => naarMaandagVanWeek(new Date()), []);
   const weekMaandag = useMemo(
     () => voegDagenToe(dezeWeekMaandag, weekOffset * 7),
@@ -260,7 +261,113 @@ export function AgendaBoard({
         </Card>
       )}
 
-      <div className="flex flex-col gap-4">
+      {/* Kalenderweergave: 7 dagen naast elkaar, zoals afsprakenplanning-software */}
+      <div className="hidden gap-2 md:grid md:grid-cols-7">
+        {weekDagen.map((dag) => {
+          const iso = naarIsoDatum(dag);
+          const isVandaag = iso === vandaagIso;
+          const dagItems = itemsPerDag.get(iso) ?? [];
+          return (
+            <div
+              key={iso}
+              className={clsx(
+                "flex min-h-[220px] flex-col gap-2 rounded-2xl border p-2.5",
+                isVandaag ? "border-blue-300 bg-blue-50/50" : "border-slate-200 bg-white"
+              )}
+            >
+              <div className="text-center">
+                <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                  {dag.toLocaleDateString("nl-NL", { weekday: "short" })}
+                </p>
+                <p
+                  className={clsx(
+                    "text-lg font-semibold",
+                    isVandaag ? "text-blue-600" : "text-slate-800"
+                  )}
+                >
+                  {dag.getDate()}
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                {dagItems.length === 0 && (
+                  <p className="pt-2 text-center text-xs text-slate-300">-</p>
+                )}
+                {dagItems.map((item) => {
+                  const meta = PLANNING_TYPE_META[item.type];
+                  const isVoorstel = item.status === "voorstel";
+                  const isKlaar = item.status === "klaar";
+                  return (
+                    <div
+                      key={item.id}
+                      className={clsx(
+                        "rounded-lg border px-2 py-1.5 text-xs",
+                        meta.badgeClass,
+                        isKlaar && "opacity-50"
+                      )}
+                    >
+                      <div className="flex items-start gap-1">
+                        <Icon name={meta.icon} size={12} className="mt-0.5 shrink-0" />
+                        <span
+                          className={clsx(
+                            "line-clamp-2 font-medium leading-snug",
+                            isKlaar && "line-through"
+                          )}
+                        >
+                          {item.title}
+                        </span>
+                      </div>
+                      <div className="mt-1 flex items-center gap-2">
+                        {isVoorstel ? (
+                          <>
+                            <button
+                              disabled={pending}
+                              onClick={() => accepteer(item)}
+                              className="text-[10px] font-medium underline underline-offset-2"
+                            >
+                              Prima zo
+                            </button>
+                            <button
+                              disabled={pending}
+                              onClick={() => verwijder(item)}
+                              aria-label="Verwijderen"
+                              className="opacity-70 hover:opacity-100"
+                            >
+                              <Icon name="trash" size={11} />
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              disabled={pending}
+                              onClick={() => toggleStatus(item)}
+                              aria-label="Klaar markeren"
+                              className="opacity-70 hover:opacity-100"
+                            >
+                              <Icon name="check" size={11} />
+                            </button>
+                            <button
+                              disabled={pending}
+                              onClick={() => verwijder(item)}
+                              aria-label="Verwijderen"
+                              className="opacity-70 hover:opacity-100"
+                            >
+                              <Icon name="trash" size={11} />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Mobiele weergave: dagen onder elkaar */}
+      <div className="flex flex-col gap-4 md:hidden">
         {weekDagen.map((dag) => {
           const iso = naarIsoDatum(dag);
           const dagItems = itemsPerDag.get(iso) ?? [];
