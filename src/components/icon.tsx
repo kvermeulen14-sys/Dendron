@@ -23,6 +23,7 @@ import {
   Palette,
   ChevronLeft,
   ChevronRight,
+  LogIn,
   type LucideProps,
 } from "lucide-react";
 
@@ -51,6 +52,7 @@ export const ICONS = {
   art: Palette,
   "chevron-left": ChevronLeft,
   "chevron-right": ChevronRight,
+  "log-in": LogIn,
 } as const;
 
 export type IconName = keyof typeof ICONS;

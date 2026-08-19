@@ -7,6 +7,7 @@ const NAV_ITEMS = [
   { href: "/ouder/agenda", label: "Agenda", icon: "calendar" },
   { href: "/ouder/vakken", label: "Vakken & lesstof", icon: "book-open" },
   { href: "/ouder/account", label: "Kind-account", icon: "users" },
+  { href: "/ouder/kind-login", label: "Inloggen als kind", icon: "log-in" },
 ];
 
 export default async function OuderLayout({ children }: { children: React.ReactNode }) {
