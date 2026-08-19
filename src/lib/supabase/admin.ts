@@ -11,8 +11,11 @@ export function createAdminClient() {
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!url || !serviceRoleKey) {
+    const ontbreekt = [!url && "NEXT_PUBLIC_SUPABASE_URL", !serviceRoleKey && "SUPABASE_SERVICE_ROLE_KEY"]
+      .filter(Boolean)
+      .join(" en ");
     throw new Error(
-      "SUPABASE_SERVICE_ROLE_KEY of NEXT_PUBLIC_SUPABASE_URL ontbreekt op de server. Zet deze in de environment variables van je hosting (bijv. Netlify) en deploy opnieuw."
+      `${ontbreekt} ontbreekt op de server. Zet deze in de environment variables van je hosting (bijv. Netlify) en deploy opnieuw.`
     );
   }
 
