@@ -21,6 +21,8 @@ import {
   Music,
   Dumbbell,
   Palette,
+  ChevronLeft,
+  ChevronRight,
   type LucideProps,
 } from "lucide-react";
 
@@ -47,6 +49,8 @@ export const ICONS = {
   music: Music,
   sport: Dumbbell,
   art: Palette,
+  "chevron-left": ChevronLeft,
+  "chevron-right": ChevronRight,
 } as const;
 
 export type IconName = keyof typeof ICONS;

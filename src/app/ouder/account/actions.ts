@@ -29,15 +29,19 @@ export async function maakKindAccount(formData: FormData) {
     return { error: "Vul een naam, e-mailadres en wachtwoord (min. 6 tekens) in." };
   }
 
-  const admin = createAdminClient();
-  const { error } = await admin.auth.admin.createUser({
-    email,
-    password,
-    email_confirm: true,
-    user_metadata: { role: "kind", full_name: fullName, family_id: profile.family_id },
-  });
+  try {
+    const admin = createAdminClient();
+    const { error } = await admin.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: { role: "kind", full_name: fullName, family_id: profile.family_id },
+    });
 
-  if (error) return { error: error.message };
+    if (error) return { error: error.message };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Onbekende fout bij het aanmaken van het account." };
+  }
 
   revalidatePath("/ouder/account");
   return { success: true };

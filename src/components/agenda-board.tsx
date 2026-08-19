@@ -10,6 +10,25 @@ import { PLANNING_TYPE_META } from "@/lib/planning";
 import { maakPlanningItem, updatePlanningStatus, verwijderPlanningItem } from "@/lib/actions/planning";
 import type { PlanningItem, PlanningType, Subject } from "@/lib/types";
 
+function naarMaandagVanWeek(datum: Date) {
+  const d = new Date(datum);
+  d.setHours(0, 0, 0, 0);
+  const dag = d.getDay(); // 0 = zondag ... 6 = zaterdag
+  const verschil = dag === 0 ? -6 : 1 - dag;
+  d.setDate(d.getDate() + verschil);
+  return d;
+}
+
+function voegDagenToe(datum: Date, dagen: number) {
+  const d = new Date(datum);
+  d.setDate(d.getDate() + dagen);
+  return d;
+}
+
+function naarIsoDatum(datum: Date) {
+  return datum.toISOString().slice(0, 10);
+}
+
 function formatDatumLabel(iso: string) {
   const datum = new Date(iso + "T00:00:00");
   const vandaag = new Date();
@@ -40,16 +59,27 @@ export function AgendaBoard({
   const [type, setType] = useState<PlanningType>("huiswerk");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [weekOffset, setWeekOffset] = useState(0);
 
-  const gegroepeerd = useMemo(() => {
-    const groepen = new Map<string, PlanningItem[]>();
+  const dezeWeekMaandag = useMemo(() => naarMaandagVanWeek(new Date()), []);
+  const weekMaandag = useMemo(
+    () => voegDagenToe(dezeWeekMaandag, weekOffset * 7),
+    [dezeWeekMaandag, weekOffset]
+  );
+  const weekDagen = useMemo(
+    () => Array.from({ length: 7 }, (_, i) => voegDagenToe(weekMaandag, i)),
+    [weekMaandag]
+  );
+
+  const itemsPerDag = useMemo(() => {
+    const map = new Map<string, PlanningItem[]>();
+    for (const dag of weekDagen) map.set(naarIsoDatum(dag), []);
     for (const item of items) {
-      const lijst = groepen.get(item.due_date) ?? [];
-      lijst.push(item);
-      groepen.set(item.due_date, lijst);
+      const lijst = map.get(item.due_date);
+      if (lijst) lijst.push(item);
     }
-    return Array.from(groepen.entries()).sort((a, b) => a[0].localeCompare(b[0]));
-  }, [items]);
+    return map;
+  }, [items, weekDagen]);
 
   function subjectNaam(id: string | null) {
     if (!id) return null;
@@ -63,6 +93,16 @@ export function AgendaBoard({
       setError(res.error);
       return;
     }
+
+    const dueDateRaw = String(formData.get("dueDate") || "");
+    if (dueDateRaw) {
+      const dueMaandag = naarMaandagVanWeek(new Date(dueDateRaw + "T00:00:00"));
+      const verschilWeken = Math.round(
+        (dueMaandag.getTime() - dezeWeekMaandag.getTime()) / (7 * 86400000)
+      );
+      setWeekOffset(verschilWeken);
+    }
+
     setFormOpen(false);
     router.refresh();
   }
@@ -88,6 +128,9 @@ export function AgendaBoard({
     });
   }
 
+  const weekZondag = weekDagen[6];
+  const weekLabel = `${weekMaandag.toLocaleDateString("nl-NL", { day: "numeric", month: "short" })} - ${weekZondag.toLocaleDateString("nl-NL", { day: "numeric", month: "short" })}`;
+
   return (
     <div className="flex flex-col gap-5">
       <div className="flex items-center justify-between">
@@ -96,6 +139,38 @@ export function AgendaBoard({
           {formOpen ? "Sluiten" : "Nieuw item"}
         </Button>
       </div>
+
+      <Card className="flex items-center justify-between gap-2 py-3">
+        <button
+          onClick={() => setWeekOffset((w) => w - 1)}
+          className="flex items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
+          aria-label="Vorige week"
+        >
+          <Icon name="chevron-left" size={18} />
+          <span className="hidden sm:inline">Vorige week</span>
+        </button>
+
+        <div className="flex flex-col items-center">
+          <p className="text-sm font-semibold text-slate-900">Week van {weekLabel}</p>
+          {weekOffset !== 0 && (
+            <button
+              onClick={() => setWeekOffset(0)}
+              className="text-xs font-medium text-blue-600 hover:underline"
+            >
+              Naar deze week
+            </button>
+          )}
+        </div>
+
+        <button
+          onClick={() => setWeekOffset((w) => w + 1)}
+          className="flex items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
+          aria-label="Volgende week"
+        >
+          <span className="hidden sm:inline">Volgende week</span>
+          <Icon name="chevron-right" size={18} />
+        </button>
+      </Card>
 
       {formOpen && (
         <Card>
@@ -185,97 +260,101 @@ export function AgendaBoard({
         </Card>
       )}
 
-      {gegroepeerd.length === 0 && (
-        <Card>
-          <p className="text-sm text-slate-500">Nog niets ingepland. Voeg je eerste item toe.</p>
-        </Card>
-      )}
-
       <div className="flex flex-col gap-4">
-        {gegroepeerd.map(([datum, dagItems]) => (
-          <div key={datum}>
-            <p className="mb-2 text-sm font-medium capitalize text-slate-500">
-              {formatDatumLabel(datum)}
-            </p>
-            <div className="flex flex-col gap-2">
-              {dagItems.map((item) => {
-                const meta = PLANNING_TYPE_META[item.type];
-                const isVoorstel = item.status === "voorstel";
-                const isKlaar = item.status === "klaar";
-                return (
-                  <Card
-                    key={item.id}
-                    className={clsx("flex items-center gap-3 py-3", isKlaar && "opacity-60")}
-                  >
-                    <span
-                      className={clsx(
-                        "flex h-9 w-9 shrink-0 items-center justify-center rounded-full border",
-                        meta.badgeClass
-                      )}
-                    >
-                      <Icon name={meta.icon} size={16} />
-                    </span>
-
-                    <div className="min-w-0 flex-1">
-                      <p
-                        className={clsx(
-                          "truncate text-sm font-medium text-slate-800",
-                          isKlaar && "line-through"
-                        )}
+        {weekDagen.map((dag) => {
+          const iso = naarIsoDatum(dag);
+          const dagItems = itemsPerDag.get(iso) ?? [];
+          return (
+            <div key={iso}>
+              <p className="mb-2 text-sm font-medium capitalize text-slate-500">
+                {formatDatumLabel(iso)}
+              </p>
+              {dagItems.length === 0 ? (
+                <Card className="py-3">
+                  <p className="text-sm text-slate-400">Niets gepland.</p>
+                </Card>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {dagItems.map((item) => {
+                    const meta = PLANNING_TYPE_META[item.type];
+                    const isVoorstel = item.status === "voorstel";
+                    const isKlaar = item.status === "klaar";
+                    return (
+                      <Card
+                        key={item.id}
+                        className={clsx("flex items-center gap-3 py-3", isKlaar && "opacity-60")}
                       >
-                        {item.title}
-                      </p>
-                      <p className="truncate text-xs text-slate-500">
-                        {[meta.label, subjectNaam(item.subject_id)].filter(Boolean).join(" - ")}
-                        {isVoorstel && " - voorstel, nog niet bevestigd"}
-                      </p>
-                    </div>
-
-                    {isVoorstel ? (
-                      <div className="flex shrink-0 gap-1.5">
-                        <Button size="md" variant="secondary" disabled={pending} onClick={() => accepteer(item)}>
-                          Prima zo
-                        </Button>
-                        <button
-                          disabled={pending}
-                          onClick={() => verwijder(item)}
-                          className="rounded-xl p-2.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
-                          aria-label="Verwijderen"
-                        >
-                          <Icon name="trash" size={16} />
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="flex shrink-0 items-center gap-1.5">
-                        <button
-                          disabled={pending}
-                          onClick={() => toggleStatus(item)}
+                        <span
                           className={clsx(
-                            "rounded-xl p-2.5",
-                            isKlaar
-                              ? "bg-emerald-100 text-emerald-700"
-                              : "text-slate-400 hover:bg-emerald-50 hover:text-emerald-600"
+                            "flex h-9 w-9 shrink-0 items-center justify-center rounded-full border",
+                            meta.badgeClass
                           )}
-                          aria-label="Klaar markeren"
                         >
-                          <Icon name="check" size={16} />
-                        </button>
-                        <button
-                          disabled={pending}
-                          onClick={() => verwijder(item)}
-                          className="rounded-xl p-2.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
-                          aria-label="Verwijderen"
-                        >
-                          <Icon name="trash" size={16} />
-                        </button>
-                      </div>
-                    )}
-                  </Card>
-                );
-              })}
+                          <Icon name={meta.icon} size={16} />
+                        </span>
+
+                        <div className="min-w-0 flex-1">
+                          <p
+                            className={clsx(
+                              "truncate text-sm font-medium text-slate-800",
+                              isKlaar && "line-through"
+                            )}
+                          >
+                            {item.title}
+                          </p>
+                          <p className="truncate text-xs text-slate-500">
+                            {[meta.label, subjectNaam(item.subject_id)].filter(Boolean).join(" - ")}
+                            {isVoorstel && " - voorstel, nog niet bevestigd"}
+                          </p>
+                        </div>
+
+                        {isVoorstel ? (
+                          <div className="flex shrink-0 gap-1.5">
+                            <Button size="md" variant="secondary" disabled={pending} onClick={() => accepteer(item)}>
+                              Prima zo
+                            </Button>
+                            <button
+                              disabled={pending}
+                              onClick={() => verwijder(item)}
+                              className="rounded-xl p-2.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                              aria-label="Verwijderen"
+                            >
+                              <Icon name="trash" size={16} />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex shrink-0 items-center gap-1.5">
+                            <button
+                              disabled={pending}
+                              onClick={() => toggleStatus(item)}
+                              className={clsx(
+                                "rounded-xl p-2.5",
+                                isKlaar
+                                  ? "bg-emerald-100 text-emerald-700"
+                                  : "text-slate-400 hover:bg-emerald-50 hover:text-emerald-600"
+                              )}
+                              aria-label="Klaar markeren"
+                            >
+                              <Icon name="check" size={16} />
+                            </button>
+                            <button
+                              disabled={pending}
+                              onClick={() => verwijder(item)}
+                              className="rounded-xl p-2.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                              aria-label="Verwijderen"
+                            >
+                              <Icon name="trash" size={16} />
+                            </button>
+                          </div>
+                        )}
+                      </Card>
+                    );
+                  })}
+                </div>
+              )}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
