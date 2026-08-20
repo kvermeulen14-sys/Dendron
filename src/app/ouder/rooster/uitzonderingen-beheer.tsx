@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Modal } from "@/components/ui/modal";
 import { Icon } from "@/components/icon";
 import { maakRoosterUitzondering, verwijderRoosterUitzondering } from "@/lib/actions/rooster";
 import type { RoosterItem, RoosterUitzondering, UitzonderingType } from "@/lib/types";
@@ -52,13 +53,12 @@ export function UitzonderingenBeheer({
             er komt iets bij) - zonder het standaardrooster aan te passen.
           </p>
         </div>
-        <Button size="md" icon={<Icon name="plus" size={16} />} onClick={() => setOpen((v) => !v)}>
-          {open ? "Sluiten" : "Uitzondering"}
+        <Button size="md" icon={<Icon name="plus" size={16} />} onClick={() => setOpen(true)}>
+          Uitzondering
         </Button>
       </div>
 
-      {open && (
-        <Card className="mb-3">
+      <Modal open={open} onClose={() => setOpen(false)} title="Uitzondering toevoegen">
           <form
             action={async (formData) => {
               setError(null);
@@ -160,10 +160,14 @@ export function UitzonderingenBeheer({
 
             {error && <p className="text-sm text-rose-600">{error}</p>}
 
-            <Button type="submit">Opslaan</Button>
+            <div className="flex gap-2">
+              <Button type="submit">Opslaan</Button>
+              <Button type="button" variant="secondary" onClick={() => setOpen(false)}>
+                Annuleren
+              </Button>
+            </div>
           </form>
-        </Card>
-      )}
+      </Modal>
 
       {uitzonderingen.length === 0 ? (
         <p className="text-sm text-slate-400">Geen uitzonderingen.</p>

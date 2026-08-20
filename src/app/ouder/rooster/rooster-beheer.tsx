@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Modal } from "@/components/ui/modal";
 import { Icon } from "@/components/icon";
 import {
   maakRoosterPeriode,
@@ -40,7 +41,7 @@ export function RoosterBeheer({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [periodeFormOpen, setPeriodeFormOpen] = useState(periodes.length === 0);
+  const [periodeFormOpen, setPeriodeFormOpen] = useState(false);
   const [periodeError, setPeriodeError] = useState<string | null>(null);
   const [selectedPeriodeId, setSelectedPeriodeId] = useState<string | null>(periodes[0]?.id ?? null);
   const [itemFormOpen, setItemFormOpen] = useState(false);
@@ -53,6 +54,7 @@ export function RoosterBeheer({
   );
 
   const bewerkItem = bewerkId ? itemsVoorPeriode.find((i) => i.id === bewerkId) ?? null : null;
+  const itemModalOpen = itemFormOpen || bewerkItem !== null;
 
   function subjectNaam(id: string | null) {
     return subjects.find((s) => s.id === id)?.name ?? null;
@@ -73,66 +75,75 @@ export function RoosterBeheer({
     });
   }
 
+  function sluitItemModal() {
+    setItemFormOpen(false);
+    setBewerkId(null);
+    setItemError(null);
+  }
+
   return (
     <div className="flex flex-col gap-6">
       {/* Periodes */}
       <div>
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-base font-semibold text-slate-900">Periodes</h2>
-          <Button size="md" icon={<Icon name="plus" size={16} />} onClick={() => setPeriodeFormOpen((v) => !v)}>
-            {periodeFormOpen ? "Sluiten" : "Nieuwe periode"}
+          <Button size="md" icon={<Icon name="plus" size={16} />} onClick={() => setPeriodeFormOpen(true)}>
+            Nieuwe periode
           </Button>
         </div>
 
-        {periodeFormOpen && (
-          <Card className="mb-3">
-            <form
-              action={async (formData) => {
-                setPeriodeError(null);
-                const res = await maakRoosterPeriode(formData);
-                if (res?.error) {
-                  setPeriodeError(res.error);
-                  return;
-                }
-                setPeriodeFormOpen(false);
-                router.refresh();
-              }}
-              className="flex flex-col gap-4"
-            >
+        <Modal open={periodeFormOpen} onClose={() => setPeriodeFormOpen(false)} title="Nieuwe periode">
+          <form
+            action={async (formData) => {
+              setPeriodeError(null);
+              const res = await maakRoosterPeriode(formData);
+              if (res?.error) {
+                setPeriodeError(res.error);
+                return;
+              }
+              setPeriodeFormOpen(false);
+              router.refresh();
+            }}
+            className="flex flex-col gap-4"
+          >
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">Naam</label>
+              <input
+                name="naam"
+                required
+                placeholder="bijv. Periode 1"
+                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="mb-1.5 block text-sm font-medium text-slate-700">Naam</label>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">Vanaf</label>
                 <input
-                  name="naam"
+                  type="date"
+                  name="startDatum"
                   required
-                  placeholder="bijv. Periode 1"
                   className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
                 />
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium text-slate-700">Vanaf</label>
-                  <input
-                    type="date"
-                    name="startDatum"
-                    required
-                    className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium text-slate-700">Tot en met</label>
-                  <input
-                    type="date"
-                    name="eindDatum"
-                    required
-                    className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
-                  />
-                </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">Tot en met</label>
+                <input
+                  type="date"
+                  name="eindDatum"
+                  required
+                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                />
               </div>
-              {periodeError && <p className="text-sm text-rose-600">{periodeError}</p>}
+            </div>
+            {periodeError && <p className="text-sm text-rose-600">{periodeError}</p>}
+            <div className="flex gap-2">
               <Button type="submit">Opslaan</Button>
-            </form>
-          </Card>
-        )}
+              <Button type="button" variant="secondary" onClick={() => setPeriodeFormOpen(false)}>
+                Annuleren
+              </Button>
+            </div>
+          </form>
+        </Modal>
 
         {periodes.length === 0 ? (
           <Card>
@@ -183,116 +194,106 @@ export function RoosterBeheer({
               icon={<Icon name="plus" size={16} />}
               onClick={() => {
                 setBewerkId(null);
-                setItemFormOpen((v) => !v);
+                setItemFormOpen(true);
               }}
             >
-              {itemFormOpen ? "Sluiten" : "Lesuur toevoegen"}
+              Lesuur toevoegen
             </Button>
           </div>
 
-          {(itemFormOpen || bewerkItem) && (
-            <Card className="mb-3">
-              <form
-                action={async (formData) => {
-                  setItemError(null);
-                  const res = bewerkItem
-                    ? await bewerkRoosterItem(bewerkItem.id, formData)
-                    : await maakRoosterItem(formData);
-                  if (res?.error) {
-                    setItemError(res.error);
-                    return;
-                  }
-                  setItemFormOpen(false);
-                  setBewerkId(null);
-                  router.refresh();
-                }}
-                className="flex flex-col gap-4"
-              >
-                <input type="hidden" name="periodeId" value={selectedPeriodeId} />
+          <Modal open={itemModalOpen} onClose={sluitItemModal} title={bewerkItem ? "Lesuur bewerken" : "Lesuur toevoegen"}>
+            <form
+              action={async (formData) => {
+                setItemError(null);
+                const res = bewerkItem
+                  ? await bewerkRoosterItem(bewerkItem.id, formData)
+                  : await maakRoosterItem(formData);
+                if (res?.error) {
+                  setItemError(res.error);
+                  return;
+                }
+                sluitItemModal();
+                router.refresh();
+              }}
+              className="flex flex-col gap-4"
+            >
+              <input type="hidden" name="periodeId" value={selectedPeriodeId} />
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">Vak</label>
+                <select
+                  name="subjectId"
+                  defaultValue={bewerkItem?.subject_id ?? ""}
+                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                >
+                  <option value="">Geen specifiek vak</option>
+                  {subjects.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">Titel op rooster</label>
+                <input
+                  name="titel"
+                  required
+                  defaultValue={bewerkItem?.titel ?? ""}
+                  placeholder="bijv. Wiskunde"
+                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">Dag</label>
+                <select
+                  name="dagVanWeek"
+                  required
+                  defaultValue={bewerkItem?.dag_van_week ?? ""}
+                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                >
+                  <option value="" disabled>
+                    Kies een dag
+                  </option>
+                  {DAGEN.map((d) => (
+                    <option key={d.value} value={d.value}>
+                      {d.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="mb-1.5 block text-sm font-medium text-slate-700">Vak</label>
-                  <select
-                    name="subjectId"
-                    defaultValue={bewerkItem?.subject_id ?? ""}
-                    className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
-                  >
-                    <option value="">Geen specifiek vak</option>
-                    {subjects.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium text-slate-700">Titel op rooster</label>
+                  <label className="mb-1.5 block text-sm font-medium text-slate-700">Begintijd</label>
                   <input
-                    name="titel"
+                    type="time"
+                    name="startTijd"
                     required
-                    defaultValue={bewerkItem?.titel ?? ""}
-                    placeholder="bijv. Wiskunde"
+                    defaultValue={bewerkItem?.start_tijd?.slice(0, 5) ?? ""}
                     className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
                   />
                 </div>
                 <div>
-                  <label className="mb-1.5 block text-sm font-medium text-slate-700">Dag</label>
-                  <select
-                    name="dagVanWeek"
+                  <label className="mb-1.5 block text-sm font-medium text-slate-700">Eindtijd</label>
+                  <input
+                    type="time"
+                    name="eindTijd"
                     required
-                    defaultValue={bewerkItem?.dag_van_week ?? ""}
+                    defaultValue={bewerkItem?.eind_tijd?.slice(0, 5) ?? ""}
                     className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
-                  >
-                    <option value="" disabled>
-                      Kies een dag
-                    </option>
-                    {DAGEN.map((d) => (
-                      <option key={d.value} value={d.value}>
-                        {d.label}
-                      </option>
-                    ))}
-                  </select>
+                  />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700">Begintijd</label>
-                    <input
-                      type="time"
-                      name="startTijd"
-                      required
-                      defaultValue={bewerkItem?.start_tijd?.slice(0, 5) ?? ""}
-                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700">Eindtijd</label>
-                    <input
-                      type="time"
-                      name="eindTijd"
-                      required
-                      defaultValue={bewerkItem?.eind_tijd?.slice(0, 5) ?? ""}
-                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
-                    />
-                  </div>
-                </div>
+              </div>
 
-                {itemError && <p className="text-sm text-rose-600">{itemError}</p>}
+              {itemError && <p className="text-sm text-rose-600">{itemError}</p>}
 
-                <div className="flex gap-2">
-                  <Button type="submit">{bewerkItem ? "Wijzigingen opslaan" : "Toevoegen"}</Button>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => {
-                      setItemFormOpen(false);
-                      setBewerkId(null);
-                    }}
-                  >
-                    Annuleren
-                  </Button>
-                </div>
-              </form>
-            </Card>
-          )}
+              <div className="flex gap-2">
+                <Button type="submit">{bewerkItem ? "Wijzigingen opslaan" : "Toevoegen"}</Button>
+                <Button type="button" variant="secondary" onClick={sluitItemModal}>
+                  Annuleren
+                </Button>
+              </div>
+            </form>
+          </Modal>
 
           {itemsVoorPeriode.length === 0 ? (
             <Card>

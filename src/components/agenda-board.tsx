@@ -6,6 +6,7 @@ import clsx from "clsx";
 import { Icon } from "@/components/icon";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Modal } from "@/components/ui/modal";
 import { HuiswerkAIImport } from "@/components/huiswerk-ai-import";
 import { PLANNING_TYPE_META } from "@/lib/planning";
 import { maakPlanningItem, updatePlanningStatus, verwijderPlanningItem } from "@/lib/actions/planning";
@@ -254,8 +255,8 @@ export function AgendaBoard({
         <h1 className="text-xl font-semibold text-slate-900">Agenda</h1>
         <div className="flex gap-2">
           <HuiswerkAIImport subjects={subjects} />
-          <Button icon={<Icon name="plus" size={18} />} onClick={() => setFormOpen((v) => !v)}>
-            {formOpen ? "Sluiten" : "Nieuw item"}
+          <Button icon={<Icon name="plus" size={18} />} onClick={() => setFormOpen(true)}>
+            Nieuw item
           </Button>
         </div>
       </div>
@@ -292,9 +293,8 @@ export function AgendaBoard({
         </button>
       </Card>
 
-      {formOpen && (
-        <Card>
-          <form action={handleSubmit} className="flex flex-col gap-4">
+      <Modal open={formOpen} onClose={() => setFormOpen(false)} title="Nieuw item">
+        <form action={handleSubmit} className="flex flex-col gap-4">
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               {(["huiswerk", "toets", "leermoment", "prive"] as PlanningType[]).map((t) => (
                 <button
@@ -395,9 +395,8 @@ export function AgendaBoard({
             <Button type="submit" className="mt-1">
               Toevoegen
             </Button>
-          </form>
-        </Card>
-      )}
+        </form>
+      </Modal>
 
       {/* Kalenderweergave: 7 dagen naast elkaar, zoals afsprakenplanning-software */}
       <div className="hidden gap-2 md:grid md:grid-cols-7">
