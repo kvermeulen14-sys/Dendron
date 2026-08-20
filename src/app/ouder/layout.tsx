@@ -8,6 +8,7 @@ const NAV_ITEMS = [
   { href: "/ouder/vakken", label: "Vakken & lesstof", icon: "book-open" },
   { href: "/ouder/toetsvormen", label: "Toetsvormen", icon: "alert-circle" },
   { href: "/ouder/rooster", label: "Rooster", icon: "calendar" },
+  { href: "/ouder/jaarkalender", label: "Jaarkalender", icon: "calendar" },
   { href: "/ouder/account", label: "Kind-account", icon: "users" },
   { href: "/ouder/kind-login", label: "Inloggen als kind", icon: "log-in" },
 ];

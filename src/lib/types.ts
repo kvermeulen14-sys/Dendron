@@ -4,6 +4,8 @@ export type PlanningType = "huiswerk" | "toets" | "prive" | "leermoment";
 export type PlanningStatus = "voorstel" | "open" | "klaar";
 export type MaterialBron = "tekst" | "pdf" | "foto";
 export type RoosterType = "school" | "anders";
+export type UitzonderingType = "vervallen" | "gewijzigd" | "extra";
+export type JaarEventType = "vakantie" | "toetsweek" | "anders";
 
 export interface Profile {
   id: string;
@@ -57,15 +59,51 @@ export interface TestType {
   created_at: string;
 }
 
+export interface RoosterPeriode {
+  id: string;
+  family_id: string;
+  naam: string;
+  start_datum: string;
+  eind_datum: string;
+  created_by: string;
+  created_at: string;
+}
+
 export interface RoosterItem {
   id: string;
   family_id: string;
+  periode_id: string;
   subject_id: string | null;
   dag_van_week: number; // 1 = maandag ... 7 = zondag
   start_tijd: string; // "HH:MM:SS"
   eind_tijd: string;
   titel: string;
   type: RoosterType;
+  created_by: string;
+  created_at: string;
+}
+
+export interface RoosterUitzondering {
+  id: string;
+  family_id: string;
+  datum: string;
+  origineel_item_id: string | null;
+  type: UitzonderingType;
+  titel: string | null;
+  subject_id: string | null;
+  start_tijd: string | null;
+  eind_tijd: string | null;
+  created_by: string;
+  created_at: string;
+}
+
+export interface JaarEvent {
+  id: string;
+  family_id: string;
+  titel: string;
+  start_datum: string;
+  eind_datum: string;
+  type: JaarEventType;
   created_by: string;
   created_at: string;
 }

@@ -2,30 +2,24 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import clsx from "clsx";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Icon } from "@/components/icon";
-import { maakRoosterItem } from "@/lib/actions/rooster";
+import { JAAR_EVENT_META } from "@/lib/jaarkalender";
+import { maakJaarEvent } from "@/lib/actions/jaar-events";
+import type { JaarEventType } from "@/lib/types";
 
-const DAGEN = [
-  { value: 1, label: "Maandag" },
-  { value: 2, label: "Dinsdag" },
-  { value: 3, label: "Woensdag" },
-  { value: 4, label: "Donderdag" },
-  { value: 5, label: "Vrijdag" },
-  { value: 6, label: "Zaterdag" },
-  { value: 7, label: "Zondag" },
-];
-
-export function RoosterForm() {
+export function JaarEventForm() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [type, setType] = useState<JaarEventType>("vakantie");
   const [error, setError] = useState<string | null>(null);
 
   if (!open) {
     return (
       <Button icon={<Icon name="plus" size={18} />} onClick={() => setOpen(true)}>
-        Blok toevoegen
+        Toevoegen
       </Button>
     );
   }
@@ -35,7 +29,7 @@ export function RoosterForm() {
       <form
         action={async (formData) => {
           setError(null);
-          const res = await maakRoosterItem(formData);
+          const res = await maakJaarEvent(formData);
           if (res?.error) {
             setError(res.error);
             return;
@@ -45,49 +39,52 @@ export function RoosterForm() {
         }}
         className="flex flex-col gap-4"
       >
-        <div>
-          <label className="mb-1.5 block text-sm font-medium text-slate-700">Dag</label>
-          <select
-            name="dagVanWeek"
-            required
-            className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
-          >
-            {DAGEN.map((d) => (
-              <option key={d.value} value={d.value}>
-                {d.label}
-              </option>
-            ))}
-          </select>
+        <div className="grid grid-cols-3 gap-2">
+          {(Object.keys(JAAR_EVENT_META) as JaarEventType[]).map((t) => (
+            <button
+              type="button"
+              key={t}
+              onClick={() => setType(t)}
+              className={clsx(
+                "rounded-xl border px-2 py-2.5 text-xs font-medium transition-colors",
+                type === t ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 text-slate-600 hover:bg-slate-50"
+              )}
+            >
+              {JAAR_EVENT_META[t].label}
+            </button>
+          ))}
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-slate-700">Begintijd</label>
-            <input
-              type="time"
-              name="startTijd"
-              required
-              className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
-            />
-          </div>
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-slate-700">Eindtijd</label>
-            <input
-              type="time"
-              name="eindTijd"
-              required
-              className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
-            />
-          </div>
-        </div>
+        <input type="hidden" name="type" value={type} />
+
         <div>
           <label className="mb-1.5 block text-sm font-medium text-slate-700">Titel</label>
           <input
             name="titel"
             required
-            placeholder="bijv. School of Voetbaltraining"
+            placeholder="bijv. Meivakantie of Toetsweek 1"
             className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
           />
         </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700">Vanaf</label>
+            <input
+              type="date"
+              name="startDatum"
+              required
+              className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700">Tot en met</label>
+            <input
+              type="date"
+              name="eindDatum"
+              className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+            />
+          </div>
+        </div>
+        <p className="text-xs text-slate-500">Laat &quot;tot en met&quot; leeg voor een periode van 1 dag.</p>
 
         {error && <p className="text-sm text-rose-600">{error}</p>}
 

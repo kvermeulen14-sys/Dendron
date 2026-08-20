@@ -8,7 +8,15 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { PLANNING_TYPE_META } from "@/lib/planning";
 import { maakPlanningItem, updatePlanningStatus, verwijderPlanningItem } from "@/lib/actions/planning";
-import type { PlanningItem, PlanningType, RoosterItem, Subject, TestType } from "@/lib/types";
+import type {
+  PlanningItem,
+  PlanningType,
+  RoosterItem,
+  RoosterPeriode,
+  RoosterUitzondering,
+  Subject,
+  TestType,
+} from "@/lib/types";
 
 function naarMaandagVanWeek(datum: Date) {
   const d = new Date(datum);
@@ -72,19 +80,53 @@ interface RoosterBlok {
   isFietsen: boolean;
 }
 
+function vindPeriode(periodes: RoosterPeriode[], iso: string) {
+  return periodes.find((p) => p.start_datum <= iso && iso <= p.eind_datum) ?? null;
+}
+
 function roosterBlokkenVoorDag(
+  datum: Date,
+  periodes: RoosterPeriode[],
   roosterItems: RoosterItem[],
-  isoWeekdag: number,
+  uitzonderingen: RoosterUitzondering[],
   reistijdMinuten: number
 ): RoosterBlok[] {
-  const dagItems = roosterItems
-    .filter((r) => r.dag_van_week === isoWeekdag)
-    .sort((a, b) => a.start_tijd.localeCompare(b.start_tijd));
-  if (dagItems.length === 0) return [];
+  const iso = naarIsoDatum(datum);
+  const weekdag = naarIsoWeekdag(datum);
+  const periode = vindPeriode(periodes, iso);
+  const dagUitzonderingen = uitzonderingen.filter((u) => u.datum === iso);
+  const vervallenIds = new Set(dagUitzonderingen.filter((u) => u.type === "vervallen").map((u) => u.origineel_item_id));
+  const gewijzigdMap = new Map(
+    dagUitzonderingen.filter((u) => u.type === "gewijzigd").map((u) => [u.origineel_item_id, u])
+  );
+
+  let lessen: { titel: string; start_tijd: string; eind_tijd: string }[] = periode
+    ? roosterItems
+        .filter((i) => i.periode_id === periode.id && i.dag_van_week === weekdag && !vervallenIds.has(i.id))
+        .map((i) => {
+          const wijziging = gewijzigdMap.get(i.id);
+          return wijziging
+            ? {
+                titel: wijziging.titel ?? i.titel,
+                start_tijd: wijziging.start_tijd ?? i.start_tijd,
+                eind_tijd: wijziging.eind_tijd ?? i.eind_tijd,
+              }
+            : { titel: i.titel, start_tijd: i.start_tijd, eind_tijd: i.eind_tijd };
+        })
+    : [];
+
+  for (const extra of dagUitzonderingen.filter((u) => u.type === "extra")) {
+    if (extra.titel && extra.start_tijd && extra.eind_tijd) {
+      lessen.push({ titel: extra.titel, start_tijd: extra.start_tijd, eind_tijd: extra.eind_tijd });
+    }
+  }
+
+  lessen = lessen.sort((a, b) => a.start_tijd.localeCompare(b.start_tijd));
+  if (lessen.length === 0) return [];
 
   const blokken: RoosterBlok[] = [];
-  const eerste = dagItems[0];
-  const laatste = dagItems[dagItems.length - 1];
+  const eerste = lessen[0];
+  const laatste = lessen[lessen.length - 1];
 
   if (reistijdMinuten > 0) {
     blokken.push({
@@ -93,10 +135,10 @@ function roosterBlokkenVoorDag(
       isFietsen: true,
     });
   }
-  for (const item of dagItems) {
+  for (const les of lessen) {
     blokken.push({
-      tijd: `${tijdKort(item.start_tijd)}-${tijdKort(item.eind_tijd)}`,
-      titel: item.titel,
+      tijd: `${tijdKort(les.start_tijd)}-${tijdKort(les.eind_tijd)}`,
+      titel: les.titel,
       isFietsen: false,
     });
   }
@@ -114,13 +156,17 @@ export function AgendaBoard({
   items,
   subjects,
   testTypes,
+  periodes,
   roosterItems,
+  uitzonderingen,
   reistijdMinuten,
 }: {
   items: PlanningItem[];
   subjects: Subject[];
   testTypes: TestType[];
+  periodes: RoosterPeriode[];
   roosterItems: RoosterItem[];
+  uitzonderingen: RoosterUitzondering[];
   reistijdMinuten: number;
 }) {
   const router = useRouter();
@@ -355,7 +401,7 @@ export function AgendaBoard({
           const iso = naarIsoDatum(dag);
           const isVandaag = iso === vandaagIso;
           const dagItems = itemsPerDag.get(iso) ?? [];
-          const roosterBlokken = roosterBlokkenVoorDag(roosterItems, naarIsoWeekdag(dag), reistijdMinuten);
+          const roosterBlokken = roosterBlokkenVoorDag(dag, periodes, roosterItems, uitzonderingen, reistijdMinuten);
           return (
             <div
               key={iso}
@@ -479,7 +525,7 @@ export function AgendaBoard({
         {weekDagen.map((dag) => {
           const iso = naarIsoDatum(dag);
           const dagItems = itemsPerDag.get(iso) ?? [];
-          const roosterBlokken = roosterBlokkenVoorDag(roosterItems, naarIsoWeekdag(dag), reistijdMinuten);
+          const roosterBlokken = roosterBlokkenVoorDag(dag, periodes, roosterItems, uitzonderingen, reistijdMinuten);
           return (
             <div key={iso}>
               <p className="mb-2 text-sm font-medium capitalize text-slate-500">

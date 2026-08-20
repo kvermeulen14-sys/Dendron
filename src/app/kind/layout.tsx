@@ -5,6 +5,7 @@ import { NavShell } from "@/components/nav-shell";
 const NAV_ITEMS = [
   { href: "/kind", label: "Overzicht", icon: "dashboard" },
   { href: "/kind/agenda", label: "Mijn agenda", icon: "calendar" },
+  { href: "/kind/jaarkalender", label: "Jaarkalender", icon: "calendar" },
   { href: "/kind/vakken", label: "Mijn vakken", icon: "chat" },
 ];
 

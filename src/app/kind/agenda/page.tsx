@@ -12,25 +12,36 @@ export default async function KindAgendaPage() {
     .eq("id", user!.id)
     .single();
 
-  const [{ data: items }, { data: subjects }, { data: testTypes }, { data: roosterItems }, { data: family }] =
-    await Promise.all([
-      supabase
-        .from("planning_items")
-        .select("*")
-        .eq("family_id", profile!.family_id)
-        .order("due_date", { ascending: true }),
-      supabase.from("subjects").select("*").eq("family_id", profile!.family_id),
-      supabase.from("test_types").select("*").eq("family_id", profile!.family_id),
-      supabase.from("rooster_items").select("*").eq("family_id", profile!.family_id),
-      supabase.from("families").select("reistijd_minuten").eq("id", profile!.family_id).single(),
-    ]);
+  const [
+    { data: items },
+    { data: subjects },
+    { data: testTypes },
+    { data: periodes },
+    { data: roosterItems },
+    { data: uitzonderingen },
+    { data: family },
+  ] = await Promise.all([
+    supabase
+      .from("planning_items")
+      .select("*")
+      .eq("family_id", profile!.family_id)
+      .order("due_date", { ascending: true }),
+    supabase.from("subjects").select("*").eq("family_id", profile!.family_id),
+    supabase.from("test_types").select("*").eq("family_id", profile!.family_id),
+    supabase.from("rooster_periodes").select("*").eq("family_id", profile!.family_id),
+    supabase.from("rooster_items").select("*").eq("family_id", profile!.family_id),
+    supabase.from("rooster_uitzonderingen").select("*").eq("family_id", profile!.family_id),
+    supabase.from("families").select("reistijd_minuten").eq("id", profile!.family_id).single(),
+  ]);
 
   return (
     <AgendaBoard
       items={items ?? []}
       subjects={subjects ?? []}
       testTypes={testTypes ?? []}
+      periodes={periodes ?? []}
       roosterItems={roosterItems ?? []}
+      uitzonderingen={uitzonderingen ?? []}
       reistijdMinuten={family?.reistijd_minuten ?? 15}
     />
   );

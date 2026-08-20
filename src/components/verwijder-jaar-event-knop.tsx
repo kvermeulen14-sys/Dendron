@@ -3,9 +3,9 @@
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Icon } from "@/components/icon";
-import { verwijderRoosterItem } from "@/lib/actions/rooster";
+import { verwijderJaarEvent } from "@/lib/actions/jaar-events";
 
-export function VerwijderRoosterKnop({ id }: { id: string }) {
+export function VerwijderJaarEventKnop({ id }: { id: string }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
@@ -14,7 +14,7 @@ export function VerwijderRoosterKnop({ id }: { id: string }) {
       disabled={pending}
       onClick={() =>
         startTransition(async () => {
-          await verwijderRoosterItem(id);
+          await verwijderJaarEvent(id);
           router.refresh();
         })
       }
