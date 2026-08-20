@@ -4,7 +4,6 @@ import type { RoosterItem, RoosterPeriode, RoosterUitzondering, Subject } from "
 import { ReistijdForm } from "./reistijd-form";
 import { RoosterBeheer } from "./rooster-beheer";
 import { UitzonderingenBeheer } from "./uitzonderingen-beheer";
-import { SomTodayUploader } from "./somtoday-uploader";
 
 export default async function RoosterPage() {
   const supabase = await createClient();
@@ -47,11 +46,6 @@ export default async function RoosterPage() {
       <Card>
         <ReistijdForm huidig={family?.reistijd_minuten ?? 15} />
       </Card>
-
-      <div>
-        <h2 className="mb-3 text-base font-semibold text-slate-900">Rooster uit een screenshot</h2>
-        <SomTodayUploader periodes={(periodes ?? []) as RoosterPeriode[]} />
-      </div>
 
       <RoosterBeheer
         periodes={(periodes ?? []) as RoosterPeriode[]}

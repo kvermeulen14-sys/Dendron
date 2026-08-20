@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { ChatPanel } from "@/components/chat-panel";
+import { VakWerkruimte } from "@/components/vak-werkruimte";
 import { MateriaalForm } from "@/components/materiaal-form";
 import { KennisbankUploader } from "@/components/kennisbank-uploader";
 import { Icon } from "@/components/icon";
@@ -34,11 +34,11 @@ export default async function KindVakDetailPage({
         </span>
         <div>
           <h1 className="text-xl font-semibold text-slate-900">{subject.name}</h1>
-          <p className="text-sm text-slate-500">Chat met je persoonlijke vakdocent.</p>
+          <p className="text-sm text-slate-500">Chat met je vakdocent, of laat je overhoren.</p>
         </div>
       </div>
 
-      <ChatPanel subjectId={id} subjectName={subject.name} initialMessages={messages ?? []} />
+      <VakWerkruimte subjectId={id} subjectName={subject.name} initialMessages={messages ?? []} />
 
       <div className="flex flex-col gap-3">
         <p className="text-sm text-slate-500">

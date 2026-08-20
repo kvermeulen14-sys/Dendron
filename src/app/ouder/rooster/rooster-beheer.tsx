@@ -15,6 +15,7 @@ import {
   verwijderRoosterItem,
 } from "@/lib/actions/rooster";
 import type { RoosterItem, RoosterPeriode, Subject } from "@/lib/types";
+import { SomTodayUploader } from "./somtoday-uploader";
 
 const DAGEN = [
   { value: 1, label: "Maandag" },
@@ -187,18 +188,21 @@ export function RoosterBeheer({
       {/* Lesuren binnen de gekozen periode */}
       {selectedPeriodeId && (
         <div>
-          <div className="mb-3 flex items-center justify-between">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-base font-semibold text-slate-900">Lesuren</h2>
-            <Button
-              size="md"
-              icon={<Icon name="plus" size={16} />}
-              onClick={() => {
-                setBewerkId(null);
-                setItemFormOpen(true);
-              }}
-            >
-              Lesuur toevoegen
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <SomTodayUploader periodes={periodes} />
+              <Button
+                size="md"
+                icon={<Icon name="plus" size={16} />}
+                onClick={() => {
+                  setBewerkId(null);
+                  setItemFormOpen(true);
+                }}
+              >
+                Lesuur toevoegen
+              </Button>
+            </div>
           </div>
 
           <Modal open={itemModalOpen} onClose={sluitItemModal} title={bewerkItem ? "Lesuur bewerken" : "Lesuur toevoegen"}>

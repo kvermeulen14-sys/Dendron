@@ -46,7 +46,7 @@ export default async function ToetsvormenPage() {
         {toetsvormen?.map((t) => (
           <Card key={t.id} className="flex items-center gap-4">
             <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-rose-50 text-rose-600">
-              <Icon name="alert-circle" size={20} />
+              <Icon name="target" size={20} />
             </span>
             <div className="flex-1">
               <p className="text-sm font-semibold text-slate-900">{t.name}</p>

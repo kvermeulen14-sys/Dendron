@@ -4,14 +4,24 @@ import { useMemo, useState } from "react";
 import clsx from "clsx";
 import { Icon } from "@/components/icon";
 import { Card } from "@/components/ui/card";
-import { JAAR_EVENT_META, eventsOpDatum, maandNaam, maandRooster } from "@/lib/jaarkalender";
+import {
+  JAAR_EVENT_META,
+  dagenInMaand,
+  isWeekend,
+  maandNaam,
+  naarIsoDatum,
+  schooljaarMaanden,
+  segmentenVoorMaand,
+} from "@/lib/jaarkalender";
 import type { JaarEvent } from "@/lib/types";
 
-const DAGLETTERS = ["M", "D", "W", "D", "V", "Z", "Z"];
-
 export function JaarOverzicht({ events }: { events: JaarEvent[] }) {
-  const [jaar, setJaar] = useState(new Date().getFullYear());
-  const vandaagIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const nu = useMemo(() => new Date(), []);
+  const defaultStartJaar = nu.getMonth() >= 7 ? nu.getFullYear() : nu.getFullYear() - 1;
+  const [startJaar, setStartJaar] = useState(defaultStartJaar);
+  const vandaagIso = useMemo(() => naarIsoDatum(nu), [nu]);
+
+  const maanden = useMemo(() => schooljaarMaanden(startJaar), [startJaar]);
 
   const aankomend = useMemo(
     () =>
@@ -26,17 +36,19 @@ export function JaarOverzicht({ events }: { events: JaarEvent[] }) {
     <div className="flex flex-col gap-6">
       <Card className="flex items-center justify-between py-3">
         <button
-          onClick={() => setJaar((j) => j - 1)}
+          onClick={() => setStartJaar((j) => j - 1)}
           className="rounded-xl p-2 text-slate-500 hover:bg-slate-100"
-          aria-label="Vorig jaar"
+          aria-label="Vorig schooljaar"
         >
           <Icon name="chevron-left" size={18} />
         </button>
-        <p className="text-base font-semibold text-slate-900">{jaar}</p>
+        <p className="text-base font-semibold text-slate-900">
+          Schooljaar {startJaar} - {startJaar + 1}
+        </p>
         <button
-          onClick={() => setJaar((j) => j + 1)}
+          onClick={() => setStartJaar((j) => j + 1)}
           className="rounded-xl p-2 text-slate-500 hover:bg-slate-100"
-          aria-label="Volgend jaar"
+          aria-label="Volgend schooljaar"
         >
           <Icon name="chevron-right" size={18} />
         </button>
@@ -49,47 +61,65 @@ export function JaarOverzicht({ events }: { events: JaarEvent[] }) {
             {JAAR_EVENT_META[key].label}
           </div>
         ))}
+        <div className="flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-sm bg-slate-200" />
+          Weekend
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {Array.from({ length: 12 }, (_, maandIndex) => (
-          <Card key={maandIndex} className="p-3">
-            <p className="mb-2 text-center text-sm font-semibold text-slate-800">
-              {maandNaam(maandIndex)}
-            </p>
-            <div className="grid grid-cols-7 gap-0.5 text-center text-[10px] text-slate-400">
-              {DAGLETTERS.map((d, i) => (
-                <div key={i}>{d}</div>
-              ))}
-            </div>
-            <div className="mt-1 grid grid-cols-7 gap-0.5">
-              {maandRooster(jaar, maandIndex).map((dag, i) => {
-                if (!dag) return <div key={i} />;
-                const dagEvents = eventsOpDatum(events, dag);
-                const iso = dag.toISOString().slice(0, 10);
-                const isVandaag = iso === vandaagIso;
-                const eventType = dagEvents[0]?.type;
-                return (
-                  <div
-                    key={i}
-                    title={dagEvents.map((e) => e.titel).join(", ")}
-                    className={clsx(
-                      "flex aspect-square items-center justify-center rounded-md text-[10px]",
-                      eventType
-                        ? JAAR_EVENT_META[eventType].dotClass + " text-white font-medium"
-                        : "text-slate-500",
-                      isVandaag && !eventType && "bg-blue-100 font-semibold text-blue-700",
-                      isVandaag && eventType && "ring-2 ring-blue-400"
-                    )}
-                  >
-                    {dag.getDate()}
+      <Card className="overflow-x-auto">
+        <div className="flex min-w-[640px] flex-col gap-2">
+          {maanden.map(({ jaar, maandIndex }) => {
+            const aantalDagen = dagenInMaand(jaar, maandIndex);
+            const segmenten = segmentenVoorMaand(events, jaar, maandIndex);
+            const kolommen = `repeat(${aantalDagen}, minmax(0, 1fr))`;
+
+            return (
+              <div key={`${jaar}-${maandIndex}`} className="grid grid-cols-[52px_1fr] items-start gap-2">
+                <p className="pt-0.5 text-xs font-semibold text-slate-500">{maandNaam(maandIndex).slice(0, 3)}</p>
+                <div className="flex flex-col gap-[2px]">
+                  <div className="grid overflow-hidden rounded-md border border-slate-100" style={{ gridTemplateColumns: kolommen }}>
+                    {Array.from({ length: aantalDagen }, (_, i) => {
+                      const dagNr = i + 1;
+                      const datum = new Date(jaar, maandIndex, dagNr);
+                      const iso = naarIsoDatum(datum);
+                      return (
+                        <div
+                          key={dagNr}
+                          className={clsx(
+                            "relative h-5 border-r border-slate-100 last:border-r-0",
+                            isWeekend(datum) ? "bg-slate-100" : "bg-white",
+                            iso === vandaagIso && "ring-1 ring-inset ring-blue-400"
+                          )}
+                        >
+                          <span className="absolute left-0.5 top-0 text-[8px] leading-[10px] text-slate-400">
+                            {dagNr}
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
-                );
-              })}
-            </div>
-          </Card>
-        ))}
-      </div>
+
+                  {segmenten.map((seg, i) => (
+                    <div key={i} className="grid" style={{ gridTemplateColumns: kolommen }}>
+                      <div
+                        title={seg.event.titel}
+                        style={{ gridColumn: `${seg.startDag} / ${seg.eindDag + 1}` }}
+                        className={clsx(
+                          "truncate rounded px-1 text-[9px] font-medium leading-4",
+                          JAAR_EVENT_META[seg.event.type].barClass
+                        )}
+                      >
+                        {seg.event.titel}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </Card>
 
       <div>
         <h2 className="mb-3 text-base font-semibold text-slate-900">Eerstvolgende belangrijke periodes</h2>

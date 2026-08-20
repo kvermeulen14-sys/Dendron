@@ -12,7 +12,7 @@ export const PLANNING_TYPE_META: Record<
   },
   toets: {
     label: "Toets",
-    icon: "alert-circle",
+    icon: "target",
     color: "rose",
     badgeClass: "bg-rose-50 text-rose-700 border-rose-200",
   },

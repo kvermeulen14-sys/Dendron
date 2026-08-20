@@ -30,6 +30,9 @@ import {
   ImageIcon,
   FileText,
   X,
+  Target,
+  PartyPopper,
+  Rocket,
   type LucideProps,
 } from "lucide-react";
 
@@ -65,6 +68,9 @@ export const ICONS = {
   image: ImageIcon,
   file: FileText,
   close: X,
+  target: Target,
+  party: PartyPopper,
+  rocket: Rocket,
 } as const;
 
 export type IconName = keyof typeof ICONS;

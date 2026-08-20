@@ -6,9 +6,10 @@ const NAV_ITEMS = [
   { href: "/ouder", label: "Overzicht", icon: "dashboard" },
   { href: "/ouder/agenda", label: "Agenda", icon: "calendar" },
   { href: "/ouder/vakken", label: "Vakken & lesstof", icon: "book-open" },
-  { href: "/ouder/toetsvormen", label: "Toetsvormen", icon: "alert-circle" },
+  { href: "/ouder/toetsvormen", label: "Toetsvormen", icon: "target" },
   { href: "/ouder/rooster", label: "Rooster", icon: "calendar" },
   { href: "/ouder/jaarkalender", label: "Jaarkalender", icon: "calendar" },
+  { href: "/ouder/toetsweek", label: "Toetsweek plannen", icon: "rocket" },
   { href: "/ouder/account", label: "Kind-account", icon: "users" },
   { href: "/ouder/kind-login", label: "Inloggen als kind", icon: "log-in" },
 ];
