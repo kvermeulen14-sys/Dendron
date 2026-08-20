@@ -1,11 +1,11 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
-import clsx from "clsx";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { Modal } from "@/components/ui/modal";
 import { Icon } from "@/components/icon";
+import { TekstOfBestandInvoer } from "@/components/tekst-of-bestand-invoer";
 import { maakRoosterItemsBulk } from "@/lib/actions/rooster";
 import type { RoosterPeriode } from "@/lib/types";
 
@@ -28,24 +28,23 @@ interface Regel {
 
 export function SomTodayUploader({ periodes }: { periodes: RoosterPeriode[] }) {
   const router = useRouter();
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [slepen, setSlepen] = useState(false);
+  const [open, setOpen] = useState(false);
   const [bezig, setBezig] = useState(false);
   const [regels, setRegels] = useState<Regel[] | null>(null);
   const [periodeId, setPeriodeId] = useState(periodes[0]?.id ?? "");
   const [error, setError] = useState<string | null>(null);
-  const [opgeslagen, setOpgeslagen] = useState<number | null>(null);
 
-  async function verwerkBestand(file: File) {
-    setError(null);
-    setOpgeslagen(null);
-    setBezig(true);
+  function reset() {
     setRegels(null);
+    setError(null);
+    setBezig(false);
+  }
 
+  async function verwerk(body: FormData) {
+    setError(null);
+    setBezig(true);
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const res = await fetch("/api/rooster-upload", { method: "POST", body: formData });
+      const res = await fetch("/api/rooster-upload", { method: "POST", body });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Verwerken mislukt.");
       setRegels(data.regels);
@@ -80,145 +79,129 @@ export function SomTodayUploader({ periodes }: { periodes: RoosterPeriode[] }) {
       setError(res.error);
       return;
     }
-    setOpgeslagen(res.aantal ?? 0);
-    setRegels(null);
+    setOpen(false);
+    reset();
     router.refresh();
   }
 
   return (
-    <div className="flex flex-col gap-3">
-      {!regels && (
-        <div
-          onDragOver={(e) => {
-            e.preventDefault();
-            setSlepen(true);
-          }}
-          onDragLeave={() => setSlepen(false)}
-          onDrop={(e) => {
-            e.preventDefault();
-            setSlepen(false);
-            const file = e.dataTransfer.files?.[0];
-            if (file) verwerkBestand(file);
-          }}
-          onClick={() => !bezig && inputRef.current?.click()}
-          className={clsx(
-            "flex min-h-[160px] cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed p-6 text-center transition-colors",
-            slepen ? "border-blue-400 bg-blue-50" : "border-slate-200 bg-slate-50 hover:bg-slate-100"
-          )}
-        >
-          <input
-            ref={inputRef}
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) verwerkBestand(file);
-              e.target.value = "";
-            }}
-          />
-          {bezig ? (
-            <>
-              <Icon name="sparkles" size={22} className="animate-pulse text-blue-600" />
-              <p className="text-sm font-medium text-slate-700">Rooster herkennen...</p>
-            </>
-          ) : (
-            <>
-              <Icon name="image" size={22} className="text-blue-600" />
-              <p className="text-sm font-medium text-slate-700">
-                Sleep een screenshot van je rooster (bijv. uit SomToday) hierheen, of klik om te kiezen
-              </p>
-              <p className="text-xs text-slate-400">Je kunt het resultaat hierna controleren en aanpassen.</p>
-            </>
-          )}
-        </div>
-      )}
+    <>
+      <Button
+        variant="secondary"
+        icon={<Icon name="sparkles" size={18} />}
+        onClick={() => {
+          reset();
+          setOpen(true);
+        }}
+      >
+        Rooster uit screenshot
+      </Button>
 
-      {error && <p className="text-sm text-rose-600">{error}</p>}
-      {opgeslagen !== null && (
-        <p className="text-sm text-emerald-600">{opgeslagen} lesu(u)r(en) toegevoegd aan het rooster.</p>
-      )}
+      <Modal open={open} onClose={() => setOpen(false)} title="Rooster herkennen uit screenshot" maxWidthClass="max-w-2xl">
+        {!regels ? (
+          <div className="flex flex-col gap-3">
+            <p className="text-sm text-slate-500">
+              Upload een screenshot van je rooster (bijv. uit SomToday). Je kunt het resultaat hierna
+              controleren en aanpassen voordat het wordt opgeslagen.
+            </p>
+            <TekstOfBestandInvoer
+              bezig={bezig}
+              placeholder="Plak hier de tekst van je rooster, bijv. gekopieerd uit SomToday"
+              onVerstuurTekst={(tekst) => {
+                const fd = new FormData();
+                fd.append("text", tekst);
+                verwerk(fd);
+              }}
+              onVerstuurBestand={(file) => {
+                const fd = new FormData();
+                fd.append("file", file);
+                verwerk(fd);
+              }}
+            />
+            {error && <p className="text-sm text-rose-600">{error}</p>}
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            <p className="text-sm font-medium text-slate-700">Controleer of dit klopt voordat je het opslaat:</p>
+            {regels.length === 0 && <p className="text-sm text-slate-500">Niets herkend. Probeer het opnieuw.</p>}
+            <div className="flex flex-col gap-2">
+              {regels.map((regel, i) => (
+                <div key={i} className="grid grid-cols-[1fr_auto_auto_1fr_auto] items-center gap-1.5">
+                  <select
+                    value={regel.dagVanWeek}
+                    onChange={(e) => bijwerken(i, "dagVanWeek", e.target.value)}
+                    className="rounded-lg border border-slate-200 px-2 py-1.5 text-xs"
+                  >
+                    {DAGEN.map((d) => (
+                      <option key={d.value} value={d.value}>
+                        {d.label}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="time"
+                    value={regel.startTijd}
+                    onChange={(e) => bijwerken(i, "startTijd", e.target.value)}
+                    className="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-xs"
+                  />
+                  <input
+                    type="time"
+                    value={regel.eindTijd}
+                    onChange={(e) => bijwerken(i, "eindTijd", e.target.value)}
+                    className="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-xs"
+                  />
+                  <input
+                    value={regel.titel}
+                    onChange={(e) => bijwerken(i, "titel", e.target.value)}
+                    placeholder="Vak"
+                    className="rounded-lg border border-slate-200 px-2 py-1.5 text-xs"
+                  />
+                  <button
+                    onClick={() => verwijderRegel(i)}
+                    className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                    aria-label="Regel verwijderen"
+                  >
+                    <Icon name="trash" size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
 
-      {regels && (
-        <Card>
-          <p className="mb-3 text-sm font-medium text-slate-700">
-            Controleer of dit klopt voordat je het opslaat:
-          </p>
-          <div className="flex flex-col gap-2">
-            {regels.map((regel, i) => (
-              <div key={i} className="grid grid-cols-[1fr_auto_auto_1fr_auto] items-center gap-1.5">
+            <button
+              onClick={voegRegelToe}
+              className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline"
+            >
+              <Icon name="plus" size={12} /> Regel toevoegen
+            </button>
+
+            {error && <p className="text-sm text-rose-600">{error}</p>}
+
+            <div className="flex flex-wrap items-end gap-3 border-t border-slate-100 pt-3">
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">Opslaan in periode</label>
                 <select
-                  value={regel.dagVanWeek}
-                  onChange={(e) => bijwerken(i, "dagVanWeek", e.target.value)}
-                  className="rounded-lg border border-slate-200 px-2 py-1.5 text-xs"
+                  value={periodeId}
+                  onChange={(e) => setPeriodeId(e.target.value)}
+                  className="rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
                 >
-                  {DAGEN.map((d) => (
-                    <option key={d.value} value={d.value}>
-                      {d.label}
+                  {periodes.length === 0 && <option value="">Maak eerst een periode aan</option>}
+                  {periodes.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.naam}
                     </option>
                   ))}
                 </select>
-                <input
-                  type="time"
-                  value={regel.startTijd}
-                  onChange={(e) => bijwerken(i, "startTijd", e.target.value)}
-                  className="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-xs"
-                />
-                <input
-                  type="time"
-                  value={regel.eindTijd}
-                  onChange={(e) => bijwerken(i, "eindTijd", e.target.value)}
-                  className="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-xs"
-                />
-                <input
-                  value={regel.titel}
-                  onChange={(e) => bijwerken(i, "titel", e.target.value)}
-                  placeholder="Vak"
-                  className="rounded-lg border border-slate-200 px-2 py-1.5 text-xs"
-                />
-                <button
-                  onClick={() => verwijderRegel(i)}
-                  className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
-                  aria-label="Regel verwijderen"
-                >
-                  <Icon name="trash" size={14} />
-                </button>
               </div>
-            ))}
-          </div>
-
-          <button
-            onClick={voegRegelToe}
-            className="mt-2 flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline"
-          >
-            <Icon name="plus" size={12} /> Regel toevoegen
-          </button>
-
-          <div className="mt-4 flex flex-wrap items-end gap-3 border-t border-slate-100 pt-4">
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-slate-700">Opslaan in periode</label>
-              <select
-                value={periodeId}
-                onChange={(e) => setPeriodeId(e.target.value)}
-                className="rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
-              >
-                {periodes.length === 0 && <option value="">Maak eerst een periode aan</option>}
-                {periodes.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.naam}
-                  </option>
-                ))}
-              </select>
+              <Button disabled={bezig || !periodeId || regels.length === 0} onClick={opslaan}>
+                {bezig ? "Bezig..." : "Opslaan in rooster"}
+              </Button>
+              <Button variant="secondary" type="button" onClick={reset}>
+                Opnieuw
+              </Button>
             </div>
-            <Button disabled={bezig || !periodeId} onClick={opslaan}>
-              {bezig ? "Bezig..." : "Opslaan in rooster"}
-            </Button>
-            <Button variant="secondary" type="button" onClick={() => setRegels(null)}>
-              Annuleren
-            </Button>
           </div>
-        </Card>
-      )}
-    </div>
+        )}
+      </Modal>
+    </>
   );
 }

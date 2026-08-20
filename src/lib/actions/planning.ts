@@ -105,3 +105,40 @@ export async function verwijderPlanningItem(id: string) {
   await supabase.from("planning_items").delete().eq("id", id);
   revalidateAgendas();
 }
+
+export async function maakHuiswerkItemsBulk(
+  items: { titel: string; datum: string; subjectId?: string | null; beschrijving?: string }[]
+): Promise<{ error: string; aantal?: undefined } | { error?: undefined; aantal: number }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Niet ingelogd." };
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("family_id")
+    .eq("id", user.id)
+    .single();
+  if (!profile) return { error: "Profiel niet gevonden." };
+
+  const geldig = items.filter((i) => i.titel.trim() && i.datum);
+  if (geldig.length === 0) return { error: "Geen geldige huiswerk-items om op te slaan." };
+
+  const { error } = await supabase.from("planning_items").insert(
+    geldig.map((i) => ({
+      family_id: profile.family_id,
+      subject_id: i.subjectId || null,
+      type: "huiswerk" as const,
+      title: i.titel.trim(),
+      description: i.beschrijving?.trim() || "",
+      due_date: i.datum,
+      status: "open" as const,
+      created_by: user.id,
+    }))
+  );
+
+  if (error) return { error: error.message };
+  revalidateAgendas();
+  return { aantal: geldig.length };
+}

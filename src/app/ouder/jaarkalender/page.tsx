@@ -5,6 +5,7 @@ import { VerwijderJaarEventKnop } from "@/components/verwijder-jaar-event-knop";
 import type { JaarEvent } from "@/lib/types";
 import { JaarOverzicht } from "@/components/jaar-overzicht";
 import { JaarEventForm } from "./jaar-event-form";
+import { JaarkalenderAIImport } from "./jaarkalender-ai-import";
 
 export default async function JaarkalenderPage() {
   const supabase = await createClient();
@@ -32,7 +33,10 @@ export default async function JaarkalenderPage() {
             Vakanties, toetsweken en andere belangrijke periodes - het hele jaar in 1 keer.
           </p>
         </div>
-        <JaarEventForm />
+        <div className="flex gap-2">
+          <JaarkalenderAIImport />
+          <JaarEventForm />
+        </div>
       </div>
 
       <JaarOverzicht events={(events ?? []) as JaarEvent[]} />

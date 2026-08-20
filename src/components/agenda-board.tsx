@@ -6,6 +6,7 @@ import clsx from "clsx";
 import { Icon } from "@/components/icon";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { HuiswerkAIImport } from "@/components/huiswerk-ai-import";
 import { PLANNING_TYPE_META } from "@/lib/planning";
 import { maakPlanningItem, updatePlanningStatus, verwijderPlanningItem } from "@/lib/actions/planning";
 import type {
@@ -249,11 +250,14 @@ export function AgendaBoard({
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-semibold text-slate-900">Agenda</h1>
-        <Button icon={<Icon name="plus" size={18} />} onClick={() => setFormOpen((v) => !v)}>
-          {formOpen ? "Sluiten" : "Nieuw item"}
-        </Button>
+        <div className="flex gap-2">
+          <HuiswerkAIImport subjects={subjects} />
+          <Button icon={<Icon name="plus" size={18} />} onClick={() => setFormOpen((v) => !v)}>
+            {formOpen ? "Sluiten" : "Nieuw item"}
+          </Button>
+        </div>
       </div>
 
       <Card className="flex items-center justify-between gap-2 py-3">
