@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { chunkEnEmbedMateriaal } from "@/lib/rag";
 
 export async function voegLesstofToe(formData: FormData) {
   const supabase = await createClient();
@@ -25,16 +26,29 @@ export async function voegLesstofToe(formData: FormData) {
     return { error: "Vul een titel en de inhoud van de lesstof in." };
   }
 
-  const { error } = await supabase.from("materials").insert({
-    family_id: profile.family_id,
-    subject_id: subjectId,
-    title,
-    content,
-    uploaded_by: user.id,
-    uploaded_by_role: profile.role,
-  });
+  const { data: nieuwMateriaal, error } = await supabase
+    .from("materials")
+    .insert({
+      family_id: profile.family_id,
+      subject_id: subjectId,
+      title,
+      content,
+      uploaded_by: user.id,
+      uploaded_by_role: profile.role,
+    })
+    .select("id")
+    .single();
 
   if (error) return { error: error.message };
+
+  if (nieuwMateriaal) {
+    await chunkEnEmbedMateriaal(supabase, {
+      materialId: nieuwMateriaal.id,
+      subjectId,
+      familyId: profile.family_id,
+      content,
+    });
+  }
 
   revalidatePath(`/ouder/vakken/${subjectId}`);
   revalidatePath(`/kind/vakken/${subjectId}`);
@@ -43,7 +57,18 @@ export async function voegLesstofToe(formData: FormData) {
 
 export async function verwijderLesstof(materialId: string, subjectId: string) {
   const supabase = await createClient();
+
+  const { data: materiaal } = await supabase
+    .from("materials")
+    .select("file_url")
+    .eq("id", materialId)
+    .single();
+
   await supabase.from("materials").delete().eq("id", materialId);
+  if (materiaal?.file_url) {
+    await supabase.storage.from("lesstof").remove([materiaal.file_url]);
+  }
+
   revalidatePath(`/ouder/vakken/${subjectId}`);
   revalidatePath(`/kind/vakken/${subjectId}`);
 }

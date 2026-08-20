@@ -6,6 +6,8 @@ import { Icon } from "@/components/icon";
 import { Button } from "@/components/ui/button";
 import type { ChatMessage } from "@/lib/types";
 
+type WeergaveBericht = ChatMessage & { images?: { url: string; title: string }[] };
+
 export function ChatPanel({
   subjectId,
   subjectName,
@@ -15,7 +17,7 @@ export function ChatPanel({
   subjectName: string;
   initialMessages: ChatMessage[];
 }) {
-  const [messages, setMessages] = useState(initialMessages);
+  const [messages, setMessages] = useState<WeergaveBericht[]>(initialMessages);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -60,6 +62,7 @@ export function ChatPanel({
           role: "model",
           content: data.reply,
           created_at: new Date().toISOString(),
+          images: data.images,
         },
       ]);
     } catch (e) {
@@ -93,7 +96,7 @@ export function ChatPanel({
           {messages.map((m) => (
             <div
               key={m.id}
-              className={clsx("flex", m.role === "user" ? "justify-end" : "justify-start")}
+              className={clsx("flex flex-col", m.role === "user" ? "items-end" : "items-start")}
             >
               <div
                 className={clsx(
@@ -105,6 +108,22 @@ export function ChatPanel({
               >
                 {m.content}
               </div>
+              {m.images && m.images.length > 0 && (
+                <div className="mt-2 flex max-w-[80%] flex-wrap gap-2">
+                  {m.images.map((img, i) => (
+                    <a
+                      key={i}
+                      href={img.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="block overflow-hidden rounded-xl border border-slate-200"
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={img.url} alt={img.title} className="h-28 w-auto object-cover" />
+                    </a>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
           {sending && (

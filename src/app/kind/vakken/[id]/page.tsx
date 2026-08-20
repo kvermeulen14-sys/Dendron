@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { ChatPanel } from "@/components/chat-panel";
 import { MateriaalForm } from "@/components/materiaal-form";
+import { KennisbankUploader } from "@/components/kennisbank-uploader";
 import { Icon } from "@/components/icon";
 
 export default async function KindVakDetailPage({
@@ -41,8 +42,9 @@ export default async function KindVakDetailPage({
 
       <div className="flex flex-col gap-3">
         <p className="text-sm text-slate-500">
-          Heb je eigen aantekeningen of extra uitleg die kunnen helpen? Voeg ze toe.
+          Heb je een foto van je boek of aantekeningen die kunnen helpen? Voeg ze toe.
         </p>
+        <KennisbankUploader subjectId={id} />
         <div>
           <MateriaalForm subjectId={id} />
         </div>
