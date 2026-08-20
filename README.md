@@ -16,8 +16,9 @@ uit te breiden naar meer vakken en meer kinderen.
   in plaats van dat de app het volledig overneemt.
 - **Ouder-dashboard (CMS)**: vakken aanmaken, lesstof toevoegen (tekst, of een PDF/foto
   die de AI automatisch omzet naar kennisbank-tekst inclusief hoofdstuk-/opdrachtnummers),
-  toetsvormen met eigen leeradvies, een wekelijks rooster, inzicht in de agenda en
-  voortgang van je kind.
+  toetsvormen met eigen leeradvies, een rooster per periode (incl. uitzonderingen per dag
+  en automatische herkenning uit een screenshot, bijv. SomToday), een jaarkalender met
+  vakanties/toetsweken, inzicht in de agenda en voortgang van je kind.
 - **Kind-omgeving**: eigen agenda (met roosterblokken en fietstijd), eigen planning, en
   per vak een chat met een AI-vakdocent die dicht bij de aangeleverde lesstof blijft,
   liever vragen terug stelt dan meteen het antwoord geeft, en relevante geuploade
@@ -40,8 +41,10 @@ uit te breiden naar meer vakken en meer kinderen.
 1. Maak een gratis project aan op [supabase.com](https://supabase.com).
 2. Open **SQL Editor** in het Supabase-dashboard en voer de migraties in volgorde uit:
    [`0001_init.sql`](supabase/migrations/0001_init.sql) (alle basistabellen, rollen-logica
-   en beveiliging), daarna [`0002_toetsvormen_rooster_kennisbank.sql`](supabase/migrations/0002_toetsvormen_rooster_kennisbank.sql)
-   (toetsvormen, rooster en de RAG-kennisbank met pgvector). Plak elk bestand in de SQL
+   en beveiliging), [`0002_toetsvormen_rooster_kennisbank.sql`](supabase/migrations/0002_toetsvormen_rooster_kennisbank.sql)
+   (toetsvormen, rooster en de RAG-kennisbank met pgvector), daarna
+   [`0003_rooster_periodes_jaarkalender.sql`](supabase/migrations/0003_rooster_periodes_jaarkalender.sql)
+   (roosterperiodes, uitzonderingen en de jaarkalender). Plak elk bestand in de SQL
    Editor en klik Run.
 3. Ga naar **Authentication -> Providers -> Email** en overweeg "Confirm email"
    uit te zetten voor het gemak (het is een besloten gezinsapp). Laat je dit aan
