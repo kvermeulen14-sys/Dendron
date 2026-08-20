@@ -148,9 +148,9 @@ export async function verwijderRoosterItem(id: string) {
 export async function maakRoosterItemsBulk(
   periodeId: string,
   items: { dagVanWeek: number; startTijd: string; eindTijd: string; titel: string; subjectId?: string | null }[]
-) {
+): Promise<{ error: string; aantal?: undefined } | { error?: undefined; aantal: number }> {
   const ctx = await vereistOuder();
-  if ("error" in ctx) return ctx;
+  if ("error" in ctx) return { error: ctx.error ?? "Onbekende fout." };
   const { supabase, profile, userId } = ctx;
 
   const geldig = items.filter(
@@ -174,7 +174,7 @@ export async function maakRoosterItemsBulk(
 
   if (error) return { error: error.message };
   revalidateRooster();
-  return { success: true, aantal: geldig.length };
+  return { aantal: geldig.length };
 }
 
 // -- Uitzonderingen -------------------------------------------------------
