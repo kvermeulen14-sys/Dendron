@@ -2,6 +2,8 @@ export type Role = "ouder" | "kind";
 
 export type PlanningType = "huiswerk" | "toets" | "prive" | "leermoment";
 export type PlanningStatus = "voorstel" | "open" | "klaar";
+export type MaterialBron = "tekst" | "pdf" | "foto";
+export type RoosterType = "school" | "anders";
 
 export interface Profile {
   id: string;
@@ -14,6 +16,7 @@ export interface Profile {
 export interface Family {
   id: string;
   name: string;
+  reistijd_minuten: number;
   created_at: string;
 }
 
@@ -35,8 +38,35 @@ export interface Material {
   title: string;
   content: string;
   file_url: string | null;
+  hoofdstuk: string | null;
+  opdrachten: string | null;
+  image_path: string | null;
+  bron_type: MaterialBron;
   uploaded_by: string;
   uploaded_by_role: Role;
+  created_at: string;
+}
+
+export interface TestType {
+  id: string;
+  family_id: string;
+  name: string;
+  dagen_van_tevoren: number;
+  aantal_leermomenten: number;
+  created_by: string;
+  created_at: string;
+}
+
+export interface RoosterItem {
+  id: string;
+  family_id: string;
+  subject_id: string | null;
+  dag_van_week: number; // 1 = maandag ... 7 = zondag
+  start_tijd: string; // "HH:MM:SS"
+  eind_tijd: string;
+  titel: string;
+  type: RoosterType;
+  created_by: string;
   created_at: string;
 }
 
@@ -45,6 +75,7 @@ export interface PlanningItem {
   family_id: string;
   subject_id: string | null;
   parent_item_id: string | null;
+  test_type_id: string | null;
   type: PlanningType;
   title: string;
   description: string;

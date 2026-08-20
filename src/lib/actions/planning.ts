@@ -30,6 +30,7 @@ export async function maakPlanningItem(formData: FormData) {
   const title = String(formData.get("title") || "").trim();
   const dueDate = String(formData.get("dueDate") || "");
   const subjectId = String(formData.get("subjectId") || "") || null;
+  const testTypeId = String(formData.get("testTypeId") || "") || null;
   const description = String(formData.get("description") || "").trim();
 
   if (!title || !dueDate) return { error: "Vul een titel en datum in." };
@@ -39,6 +40,7 @@ export async function maakPlanningItem(formData: FormData) {
     .insert({
       family_id: profile.family_id,
       subject_id: subjectId,
+      test_type_id: type === "toets" ? testTypeId : null,
       type,
       title,
       description,
@@ -52,9 +54,25 @@ export async function maakPlanningItem(formData: FormData) {
   if (error) return { error: error.message };
 
   // Bij een toets: meteen gespreide leermomenten voorstellen, zodat leren
-  // in delen gebeurt in plaats van pas op het laatste moment.
+  // in delen gebeurt in plaats van pas op het laatste moment. Met een
+  // gekozen toetsvorm volgen we het leeradvies daarvan.
   if (type === "toets" && nieuwItem) {
-    const voorstellen = stelLeermomentenVoor(new Date(), new Date(dueDate));
+    let toetsvormOpties: { dagenVanTevoren?: number; aantalMomenten?: number } | undefined;
+    if (testTypeId) {
+      const { data: toetsvorm } = await supabase
+        .from("test_types")
+        .select("dagen_van_tevoren, aantal_leermomenten")
+        .eq("id", testTypeId)
+        .single();
+      if (toetsvorm) {
+        toetsvormOpties = {
+          dagenVanTevoren: toetsvorm.dagen_van_tevoren,
+          aantalMomenten: toetsvorm.aantal_leermomenten,
+        };
+      }
+    }
+
+    const voorstellen = stelLeermomentenVoor(new Date(), new Date(dueDate), toetsvormOpties);
     if (voorstellen.length > 0) {
       await supabase.from("planning_items").insert(
         voorstellen.map((v) => ({

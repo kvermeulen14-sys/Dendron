@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { PLANNING_TYPE_META } from "@/lib/planning";
 import { maakPlanningItem, updatePlanningStatus, verwijderPlanningItem } from "@/lib/actions/planning";
-import type { PlanningItem, PlanningType, Subject } from "@/lib/types";
+import type { PlanningItem, PlanningType, RoosterItem, Subject, TestType } from "@/lib/types";
 
 function naarMaandagVanWeek(datum: Date) {
   const d = new Date(datum);
@@ -29,6 +29,25 @@ function naarIsoDatum(datum: Date) {
   return datum.toISOString().slice(0, 10);
 }
 
+function naarIsoWeekdag(datum: Date) {
+  const jsDag = datum.getDay(); // 0 = zondag
+  return jsDag === 0 ? 7 : jsDag; // 1 = maandag ... 7 = zondag
+}
+
+function tijdKort(tijd: string) {
+  return tijd.slice(0, 5);
+}
+
+function tijdPlusMinuten(tijd: string, minuten: number) {
+  const [h, m] = tijd.split(":").map(Number);
+  const totaal = Math.max(0, Math.min(23 * 60 + 59, h * 60 + m + minuten));
+  const hh = Math.floor(totaal / 60)
+    .toString()
+    .padStart(2, "0");
+  const mm = (totaal % 60).toString().padStart(2, "0");
+  return `${hh}:${mm}`;
+}
+
 function formatDatumLabel(iso: string) {
   const datum = new Date(iso + "T00:00:00");
   const vandaag = new Date();
@@ -47,12 +66,62 @@ function formatDatumLabel(iso: string) {
   return label;
 }
 
+interface RoosterBlok {
+  tijd: string;
+  titel: string;
+  isFietsen: boolean;
+}
+
+function roosterBlokkenVoorDag(
+  roosterItems: RoosterItem[],
+  isoWeekdag: number,
+  reistijdMinuten: number
+): RoosterBlok[] {
+  const dagItems = roosterItems
+    .filter((r) => r.dag_van_week === isoWeekdag)
+    .sort((a, b) => a.start_tijd.localeCompare(b.start_tijd));
+  if (dagItems.length === 0) return [];
+
+  const blokken: RoosterBlok[] = [];
+  const eerste = dagItems[0];
+  const laatste = dagItems[dagItems.length - 1];
+
+  if (reistijdMinuten > 0) {
+    blokken.push({
+      tijd: `${tijdPlusMinuten(eerste.start_tijd, -reistijdMinuten)}-${tijdKort(eerste.start_tijd)}`,
+      titel: "Fietsen naar school",
+      isFietsen: true,
+    });
+  }
+  for (const item of dagItems) {
+    blokken.push({
+      tijd: `${tijdKort(item.start_tijd)}-${tijdKort(item.eind_tijd)}`,
+      titel: item.titel,
+      isFietsen: false,
+    });
+  }
+  if (reistijdMinuten > 0) {
+    blokken.push({
+      tijd: `${tijdKort(laatste.eind_tijd)}-${tijdPlusMinuten(laatste.eind_tijd, reistijdMinuten)}`,
+      titel: "Fietsen naar huis",
+      isFietsen: true,
+    });
+  }
+  return blokken;
+}
+
 export function AgendaBoard({
   items,
   subjects,
+  testTypes,
+  roosterItems,
+  reistijdMinuten,
 }: {
   items: PlanningItem[];
   subjects: Subject[];
+  testTypes: TestType[];
+  roosterItems: RoosterItem[];
+  reistijdMinuten: number;
 }) {
   const router = useRouter();
   const [formOpen, setFormOpen] = useState(false);
@@ -223,6 +292,25 @@ export function AgendaBoard({
               </div>
             )}
 
+            {type === "toets" && testTypes.length > 0 && (
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                  Toetsvorm (bepaalt het leeradvies)
+                </label>
+                <select
+                  name="testTypeId"
+                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                >
+                  <option value="">Standaard vuistregel</option>
+                  {testTypes.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name} ({t.dagen_van_tevoren} dagen vooraf, {t.aantal_leermomenten}x leren)
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             <div>
               <label className="mb-1.5 block text-sm font-medium text-slate-700">
                 {type === "toets" ? "Datum van de toets" : "Datum"}
@@ -235,7 +323,7 @@ export function AgendaBoard({
               />
               {type === "toets" && (
                 <p className="mt-1.5 text-xs text-slate-500">
-                  Er worden automatisch een paar leermomenten voorgesteld die je samen kunt
+                  Er worden automatisch gespreide leermomenten voorgesteld die je samen kunt
                   aanpassen.
                 </p>
               )}
@@ -267,6 +355,7 @@ export function AgendaBoard({
           const iso = naarIsoDatum(dag);
           const isVandaag = iso === vandaagIso;
           const dagItems = itemsPerDag.get(iso) ?? [];
+          const roosterBlokken = roosterBlokkenVoorDag(roosterItems, naarIsoWeekdag(dag), reistijdMinuten);
           return (
             <div
               key={iso}
@@ -289,8 +378,27 @@ export function AgendaBoard({
                 </p>
               </div>
 
+              {roosterBlokken.length > 0 && (
+                <div className="flex flex-col gap-1 border-b border-slate-100 pb-2">
+                  {roosterBlokken.map((b, i) => (
+                    <div
+                      key={i}
+                      className={clsx(
+                        "flex items-start gap-1 rounded-lg px-1.5 py-1 text-[10px] leading-snug",
+                        b.isFietsen ? "text-slate-400" : "bg-slate-50 text-slate-600"
+                      )}
+                    >
+                      <Icon name={b.isFietsen ? "bike" : "school"} size={11} className="mt-0.5 shrink-0" />
+                      <span className="line-clamp-1">
+                        {b.tijd} {b.titel}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               <div className="flex flex-col gap-1.5">
-                {dagItems.length === 0 && (
+                {dagItems.length === 0 && roosterBlokken.length === 0 && (
                   <p className="pt-2 text-center text-xs text-slate-300">-</p>
                 )}
                 {dagItems.map((item) => {
@@ -371,11 +479,31 @@ export function AgendaBoard({
         {weekDagen.map((dag) => {
           const iso = naarIsoDatum(dag);
           const dagItems = itemsPerDag.get(iso) ?? [];
+          const roosterBlokken = roosterBlokkenVoorDag(roosterItems, naarIsoWeekdag(dag), reistijdMinuten);
           return (
             <div key={iso}>
               <p className="mb-2 text-sm font-medium capitalize text-slate-500">
                 {formatDatumLabel(iso)}
               </p>
+
+              {roosterBlokken.length > 0 && (
+                <div className="mb-2 flex flex-col gap-1 rounded-xl border border-slate-100 bg-slate-50/60 p-2.5">
+                  {roosterBlokken.map((b, i) => (
+                    <div
+                      key={i}
+                      className={clsx(
+                        "flex items-center gap-2 text-xs",
+                        b.isFietsen ? "text-slate-400" : "text-slate-600"
+                      )}
+                    >
+                      <Icon name={b.isFietsen ? "bike" : "school"} size={13} className="shrink-0" />
+                      <span className="font-medium">{b.tijd}</span>
+                      <span>{b.titel}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {dagItems.length === 0 ? (
                 <Card className="py-3">
                   <p className="text-sm text-slate-400">Niets gepland.</p>

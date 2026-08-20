@@ -40,36 +40,55 @@ function toDateOnly(date: Date) {
   return date.toISOString().slice(0, 10);
 }
 
+// Verdeelt N momenten binnen een venster, met kortere tussenpozen naarmate
+// het venster (de toetsdatum) nadert - spaced repetition-achtig.
+function genereerProporties(n: number): number[] {
+  if (n <= 1) return [0.7];
+  const start = 0.2;
+  const eind = 0.85;
+  return Array.from({ length: n }, (_, i) => {
+    const t = i / (n - 1);
+    const curved = Math.pow(t, 1.4);
+    return start + curved * (eind - start);
+  });
+}
+
 /**
  * Stelt gespreide leermomenten voor tussen vandaag en een toetsdatum, zodat
  * er in delen geleerd wordt in plaats van alles op het laatste moment.
  * Hoe dichter bij de toets, hoe korter de tussenpozen (spaced repetition-achtig).
  * Dit zijn altijd voorstellen ("voorstel"-status) - de leerling past ze samen
  * met een ouder aan naar wat past naast ander huiswerk.
+ *
+ * Met een toetsvorm (dagenVanTevoren/aantalMomenten) wordt dat leeradvies
+ * gevolgd; zonder toetsvorm valt dit terug op een standaard vuistregel op
+ * basis van hoeveel dagen er beschikbaar zijn.
  */
-export function stelLeermomentenVoor(vandaag: Date, toetsDatum: Date) {
-  const dagenBeschikbaar = Math.floor(
+export function stelLeermomentenVoor(
+  vandaag: Date,
+  toetsDatum: Date,
+  opties?: { dagenVanTevoren?: number; aantalMomenten?: number }
+) {
+  const dagenTotToets = Math.floor(
     (toetsDatum.getTime() - vandaag.getTime()) / (1000 * 60 * 60 * 24)
   );
+  if (dagenTotToets < 2) return [];
 
-  if (dagenBeschikbaar < 2) return [];
+  // Venster waarbinnen geleerd wordt: het advies van de toetsvorm, maar niet
+  // langer dan er daadwerkelijk dagen beschikbaar zijn tot de toets.
+  const dagenBeschikbaar = Math.min(opties?.dagenVanTevoren ?? dagenTotToets, dagenTotToets);
 
-  let aantalMomenten: number;
-  if (dagenBeschikbaar >= 14) aantalMomenten = 4;
-  else if (dagenBeschikbaar >= 7) aantalMomenten = 3;
-  else if (dagenBeschikbaar >= 4) aantalMomenten = 2;
-  else aantalMomenten = 1;
+  let aantalMomenten = opties?.aantalMomenten;
+  if (!aantalMomenten) {
+    if (dagenBeschikbaar >= 14) aantalMomenten = 4;
+    else if (dagenBeschikbaar >= 7) aantalMomenten = 3;
+    else if (dagenBeschikbaar >= 4) aantalMomenten = 2;
+    else aantalMomenten = 1;
+  }
+  aantalMomenten = Math.max(1, Math.min(aantalMomenten, dagenBeschikbaar, 8));
 
-  // Verhoudingen binnen het beschikbare interval, ingeplande momenten liggen
-  // dichter bij elkaar naarmate de toets nadert.
-  const proporties: Record<number, number[]> = {
-    1: [0.7],
-    2: [0.35, 0.75],
-    3: [0.25, 0.55, 0.8],
-    4: [0.15, 0.4, 0.65, 0.85],
-  };
-
-  const dagenVoorToets = proporties[aantalMomenten].map((p) =>
+  const dagenVoorVensterStart = dagenTotToets - dagenBeschikbaar;
+  const dagenVoorToets = genereerProporties(aantalMomenten).map((p) =>
     Math.max(1, Math.round(dagenBeschikbaar * p))
   );
 
@@ -77,7 +96,7 @@ export function stelLeermomentenVoor(vandaag: Date, toetsDatum: Date) {
   const uniekeDagen = Array.from(new Set(dagenVoorToets)).sort((a, b) => a - b);
 
   return uniekeDagen.map((dagenOffset, i) => ({
-    due_date: toDateOnly(addDays(vandaag, dagenOffset)),
+    due_date: toDateOnly(addDays(vandaag, dagenVoorVensterStart + dagenOffset)),
     volgnummer: i + 1,
     totaal: uniekeDagen.length,
   }));

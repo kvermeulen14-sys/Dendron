@@ -24,6 +24,12 @@ import {
   ChevronLeft,
   ChevronRight,
   LogIn,
+  Bike,
+  School,
+  Sparkles,
+  ImageIcon,
+  FileText,
+  X,
   type LucideProps,
 } from "lucide-react";
 
@@ -53,6 +59,12 @@ export const ICONS = {
   "chevron-left": ChevronLeft,
   "chevron-right": ChevronRight,
   "log-in": LogIn,
+  bike: Bike,
+  school: School,
+  sparkles: Sparkles,
+  image: ImageIcon,
+  file: FileText,
+  close: X,
 } as const;
 
 export type IconName = keyof typeof ICONS;
