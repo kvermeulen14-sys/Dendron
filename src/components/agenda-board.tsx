@@ -10,7 +10,13 @@ import { Card } from "@/components/ui/card";
 import { Modal } from "@/components/ui/modal";
 import { HuiswerkAIImport } from "@/components/huiswerk-ai-import";
 import { PLANNING_TYPE_META } from "@/lib/planning";
-import { maakPlanningItem, updatePlanningStatus, verplaatsPlanningItem, verwijderPlanningItem } from "@/lib/actions/planning";
+import {
+  bewerkPlanningItem,
+  maakPlanningItem,
+  updatePlanningStatus,
+  verplaatsPlanningItem,
+  verwijderPlanningItem,
+} from "@/lib/actions/planning";
 import type {
   PlanningItem,
   PlanningType,
@@ -197,6 +203,9 @@ export function AgendaBoard({
   const [weekOffset, setWeekOffset] = useState(0);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dragOverIso, setDragOverIso] = useState<string | null>(null);
+  const [bewerkItem, setBewerkItem] = useState<PlanningItem | null>(null);
+  const [bewerkEstimatedMinutes, setBewerkEstimatedMinutes] = useState<number | null>(null);
+  const [bewerkError, setBewerkError] = useState<string | null>(null);
 
   const vandaagIso = useMemo(() => naarIsoDatum(new Date()), []);
   const dezeWeekMaandag = useMemo(() => naarMaandagVanWeek(new Date()), []);
@@ -272,6 +281,24 @@ export function AgendaBoard({
       await verwijderPlanningItem(item.id);
       router.refresh();
     });
+  }
+
+  function openBewerken(item: PlanningItem) {
+    setBewerkError(null);
+    setBewerkEstimatedMinutes(item.estimated_minutes);
+    setBewerkItem(item);
+  }
+
+  async function handleBewerkSubmit(formData: FormData) {
+    if (!bewerkItem) return;
+    setBewerkError(null);
+    const res = await bewerkPlanningItem(bewerkItem.id, formData);
+    if (res?.error) {
+      setBewerkError(res.error);
+      return;
+    }
+    setBewerkItem(null);
+    router.refresh();
   }
 
   function verplaats(item: PlanningItem, nieuweDatum: string) {
@@ -515,6 +542,103 @@ export function AgendaBoard({
         </form>
       </Modal>
 
+      <Modal open={bewerkItem !== null} onClose={() => setBewerkItem(null)} title="Item bewerken">
+        {bewerkItem && (
+          <form action={handleBewerkSubmit} className="flex flex-col gap-4">
+            <div className="flex items-center gap-1.5 text-xs font-medium text-slate-500">
+              <Icon name={PLANNING_TYPE_META[bewerkItem.type].icon} size={14} />
+              {PLANNING_TYPE_META[bewerkItem.type].label}
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">Titel</label>
+              <input
+                name="title"
+                required
+                defaultValue={bewerkItem.title}
+                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+              />
+            </div>
+
+            {bewerkItem.type !== "prive" && subjects.length > 0 && (
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">Vak</label>
+                <select
+                  name="subjectId"
+                  defaultValue={bewerkItem.subject_id ?? ""}
+                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                >
+                  <option value="">Geen specifiek vak</option>
+                  {subjects.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                {bewerkItem.type === "toets" ? "Datum van de toets" : "Datum"}
+              </label>
+              <input
+                type="date"
+                name="dueDate"
+                required
+                defaultValue={bewerkItem.due_date}
+                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                Geschatte tijd (optioneel)
+              </label>
+              <div className="flex flex-wrap gap-1.5">
+                {TIJD_OPTIES.map((minuten) => (
+                  <button
+                    type="button"
+                    key={minuten}
+                    onClick={() => setBewerkEstimatedMinutes((huidig) => (huidig === minuten ? null : minuten))}
+                    className={clsx(
+                      "rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors",
+                      bewerkEstimatedMinutes === minuten
+                        ? "border-slate-900 bg-slate-900 text-white"
+                        : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                    )}
+                  >
+                    {formatMinuten(minuten)}
+                  </button>
+                ))}
+              </div>
+              <input type="hidden" name="estimatedMinutes" value={bewerkEstimatedMinutes ?? ""} />
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                Toelichting (optioneel)
+              </label>
+              <textarea
+                name="description"
+                rows={2}
+                defaultValue={bewerkItem.description}
+                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+              />
+            </div>
+
+            {bewerkError && <p className="text-sm text-rose-600">{bewerkError}</p>}
+
+            <div className="flex gap-2">
+              <SubmitButton>Wijzigingen opslaan</SubmitButton>
+              <Button type="button" variant="secondary" onClick={() => setBewerkItem(null)}>
+                Annuleren
+              </Button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
       {/* Kalenderweergave: 7 dagen naast elkaar, zoals afsprakenplanning-software */}
       <div className="hidden gap-2 md:grid md:grid-cols-7">
         {weekDagen.map((dag) => {
@@ -533,18 +657,18 @@ export function AgendaBoard({
               onDragLeave={() => setDragOverIso((huidig) => (huidig === iso ? null : huidig))}
               onDrop={(e) => dropOpDag(e, iso)}
               className={clsx(
-                "flex min-h-[220px] flex-col gap-2 rounded-2xl border p-2.5 transition-colors",
+                "flex min-h-[220px] flex-col gap-2 overflow-hidden rounded-2xl border p-3 transition-colors md:h-[calc(100vh-260px)] md:min-h-[420px]",
                 isVandaag ? "border-blue-300 bg-blue-50/50" : "border-slate-200 bg-white",
                 dragOverIso === iso && "border-blue-400 bg-blue-50 ring-2 ring-blue-200"
               )}
             >
-              <div className="text-center">
-                <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
+              <div className="shrink-0 text-center">
+                <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
                   {dag.toLocaleDateString("nl-NL", { weekday: "short" })}
                 </p>
                 <p
                   className={clsx(
-                    "text-lg font-semibold",
+                    "text-xl font-semibold",
                     isVandaag ? "text-blue-600" : "text-slate-800"
                   )}
                 >
@@ -553,16 +677,16 @@ export function AgendaBoard({
               </div>
 
               {roosterBlokken.length > 0 && (
-                <div className="flex flex-col gap-1 border-b border-slate-100 pb-2">
+                <div className="flex shrink-0 flex-col gap-1 border-b border-slate-100 pb-2">
                   {roosterBlokken.map((b, i) => (
                     <div
                       key={i}
                       className={clsx(
-                        "flex items-start gap-1 rounded-lg px-1.5 py-1 text-[10px] leading-snug",
+                        "flex items-start gap-1 rounded-lg px-1.5 py-1 text-xs leading-snug",
                         b.isFietsen ? "text-slate-400" : "bg-slate-50 text-slate-600"
                       )}
                     >
-                      <Icon name={b.isFietsen ? "bike" : "school"} size={11} className="mt-0.5 shrink-0" />
+                      <Icon name={b.isFietsen ? "bike" : "school"} size={12} className="mt-0.5 shrink-0" />
                       <span className="line-clamp-1">
                         {b.tijd} {b.titel}
                       </span>
@@ -571,9 +695,9 @@ export function AgendaBoard({
                 </div>
               )}
 
-              <div className="flex flex-col gap-1.5">
+              <div className="flex flex-1 flex-col gap-2 overflow-y-auto">
                 {dagItems.length === 0 && roosterBlokken.length === 0 && (
-                  <p className="pt-2 text-center text-xs text-slate-300">-</p>
+                  <p className="pt-2 text-center text-sm text-slate-300">-</p>
                 )}
                 {dagItems.map((item) => {
                   const meta = PLANNING_TYPE_META[item.type];
@@ -593,15 +717,15 @@ export function AgendaBoard({
                         setDragOverIso(null);
                       }}
                       className={clsx(
-                        "rounded-lg border px-2 py-1.5 text-xs transition-opacity",
+                        "rounded-lg border px-2.5 py-2 text-sm transition-opacity",
                         meta.badgeClass,
                         isKlaar && "opacity-50",
                         !isVoorstel && "cursor-grab active:cursor-grabbing",
                         draggedId === item.id && "opacity-30"
                       )}
                     >
-                      <div className="flex items-start gap-1">
-                        <Icon name={meta.icon} size={12} className="mt-0.5 shrink-0" />
+                      <div className="flex items-start gap-1.5">
+                        <Icon name={meta.icon} size={14} className="mt-0.5 shrink-0" />
                         <span
                           className={clsx(
                             "line-clamp-2 font-medium leading-snug",
@@ -611,18 +735,20 @@ export function AgendaBoard({
                           {item.title}
                         </span>
                       </div>
-                      {item.estimated_minutes && (
-                        <p className="mt-0.5 pl-4 text-[10px] text-slate-500">
-                          ~{formatMinuten(item.estimated_minutes)}
+                      {(subjectNaam(item.subject_id) || item.estimated_minutes) && (
+                        <p className="mt-0.5 truncate pl-5 text-xs text-slate-500">
+                          {[subjectNaam(item.subject_id), item.estimated_minutes ? `~${formatMinuten(item.estimated_minutes)}` : null]
+                            .filter(Boolean)
+                            .join(" · ")}
                         </p>
                       )}
-                      <div className="mt-1 flex items-center gap-2">
+                      <div className="mt-1.5 flex items-center gap-2.5">
                         {isVoorstel ? (
                           <>
                             <button
                               disabled={pending}
                               onClick={() => accepteer(item)}
-                              className="text-[10px] font-medium underline underline-offset-2 disabled:opacity-50"
+                              className="text-xs font-medium underline underline-offset-2 disabled:opacity-50"
                             >
                               Prima zo
                             </button>
@@ -632,18 +758,25 @@ export function AgendaBoard({
                               aria-label="Verwijderen"
                               className="opacity-70 hover:opacity-100 disabled:opacity-30"
                             >
-                              <Icon name={pending ? "loader" : "trash"} size={11} className={pending ? "animate-spin" : undefined} />
+                              <Icon name={pending ? "loader" : "trash"} size={13} className={pending ? "animate-spin" : undefined} />
                             </button>
                           </>
                         ) : (
                           <>
+                            <button
+                              onClick={() => openBewerken(item)}
+                              aria-label="Bewerken"
+                              className="opacity-70 hover:opacity-100"
+                            >
+                              <Icon name="pencil-line" size={13} />
+                            </button>
                             <button
                               disabled={pending}
                               onClick={() => toggleStatus(item)}
                               aria-label="Klaar markeren"
                               className="opacity-70 hover:opacity-100 disabled:opacity-30"
                             >
-                              <Icon name="check" size={11} />
+                              <Icon name="check" size={13} />
                             </button>
                             <button
                               disabled={pending}
@@ -651,7 +784,7 @@ export function AgendaBoard({
                               aria-label="Verwijderen"
                               className="opacity-70 hover:opacity-100 disabled:opacity-30"
                             >
-                              <Icon name={pending ? "loader" : "trash"} size={11} className={pending ? "animate-spin" : undefined} />
+                              <Icon name={pending ? "loader" : "trash"} size={13} className={pending ? "animate-spin" : undefined} />
                             </button>
                           </>
                         )}
@@ -777,6 +910,13 @@ export function AgendaBoard({
                           </div>
                         ) : (
                           <div className="flex shrink-0 items-center gap-1.5">
+                            <button
+                              onClick={() => openBewerken(item)}
+                              className="rounded-xl p-2.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                              aria-label="Bewerken"
+                            >
+                              <Icon name="pencil-line" size={16} />
+                            </button>
                             <button
                               disabled={pending}
                               onClick={() => toggleStatus(item)}

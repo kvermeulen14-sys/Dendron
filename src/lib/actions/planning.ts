@@ -97,6 +97,39 @@ export async function maakPlanningItem(formData: FormData) {
   return { success: true };
 }
 
+export async function bewerkPlanningItem(id: string, formData: FormData) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Niet ingelogd." };
+
+  const title = String(formData.get("title") || "").trim();
+  const dueDate = String(formData.get("dueDate") || "");
+  const subjectId = String(formData.get("subjectId") || "") || null;
+  const description = String(formData.get("description") || "").trim();
+  const estimatedMinutesRaw = String(formData.get("estimatedMinutes") || "");
+  const estimatedMinutes = estimatedMinutesRaw ? Number(estimatedMinutesRaw) : null;
+
+  if (!title || !dueDate) return { error: "Vul een titel en datum in." };
+
+  const { error } = await supabase
+    .from("planning_items")
+    .update({
+      title,
+      subject_id: subjectId,
+      due_date: dueDate,
+      description,
+      estimated_minutes: estimatedMinutes,
+    })
+    .eq("id", id);
+
+  if (error) return { error: error.message };
+
+  revalidateAgendas();
+  return { success: true };
+}
+
 export async function updatePlanningStatus(id: string, status: "open" | "klaar" | "voorstel") {
   const supabase = await createClient();
   await supabase.from("planning_items").update({ status }).eq("id", id);
