@@ -11,7 +11,7 @@ import { Modal } from "@/components/ui/modal";
 import { HuiswerkAIImport } from "@/components/huiswerk-ai-import";
 import { TijdSelect } from "@/components/ui/tijd-select";
 import { PLANNING_TYPE_META } from "@/lib/planning";
-import { JAAR_EVENT_META, eventsOpDatum } from "@/lib/jaarkalender";
+import { JAAR_EVENT_META, eventsOpDatum, naarIsoDatum } from "@/lib/jaarkalender";
 import {
   bewerkPlanningItem,
   maakPlanningItem,
@@ -45,10 +45,6 @@ function voegDagenToe(datum: Date, dagen: number) {
   return d;
 }
 
-function naarIsoDatum(datum: Date) {
-  return datum.toISOString().slice(0, 10);
-}
-
 function isoPlusDagen(iso: string, dagen: number) {
   const d = new Date(iso + "T00:00:00");
   d.setDate(d.getDate() + dagen);
@@ -69,10 +65,10 @@ const TIJD_OPTIES = [15, 30, 45, 60, 90, 120];
 // hoogte, zodat je in 1 oogopslag ziet hoeveel tijd iets kost en hoeveel
 // ruimte er nog over is - net als in een gewone agenda-app. Het venster
 // (6-22u) breidt automatisch uit als er iets buiten die uren gepland staat.
-const UUR_HOOGTE = 52;
+const UUR_HOOGTE = 40;
 const STANDAARD_VAN_UUR = 6;
 const STANDAARD_TOT_UUR = 22;
-const MIN_BLOK_PX = 18;
+const MIN_BLOK_PX = 22;
 const ONBEKENDE_DUUR_MINUTEN = 30;
 
 function hoogteVoorDuur(duurMinuten: number) {
@@ -145,9 +141,13 @@ function roosterBlokkenVoorDag(
   periodes: RoosterPeriode[],
   roosterItems: RoosterItem[],
   uitzonderingen: RoosterUitzondering[],
-  reistijdMinuten: number
+  reistijdMinuten: number,
+  jaarEvents: JaarEvent[]
 ): RoosterBlok[] {
   const iso = naarIsoDatum(datum);
+  // In een vakantie (uit de jaarkalender) vervalt het schoolrooster
+  // automatisch - andere agenda-items (huiswerk, toetsen, ...) blijven staan.
+  if (eventsOpDatum(jaarEvents, datum).some((e) => e.type === "vakantie")) return [];
   const weekdag = naarIsoWeekdag(datum);
   const periode = vindPeriode(periodes, iso);
   const dagUitzonderingen = uitzonderingen.filter((u) => u.datum === iso);
@@ -283,10 +283,13 @@ export function AgendaBoard({
   const roosterPerDag = useMemo(() => {
     const map = new Map<string, RoosterBlok[]>();
     for (const dag of weekDagen) {
-      map.set(naarIsoDatum(dag), roosterBlokkenVoorDag(dag, periodes, roosterItems, uitzonderingen, reistijdMinuten));
+      map.set(
+        naarIsoDatum(dag),
+        roosterBlokkenVoorDag(dag, periodes, roosterItems, uitzonderingen, reistijdMinuten, jaarEvents)
+      );
     }
     return map;
-  }, [weekDagen, periodes, roosterItems, uitzonderingen, reistijdMinuten]);
+  }, [weekDagen, periodes, roosterItems, uitzonderingen, reistijdMinuten, jaarEvents]);
 
   const { vanUur, totUur } = useMemo(() => {
     let minMin = STANDAARD_VAN_UUR * 60;
@@ -549,7 +552,7 @@ export function AgendaBoard({
                   <option value="">Geen specifiek vak</option>
                   {subjects.map((s) => (
                     <option key={s.id} value={s.id}>
-                      {s.name}
+                      {s.code ? `${s.code} - ${s.name}` : s.name}
                     </option>
                   ))}
                 </select>
@@ -677,7 +680,7 @@ export function AgendaBoard({
                   <option value="">Geen specifiek vak</option>
                   {subjects.map((s) => (
                     <option key={s.id} value={s.id}>
-                      {s.name}
+                      {s.code ? `${s.code} - ${s.name}` : s.name}
                     </option>
                   ))}
                 </select>
@@ -759,27 +762,30 @@ export function AgendaBoard({
       </Modal>
 
       {/* Kalenderweergave: tijdlijn 7 dagen naast elkaar, zoals afsprakenplanning-software */}
-      <div className="hidden overflow-x-auto md:block">
+      <div className="hidden overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm md:block">
+        <div className="overflow-x-auto">
+        <div className="max-h-[calc(100vh-280px)] min-h-[280px] overflow-y-auto">
         <div
-          className="grid min-w-[760px] gap-x-2 gap-y-0"
-          style={{ gridTemplateColumns: `44px repeat(7, minmax(0, 1fr))` }}
+          className="grid min-w-[760px]"
+          style={{ gridTemplateColumns: `48px repeat(7, minmax(0, 1fr))` }}
         >
-          {/* rij 1: lege hoek + dagkoppen (hoogte schaalt automatisch mee met de langste kop) */}
-          <div />
-          {weekDagen.map((dag) => {
+          {/* rij 1: lege hoek + dagkoppen (sticky, blijft zichtbaar tijdens scrollen) */}
+          <div className="sticky top-0 z-20 border-b border-slate-100 bg-white" />
+          {weekDagen.map((dag, i) => {
             const iso = naarIsoDatum(dag);
             const isVandaag = iso === vandaagIso;
             const dagItems = itemsPerDag.get(iso) ?? [];
-            const ongeplandeItems = dagItems.filter((i) => i.status === "voorstel" || !i.start_time);
+            const ongeplandeItems = dagItems.filter((it) => it.status === "voorstel" || !it.start_time);
             const jaarEvent = eventsOpDatum(jaarEvents, dag)[0] ?? null;
             const eventMeta = jaarEvent ? JAAR_EVENT_META[jaarEvent.type] : null;
             return (
               <div
                 key={iso}
                 className={clsx(
-                  "flex flex-col gap-1.5 rounded-t-2xl border border-b-0 p-2",
-                  eventMeta ? eventMeta.dayTintClass : isVandaag ? "bg-accent-50/50" : "bg-white",
-                  isVandaag ? "border-accent-300 ring-2 ring-inset ring-accent-300" : "border-slate-200"
+                  "sticky top-0 z-20 flex flex-col gap-1.5 border-b border-slate-100 px-2 py-2",
+                  i > 0 && "border-l border-slate-100",
+                  eventMeta ? eventMeta.dayTintClass : isVandaag ? "bg-accent-50/60" : "bg-white",
+                  isVandaag && "ring-2 ring-inset ring-accent-300"
                 )}
               >
                 <div className="text-center">
@@ -828,7 +834,7 @@ export function AgendaBoard({
                           {item.title}
                         </span>
                         {subjectCode(item.subject_id) && (
-                          <span className="shrink-0 rounded bg-white/70 px-1 py-0.5 text-[9px] font-bold leading-none text-slate-600">
+                          <span className="shrink-0 rounded bg-white/70 px-1 py-0.5 text-[10px] font-bold leading-none text-slate-600">
                             {subjectCode(item.subject_id)}
                           </span>
                         )}
@@ -888,18 +894,20 @@ export function AgendaBoard({
             {Array.from({ length: totUur - vanUur + 1 }, (_, i) => vanUur + i).map((uur) => (
               <div
                 key={uur}
-                className="absolute right-1 -translate-y-1/2 text-[10px] text-slate-400"
+                className="absolute right-1 -translate-y-1/2 text-[11px] font-medium text-slate-400"
                 style={{ top: (uur - vanUur) * UUR_HOOGTE }}
               >
                 {String(uur).padStart(2, "0")}:00
               </div>
             ))}
           </div>
-          {weekDagen.map((dag) => {
+          {weekDagen.map((dag, i) => {
             const iso = naarIsoDatum(dag);
             const isVandaag = iso === vandaagIso;
+            const weekdagNr = dag.getDay();
+            const isWeekendDag = weekdagNr === 0 || weekdagNr === 6;
             const dagItems = itemsPerDag.get(iso) ?? [];
-            const tijdItems = dagItems.filter((i) => i.status !== "voorstel" && i.start_time);
+            const tijdItems = dagItems.filter((it) => it.status !== "voorstel" && it.start_time);
             const roosterBlokken = roosterPerDag.get(iso) ?? [];
             const jaarEvent = eventsOpDatum(jaarEvents, dag)[0] ?? null;
             const eventMeta = jaarEvent ? JAAR_EVENT_META[jaarEvent.type] : null;
@@ -914,26 +922,37 @@ export function AgendaBoard({
                 onDragLeave={() => setDragOverIso((huidig) => (huidig === iso ? null : huidig))}
                 onDrop={(e) => dropOpDag(e, iso)}
                 className={clsx(
-                  "relative overflow-hidden rounded-b-2xl border transition-colors",
-                  eventMeta ? eventMeta.dayTintClass : isVandaag ? "bg-accent-50/30" : "bg-white",
-                  isVandaag ? "border-accent-300 ring-2 ring-inset ring-accent-300" : "border-slate-200",
-                  dragOverIso === iso && "border-accent-400 bg-accent-50 ring-2 ring-accent-200"
+                  "relative overflow-hidden transition-colors",
+                  i > 0 && "border-l border-slate-100",
+                  eventMeta
+                    ? eventMeta.dayTintClass
+                    : isVandaag
+                      ? "bg-accent-50/30"
+                      : isWeekendDag
+                        ? "bg-slate-50/70"
+                        : "bg-white",
+                  isVandaag && "ring-2 ring-inset ring-accent-300",
+                  dragOverIso === iso && "bg-accent-50 ring-2 ring-inset ring-accent-400"
                 )}
                 style={{
                   height: totaalHoogte,
-                  backgroundImage: `repeating-linear-gradient(to bottom, rgba(100,116,139,0.16) 0px, rgba(100,116,139,0.16) 1px, transparent 1px, transparent ${UUR_HOOGTE}px)`,
+                  backgroundImage: `repeating-linear-gradient(to bottom, rgba(100,116,139,0.14) 0px, rgba(100,116,139,0.14) 1px, transparent 1px, transparent ${UUR_HOOGTE}px)`,
                 }}
               >
-                {roosterBlokken.map((b, i) => (
+                {roosterBlokken.map((b, bi) => (
                   <div
-                    key={`r-${i}`}
+                    key={`r-${bi}`}
                     title={`${b.tijd} ${b.titel}`}
                     style={{ top: topVoorMinuut(b.startMinuten), height: hoogteVoorDuur(b.duurMinuten) }}
                     className={clsx(
-                      "absolute inset-x-0.5 overflow-hidden rounded-md px-1.5 py-0.5 text-[10px] leading-tight",
-                      b.isFietsen ? "bg-slate-100 text-slate-400" : "bg-slate-100 text-slate-600",
-                      b.bron === "gewijzigd" && "bg-amber-100 text-amber-800 ring-1 ring-inset ring-amber-300",
-                      b.bron === "extra" && "bg-accent-100 text-accent-800 ring-1 ring-inset ring-accent-300"
+                      "absolute inset-x-1 overflow-hidden rounded-md border-l-2 px-1.5 py-0.5 text-[11px] leading-tight",
+                      b.isFietsen
+                        ? "border-l-slate-300 bg-slate-50 text-slate-400"
+                        : "border-l-slate-300 bg-slate-100 text-slate-600",
+                      b.bron === "gewijzigd" &&
+                        "border-l-amber-400 bg-amber-50 text-amber-800 ring-1 ring-inset ring-amber-200",
+                      b.bron === "extra" &&
+                        "border-l-accent-400 bg-accent-50 text-accent-800 ring-1 ring-inset ring-accent-200"
                     )}
                   >
                     {b.bron === "gewijzigd" && <Icon name="pencil-line" size={9} className="mr-0.5 mb-px inline" />}
@@ -965,7 +984,7 @@ export function AgendaBoard({
                       onClick={() => openBewerken(item)}
                       style={{ top: topVoorMinuut(startMin), height: hoogteVoorDuur(duur) }}
                       className={clsx(
-                        "group absolute inset-x-0.5 cursor-pointer overflow-hidden rounded-md border px-1.5 py-0.5 text-[10px] leading-tight transition-opacity",
+                        "group absolute inset-x-1 cursor-pointer overflow-hidden rounded-md border px-1.5 py-0.5 text-xs leading-tight shadow-sm transition-opacity",
                         meta.badgeClass,
                         isKlaar && "opacity-50",
                         "cursor-grab active:cursor-grabbing",
@@ -1003,12 +1022,14 @@ export function AgendaBoard({
 
                 {isVandaag && nuMinuten !== null && nuMinuten >= vanUur * 60 && nuMinuten <= totUur * 60 && (
                   <div className="absolute inset-x-0 z-10 border-t-2 border-accent-500" style={{ top: topVoorMinuut(nuMinuten) }}>
-                    <span className="absolute -left-1 -top-1 h-2 w-2 rounded-full bg-accent-500" />
+                    <span className="absolute -left-1 -top-1.5 h-3 w-3 rounded-full border-2 border-white bg-accent-500 shadow-sm" />
                   </div>
                 )}
               </div>
             );
           })}
+        </div>
+        </div>
         </div>
       </div>
 
@@ -1022,7 +1043,14 @@ export function AgendaBoard({
             if (b.start_time) return 1;
             return 0;
           });
-          const roosterBlokken = roosterBlokkenVoorDag(dag, periodes, roosterItems, uitzonderingen, reistijdMinuten);
+          const roosterBlokken = roosterBlokkenVoorDag(
+            dag,
+            periodes,
+            roosterItems,
+            uitzonderingen,
+            reistijdMinuten,
+            jaarEvents
+          );
           const jaarEvent = eventsOpDatum(jaarEvents, dag)[0] ?? null;
           const eventMeta = jaarEvent ? JAAR_EVENT_META[jaarEvent.type] : null;
           return (
@@ -1091,7 +1119,7 @@ export function AgendaBoard({
                               {item.title}
                             </p>
                             {subjectCode(item.subject_id) && (
-                              <span className="shrink-0 rounded bg-slate-100 px-1 py-0.5 text-[9px] font-bold text-slate-500">
+                              <span className="shrink-0 rounded bg-slate-100 px-1 py-0.5 text-[10px] font-bold text-slate-500">
                                 {subjectCode(item.subject_id)}
                               </span>
                             )}

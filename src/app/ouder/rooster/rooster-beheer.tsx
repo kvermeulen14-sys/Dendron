@@ -30,6 +30,37 @@ const DAGEN = [
   { value: 7, label: "Zondag" },
 ];
 
+// Standaard belschema (lesuren van 50 minuten) - snelkeuze bij het
+// toevoegen van een lesuur, zodat begin- en eindtijd niet elke keer
+// handmatig ingesteld hoeven te worden.
+const LESUUR_DUUR_MINUTEN = 50;
+const LESUUR_STARTTIJDEN = [
+  "08:15",
+  "09:05",
+  "10:15",
+  "11:05",
+  "12:25",
+  "13:15",
+  "14:05",
+  "15:05",
+  "15:55",
+  "16:45",
+];
+
+function optellenTijd(tijd: string, minuten: number) {
+  const [h, m] = tijd.split(":").map(Number);
+  const totaal = h * 60 + m + minuten;
+  const hh = Math.floor(totaal / 60).toString().padStart(2, "0");
+  const mm = (totaal % 60).toString().padStart(2, "0");
+  return `${hh}:${mm}`;
+}
+
+const LESUUR_PRESETS = LESUUR_STARTTIJDEN.map((start, i) => ({
+  nummer: i + 1,
+  start,
+  eind: optellenTijd(start, LESUUR_DUUR_MINUTEN),
+}));
+
 function formatDatum(iso: string) {
   return new Date(iso + "T00:00:00").toLocaleDateString("nl-NL", { day: "numeric", month: "short", year: "numeric" });
 }
@@ -52,6 +83,8 @@ export function RoosterBeheer({
   const [itemFormOpen, setItemFormOpen] = useState(false);
   const [bewerkId, setBewerkId] = useState<string | null>(null);
   const [itemError, setItemError] = useState<string | null>(null);
+  const [startTijd, setStartTijd] = useState("");
+  const [eindTijd, setEindTijd] = useState("");
 
   const itemsVoorPeriode = useMemo(
     () => roosterItems.filter((i) => i.periode_id === selectedPeriodeId).sort((a, b) => a.start_tijd.localeCompare(b.start_tijd)),
@@ -93,6 +126,20 @@ export function RoosterBeheer({
     setItemFormOpen(false);
     setBewerkId(null);
     setItemError(null);
+  }
+
+  function openItemToevoegen() {
+    setBewerkId(null);
+    setStartTijd("");
+    setEindTijd("");
+    setItemFormOpen(true);
+  }
+
+  function openItemBewerken(item: RoosterItem) {
+    setBewerkId(item.id);
+    setStartTijd(item.start_tijd.slice(0, 5));
+    setEindTijd(item.eind_tijd.slice(0, 5));
+    setItemFormOpen(false);
   }
 
   return (
@@ -217,14 +264,7 @@ export function RoosterBeheer({
             <h2 className="text-base font-semibold text-slate-900">Lesuren</h2>
             <div className="flex flex-wrap gap-2">
               <SomTodayUploader periodes={periodes} />
-              <Button
-                size="md"
-                icon={<Icon name="plus" size={16} />}
-                onClick={() => {
-                  setBewerkId(null);
-                  setItemFormOpen(true);
-                }}
-              >
+              <Button size="md" icon={<Icon name="plus" size={16} />} onClick={openItemToevoegen}>
                 Lesuur toevoegen
               </Button>
             </div>
@@ -257,7 +297,7 @@ export function RoosterBeheer({
                   <option value="">Geen specifiek vak</option>
                   {subjects.map((s) => (
                     <option key={s.id} value={s.id}>
-                      {s.name}
+                      {s.code ? `${s.code} - ${s.name}` : s.name}
                     </option>
                   ))}
                 </select>
@@ -290,6 +330,35 @@ export function RoosterBeheer({
                   ))}
                 </select>
               </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                  Snelkeuze lesuur (optioneel)
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  {LESUUR_PRESETS.map((l) => (
+                    <button
+                      type="button"
+                      key={l.nummer}
+                      onClick={() => {
+                        setStartTijd(l.start);
+                        setEindTijd(l.eind);
+                      }}
+                      className={clsx(
+                        "rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors",
+                        startTijd === l.start && eindTijd === l.eind
+                          ? "border-slate-900 bg-slate-900 text-white"
+                          : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                      )}
+                    >
+                      {l.nummer}e {l.start}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-1.5 text-xs text-slate-500">
+                  Vult begin- en eindtijd automatisch in (lesuur van {LESUUR_DUUR_MINUTEN} minuten) - hierna
+                  nog aan te passen.
+                </p>
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="mb-1.5 block text-sm font-medium text-slate-700">Begintijd</label>
@@ -297,7 +366,8 @@ export function RoosterBeheer({
                     name="startTijd"
                     required
                     placeholder="Kies een tijd"
-                    defaultValue={bewerkItem?.start_tijd?.slice(0, 5) ?? ""}
+                    value={startTijd}
+                    onChange={(e) => setStartTijd(e.target.value)}
                   />
                 </div>
                 <div>
@@ -306,7 +376,8 @@ export function RoosterBeheer({
                     name="eindTijd"
                     required
                     placeholder="Kies een tijd"
-                    defaultValue={bewerkItem?.eind_tijd?.slice(0, 5) ?? ""}
+                    value={eindTijd}
+                    onChange={(e) => setEindTijd(e.target.value)}
                   />
                 </div>
               </div>
@@ -354,10 +425,7 @@ export function RoosterBeheer({
                             </p>
                           </div>
                           <button
-                            onClick={() => {
-                              setBewerkId(item.id);
-                              setItemFormOpen(false);
-                            }}
+                            onClick={() => openItemBewerken(item)}
                             className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
                             aria-label="Bewerken"
                           >

@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { createClient } from "@/lib/supabase/server";
-import { createClaudeClient, vereistClaudeKey, CLAUDE_MODEL } from "@/lib/claude";
+import { createGeminiClient, vereistGeminiKey, GEMINI_MODEL, jsonSchemaVoorGemini } from "@/lib/gemini";
 
 const MAX_KENNISBANK_TEKENS = 14000;
 
@@ -25,7 +24,7 @@ const LEERFASE_INSTRUCTIE: Record<string, string> = {
 
 export async function POST(request: Request) {
   try {
-    vereistClaudeKey();
+    vereistGeminiKey();
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "AI niet geconfigureerd." }, { status: 500 });
   }
@@ -76,16 +75,19 @@ LESSTOF:
 ${kennisbank}`;
 
   try {
-    const client = createClaudeClient();
-    const response = await client.beta.messages.parse({
-      model: CLAUDE_MODEL,
-      max_tokens: 1024,
-      messages: [{ role: "user", content: prompt }],
-      output_format: betaZodOutputFormat(ResponsSchema),
+    const client = createGeminiClient();
+    const response = await client.models.generateContent({
+      model: GEMINI_MODEL,
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      config: {
+        maxOutputTokens: 1024,
+        responseMimeType: "application/json",
+        responseJsonSchema: jsonSchemaVoorGemini(ResponsSchema),
+      },
     });
 
-    if (!response.parsed_output) throw new Error("Geen bruikbaar resultaat van de AI ontvangen.");
-    return NextResponse.json(response.parsed_output);
+    if (!response.text) throw new Error("Geen bruikbaar resultaat van de AI ontvangen.");
+    return NextResponse.json(ResponsSchema.parse(JSON.parse(response.text)));
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? `AI-verwerking mislukt: ${e.message}` : "AI-verwerking mislukt." },

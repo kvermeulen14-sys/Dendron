@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { createClient } from "@/lib/supabase/server";
-import { createClaudeClient, vereistClaudeKey, CLAUDE_MODEL } from "@/lib/claude";
+import { createGeminiClient, vereistGeminiKey, GEMINI_MODEL, jsonSchemaVoorGemini } from "@/lib/gemini";
 
 const MAX_BESTANDSGROOTTE = 15 * 1024 * 1024;
 const TOEGESTANE_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
@@ -30,7 +29,7 @@ function bouwPrompt(vandaag: string) {
 
 export async function POST(request: Request) {
   try {
-    vereistClaudeKey();
+    vereistGeminiKey();
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "AI niet geconfigureerd." }, { status: 500 });
   }
@@ -60,32 +59,32 @@ export async function POST(request: Request) {
   }
 
   try {
-    const client = createClaudeClient();
+    const client = createGeminiClient();
 
-    const content: (
-      | { type: "text"; text: string }
-      | { type: "image"; source: { type: "base64"; media_type: "image/jpeg" | "image/png" | "image/webp"; data: string } }
-    )[] = [{ type: "text", text: bouwPrompt(vandaag) }];
+    const parts: ({ text: string } | { inlineData: { mimeType: string; data: string } })[] = [
+      { text: bouwPrompt(vandaag) },
+    ];
 
     if (file instanceof File) {
       const bytes = await file.arrayBuffer();
-      content.push({
-        type: "image",
-        source: { type: "base64", media_type: file.type as "image/jpeg" | "image/png" | "image/webp", data: Buffer.from(bytes).toString("base64") },
-      });
+      parts.push({ inlineData: { mimeType: file.type, data: Buffer.from(bytes).toString("base64") } });
     } else {
-      content.push({ type: "text", text: `Bron:\n${String(tekst)}` });
+      parts.push({ text: `Bron:\n${String(tekst)}` });
     }
 
-    const response = await client.beta.messages.parse({
-      model: CLAUDE_MODEL,
-      max_tokens: 4096,
-      messages: [{ role: "user", content }],
-      output_format: betaZodOutputFormat(ExtractieSchema),
+    const response = await client.models.generateContent({
+      model: GEMINI_MODEL,
+      contents: [{ role: "user", parts }],
+      config: {
+        maxOutputTokens: 4096,
+        responseMimeType: "application/json",
+        responseJsonSchema: jsonSchemaVoorGemini(ExtractieSchema),
+      },
     });
 
-    if (!response.parsed_output) throw new Error("Geen bruikbaar resultaat van de AI ontvangen.");
-    return NextResponse.json({ periodes: response.parsed_output.periodes });
+    if (!response.text) throw new Error("Geen bruikbaar resultaat van de AI ontvangen.");
+    const geparsed = ExtractieSchema.parse(JSON.parse(response.text));
+    return NextResponse.json({ periodes: geparsed.periodes });
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? `AI-verwerking mislukt: ${e.message}` : "AI-verwerking mislukt." },

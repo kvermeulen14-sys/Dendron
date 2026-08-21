@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { createClient } from "@/lib/supabase/server";
-import { createClaudeClient, vereistClaudeKey, CLAUDE_MODEL } from "@/lib/claude";
+import { createGeminiClient, vereistGeminiKey, GEMINI_MODEL, jsonSchemaVoorGemini } from "@/lib/gemini";
 
 const MAX_BESTANDSGROOTTE = 15 * 1024 * 1024; // 15MB
 const TOEGESTANE_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
@@ -41,7 +40,7 @@ function naarDagNummer(dag: string): number {
 
 export async function POST(request: Request) {
   try {
-    vereistClaudeKey();
+    vereistGeminiKey();
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "AI niet geconfigureerd." }, { status: 500 });
   }
@@ -69,31 +68,32 @@ export async function POST(request: Request) {
   const base64 = Buffer.from(bytes).toString("base64");
 
   try {
-    const client = createClaudeClient();
+    const client = createGeminiClient();
 
     const prompt =
       "Dit is een screenshot van een schoolrooster (bijvoorbeeld uit SomToday, Zermelo of Magister). " +
       "Herken alle losse lesuren met dag van de week, begintijd, eindtijd en vaknaam. Sla pauzes, " +
       "tussenuren en lege vakken over. Geef de lijst terug gesorteerd op dag en daarna op begintijd.";
 
-    const response = await client.beta.messages.parse({
-      model: CLAUDE_MODEL,
-      max_tokens: 4096,
-      messages: [
+    const response = await client.models.generateContent({
+      model: GEMINI_MODEL,
+      contents: [
         {
           role: "user",
-          content: [
-            { type: "image", source: { type: "base64", media_type: file.type as "image/jpeg" | "image/png" | "image/webp", data: base64 } },
-            { type: "text", text: prompt },
-          ],
+          parts: [{ inlineData: { mimeType: file.type, data: base64 } }, { text: prompt }],
         },
       ],
-      output_format: betaZodOutputFormat(ExtractieSchema),
+      config: {
+        maxOutputTokens: 4096,
+        responseMimeType: "application/json",
+        responseJsonSchema: jsonSchemaVoorGemini(ExtractieSchema),
+      },
     });
 
-    if (!response.parsed_output) throw new Error("Geen bruikbaar resultaat van de AI ontvangen.");
+    if (!response.text) throw new Error("Geen bruikbaar resultaat van de AI ontvangen.");
+    const geparsed = ExtractieSchema.parse(JSON.parse(response.text));
 
-    const regels = response.parsed_output.lessen.map((r) => ({
+    const regels = geparsed.lessen.map((r) => ({
       dagVanWeek: naarDagNummer(r.dag),
       dagLabel: r.dag,
       startTijd: r.start,

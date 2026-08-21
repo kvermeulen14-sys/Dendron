@@ -155,7 +155,7 @@ export function HuiswerkAIImport({ subjects }: { subjects: Subject[] }) {
                       <option value="">Geen specifiek vak</option>
                       {subjects.map((s) => (
                         <option key={s.id} value={s.id}>
-                          {s.name}
+                          {s.code ? `${s.code} - ${s.name}` : s.name}
                         </option>
                       ))}
                     </select>

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { createClaudeClient, vereistClaudeKey, CLAUDE_MODEL } from "@/lib/claude";
+import { createGeminiClient, vereistGeminiKey, GEMINI_MODEL } from "@/lib/gemini";
 
 const MAX_GESCHIEDENIS = 20;
 const MAX_KENNISBANK_TEKENS = 14000;
@@ -25,7 +25,7 @@ ${kennisbank || "(nog geen lesstof toegevoegd - vertel de leerling dat je nog ge
 
 export async function POST(request: Request) {
   try {
-    vereistClaudeKey();
+    vereistGeminiKey();
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "AI niet geconfigureerd." }, { status: 500 });
   }
@@ -76,26 +76,27 @@ export async function POST(request: Request) {
     .order("created_at", { ascending: false })
     .limit(MAX_GESCHIEDENIS);
 
-  const historyVoorClaude = (geschiedenis ?? [])
+  const historyVoorGemini = (geschiedenis ?? [])
     .slice()
     .reverse()
     .map((m) => ({
-      role: (m.role === "model" ? "assistant" : "user") as "user" | "assistant",
-      content: m.content,
+      role: (m.role === "model" ? "model" : "user") as "user" | "model",
+      parts: [{ text: m.content }],
     }));
 
-  const client = createClaudeClient();
+  const client = createGeminiClient();
 
   let antwoord: string;
   try {
-    const response = await client.messages.create({
-      model: CLAUDE_MODEL,
-      max_tokens: 2048,
-      system: bouwSysteemPrompt(subject.name, subject.ai_instructions ?? "", kennisbank),
-      messages: [...historyVoorClaude, { role: "user", content: message }],
+    const response = await client.models.generateContent({
+      model: GEMINI_MODEL,
+      contents: [...historyVoorGemini, { role: "user", parts: [{ text: message }] }],
+      config: {
+        systemInstruction: bouwSysteemPrompt(subject.name, subject.ai_instructions ?? "", kennisbank),
+        maxOutputTokens: 2048,
+      },
     });
-    const tekstBlok = response.content.find((b) => b.type === "text");
-    antwoord = tekstBlok?.text ?? "";
+    antwoord = response.text ?? "";
   } catch {
     return NextResponse.json(
       { error: "De AI-vakdocent reageert nu niet. Probeer het straks nog eens." },

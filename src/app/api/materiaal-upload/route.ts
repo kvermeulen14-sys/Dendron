@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { createClient } from "@/lib/supabase/server";
-import { createClaudeClient, vereistClaudeKey, CLAUDE_MODEL } from "@/lib/claude";
+import { createGeminiClient, vereistGeminiKey, GEMINI_MODEL, jsonSchemaVoorGemini } from "@/lib/gemini";
 
 const MAX_BESTANDSGROOTTE = 15 * 1024 * 1024; // 15MB
 const TOEGESTANE_TYPES = ["application/pdf", "image/jpeg", "image/jpg", "image/png", "image/webp", "application/json"];
@@ -29,7 +28,7 @@ function veiligeBestandsnaam(naam: string) {
 
 export async function POST(request: Request) {
   try {
-    vereistClaudeKey();
+    vereistGeminiKey();
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "AI niet geconfigureerd." }, { status: 500 });
   }
@@ -77,19 +76,14 @@ export async function POST(request: Request) {
 
   let geextraheerd: { title: string; hoofdstuk?: string; opdrachten?: string; samenvatting: string };
   try {
-    const client = createClaudeClient();
+    const client = createGeminiClient();
 
-    let content: (
-      | { type: "text"; text: string }
-      | { type: "document"; source: { type: "base64"; media_type: "application/pdf"; data: string } }
-      | { type: "image"; source: { type: "base64"; media_type: "image/jpeg" | "image/png" | "image/webp"; data: string } }
-    )[];
+    let parts: ({ text: string } | { inlineData: { mimeType: string; data: string } })[];
 
     if (isJson) {
       const jsonTekst = Buffer.from(bytes).toString("utf-8");
-      content = [
+      parts = [
         {
-          type: "text",
           text:
             "Dit is een JSON-bestand met lesstof voor een leerling op de Nederlandse middelbare school (Havo) - " +
             "bijvoorbeeld een export uit een andere leer-app, of handmatig opgestelde structuur. Herken hoofdstuk- " +
@@ -101,33 +95,34 @@ export async function POST(request: Request) {
       ];
     } else if (bronType === "pdf") {
       const base64 = Buffer.from(bytes).toString("base64");
-      content = [
-        { type: "document", source: { type: "base64", media_type: "application/pdf", data: base64 } },
+      parts = [
+        { inlineData: { mimeType: "application/pdf", data: base64 } },
         {
-          type: "text",
           text: "Analyseer dit lesmateriaal (PDF) voor een leerling op de Nederlandse middelbare school (Havo). Herken hoofdstuk- en opdrachtnummers waar mogelijk en zet de inhoud om in een heldere, gestructureerde samenvatting die een AI-vakdocent kan gebruiken om de leerling te helpen.",
         },
       ];
     } else {
       const base64 = Buffer.from(bytes).toString("base64");
-      content = [
-        { type: "image", source: { type: "base64", media_type: file.type as "image/jpeg" | "image/png" | "image/webp", data: base64 } },
+      parts = [
+        { inlineData: { mimeType: file.type, data: base64 } },
         {
-          type: "text",
           text: "Analyseer deze foto van lesmateriaal (bijv. een pagina uit een boek, aantekeningen, of een diagram) voor een leerling op de Nederlandse middelbare school (Havo). Herken hoofdstuk- en opdrachtnummers waar mogelijk en beschrijf de inhoud (inclusief eventuele afbeeldingen/diagrammen/sommen) zodat een AI-vakdocent dit later kan gebruiken om uitleg te geven.",
         },
       ];
     }
 
-    const response = await client.beta.messages.parse({
-      model: CLAUDE_MODEL,
-      max_tokens: 4096,
-      messages: [{ role: "user", content }],
-      output_format: betaZodOutputFormat(ExtractieSchema),
+    const response = await client.models.generateContent({
+      model: GEMINI_MODEL,
+      contents: [{ role: "user", parts }],
+      config: {
+        maxOutputTokens: 4096,
+        responseMimeType: "application/json",
+        responseJsonSchema: jsonSchemaVoorGemini(ExtractieSchema),
+      },
     });
 
-    if (!response.parsed_output) throw new Error("Geen bruikbaar resultaat van de AI ontvangen.");
-    geextraheerd = response.parsed_output;
+    if (!response.text) throw new Error("Geen bruikbaar resultaat van de AI ontvangen.");
+    geextraheerd = ExtractieSchema.parse(JSON.parse(response.text));
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? `AI-verwerking mislukt: ${e.message}` : "AI-verwerking mislukt." },

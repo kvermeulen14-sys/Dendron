@@ -143,13 +143,13 @@ export function SomTodayUploader({ periodes }: { periodes: RoosterPeriode[] }) {
                     value={regel.startTijd}
                     onChange={(e) => bijwerken(i, "startTijd", e.target.value)}
                     placeholder=""
-                    className="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-xs"
+                    className="w-14 rounded-lg border border-slate-200 px-1.5 py-1.5 text-xs"
                   />
                   <TijdSelect
                     value={regel.eindTijd}
                     onChange={(e) => bijwerken(i, "eindTijd", e.target.value)}
                     placeholder=""
-                    className="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-xs"
+                    className="w-14 rounded-lg border border-slate-200 px-1.5 py-1.5 text-xs"
                   />
                   <input
                     value={regel.titel}
