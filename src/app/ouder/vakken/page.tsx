@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/card";
 import { Icon } from "@/components/icon";
 import { VakForm } from "./vak-form";
+import { KennisbankImportKnop } from "./kennisbank-import-knop";
 
 export default async function VakkenPage() {
   const supabase = await createClient();
@@ -32,6 +33,17 @@ export default async function VakkenPage() {
         </div>
         <VakForm />
       </div>
+
+      <Card className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-slate-900">Kant-en-klare kennisbank</p>
+          <p className="text-xs text-slate-500">
+            Voegt 41 uitgewerkte paragrafen (leerdoelen, regels, stappen, veelgemaakte fouten) toe
+            aan het vak Wiskunde - wordt aangemaakt als het nog niet bestaat.
+          </p>
+        </div>
+        <KennisbankImportKnop />
+      </Card>
 
       {(!subjects || subjects.length === 0) && (
         <Card>

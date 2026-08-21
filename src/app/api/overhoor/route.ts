@@ -2,8 +2,10 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createGeminiClient, vereistGeminiKey, genereerGestructureerd } from "@/lib/gemini";
+import { GROTE_KENNISBANK_DREMPEL, kiesWillekeurigeSelectie } from "@/lib/kennisbank";
 
 const MAX_KENNISBANK_TEKENS = 14000;
+const MAX_OVERHOOR_MATERIALEN = 6;
 
 const ResponsSchema = z.object({
   feedback: z.string().describe("Korte, vriendelijke feedback op het vorige antwoord, of leeg als er nog geen antwoord was"),
@@ -42,7 +44,11 @@ export async function POST(request: Request) {
   if (!subject) return NextResponse.json({ error: "Vak niet gevonden." }, { status: 404 });
 
   const { data: materials } = await supabase.from("materials").select("title, content").eq("subject_id", subjectId);
-  let kennisbank = (materials ?? []).map((m) => `## ${m.title}\n${m.content}`).join("\n\n");
+  const overhoorMaterialen =
+    (materials ?? []).length > GROTE_KENNISBANK_DREMPEL
+      ? kiesWillekeurigeSelectie(materials ?? [], MAX_OVERHOOR_MATERIALEN)
+      : materials ?? [];
+  let kennisbank = overhoorMaterialen.map((m) => `## ${m.title}\n${m.content}`).join("\n\n");
   if (kennisbank.length > MAX_KENNISBANK_TEKENS) {
     kennisbank = kennisbank.slice(0, MAX_KENNISBANK_TEKENS) + "\n[...ingekort...]";
   }
@@ -62,6 +68,7 @@ export async function POST(request: Request) {
 ${leerfaseInstructie}
 ${spellingInstructie}
 Stel altijd maar 1 vraag tegelijk, kort en concreet. Varieer het soort vraag (begripsvraag, rekenvraag, definitie, toepassing) waar de lesstof dat toelaat.
+Stukjes tussen "[INTERN ..." en het einde van dat blok in de lesstof zijn alleen voor jou (bewijsniveau, bladzijde-status) - baseer daar nooit een vraag op en noem dit nooit tegen de leerling.
 
 ${
   vorigeVraag && vorigAntwoord
