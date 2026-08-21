@@ -24,10 +24,10 @@ export function VerwijderMateriaalKnop({
           router.refresh();
         })
       }
-      className="rounded-xl p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+      className="rounded-xl p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"
       aria-label="Verwijderen"
     >
-      <Icon name="trash" size={16} />
+      <Icon name={pending ? "loader" : "trash"} size={16} className={pending ? "animate-spin" : undefined} />
     </button>
   );
 }

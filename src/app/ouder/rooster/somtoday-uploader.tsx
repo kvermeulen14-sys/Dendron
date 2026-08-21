@@ -192,7 +192,7 @@ export function SomTodayUploader({ periodes }: { periodes: RoosterPeriode[] }) {
                   ))}
                 </select>
               </div>
-              <Button disabled={bezig || !periodeId || regels.length === 0} onClick={opslaan}>
+              <Button loading={bezig} disabled={!periodeId || regels.length === 0} onClick={opslaan}>
                 {bezig ? "Bezig..." : "Opslaan in rooster"}
               </Button>
               <Button variant="secondary" type="button" onClick={reset}>

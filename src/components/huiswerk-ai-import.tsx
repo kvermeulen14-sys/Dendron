@@ -179,7 +179,7 @@ export function HuiswerkAIImport({ subjects }: { subjects: Subject[] }) {
             {error && <p className="text-sm text-rose-600">{error}</p>}
 
             <div className="flex gap-2 border-t border-slate-100 pt-3">
-              <Button disabled={bezig || regels.length === 0} onClick={opslaan}>
+              <Button loading={bezig} disabled={regels.length === 0} onClick={opslaan}>
                 {bezig ? "Bezig..." : "Opslaan"}
               </Button>
               <Button variant="secondary" type="button" onClick={reset}>
