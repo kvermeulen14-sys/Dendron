@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useTransition, type DragEvent } from "react";
 import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import { Icon } from "@/components/icon";
@@ -10,7 +10,7 @@ import { Card } from "@/components/ui/card";
 import { Modal } from "@/components/ui/modal";
 import { HuiswerkAIImport } from "@/components/huiswerk-ai-import";
 import { PLANNING_TYPE_META } from "@/lib/planning";
-import { maakPlanningItem, updatePlanningStatus, verwijderPlanningItem } from "@/lib/actions/planning";
+import { maakPlanningItem, updatePlanningStatus, verplaatsPlanningItem, verwijderPlanningItem } from "@/lib/actions/planning";
 import type {
   PlanningItem,
   PlanningType,
@@ -39,6 +39,22 @@ function voegDagenToe(datum: Date, dagen: number) {
 function naarIsoDatum(datum: Date) {
   return datum.toISOString().slice(0, 10);
 }
+
+function isoPlusDagen(iso: string, dagen: number) {
+  const d = new Date(iso + "T00:00:00");
+  d.setDate(d.getDate() + dagen);
+  return naarIsoDatum(d);
+}
+
+function formatMinuten(minuten: number) {
+  const uren = Math.floor(minuten / 60);
+  const rest = minuten % 60;
+  if (uren === 0) return `${rest} min`;
+  if (rest === 0) return `${uren} u`;
+  return `${uren}u ${rest}m`;
+}
+
+const TIJD_OPTIES = [15, 30, 45, 60, 90, 120];
 
 function naarIsoWeekdag(datum: Date) {
   const jsDag = datum.getDay(); // 0 = zondag
@@ -175,9 +191,12 @@ export function AgendaBoard({
   const router = useRouter();
   const [formOpen, setFormOpen] = useState(false);
   const [type, setType] = useState<PlanningType>("huiswerk");
+  const [estimatedMinutes, setEstimatedMinutes] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [weekOffset, setWeekOffset] = useState(0);
+  const [draggedId, setDraggedId] = useState<string | null>(null);
+  const [dragOverIso, setDragOverIso] = useState<string | null>(null);
 
   const vandaagIso = useMemo(() => naarIsoDatum(new Date()), []);
   const dezeWeekMaandag = useMemo(() => naarMaandagVanWeek(new Date()), []);
@@ -199,6 +218,14 @@ export function AgendaBoard({
     }
     return map;
   }, [items, weekDagen]);
+
+  const vandaagItems = useMemo(
+    () => items.filter((i) => i.due_date === vandaagIso && i.status !== "voorstel"),
+    [items, vandaagIso]
+  );
+  const vandaagOpenItems = vandaagItems.filter((i) => i.status !== "klaar");
+  const vandaagMinuten = vandaagOpenItems.reduce((som, i) => som + (i.estimated_minutes ?? 0), 0);
+  const vandaagZonderInschatting = vandaagOpenItems.filter((i) => !i.estimated_minutes).length;
 
   function subjectNaam(id: string | null) {
     if (!id) return null;
@@ -247,6 +274,23 @@ export function AgendaBoard({
     });
   }
 
+  function verplaats(item: PlanningItem, nieuweDatum: string) {
+    if (nieuweDatum === item.due_date) return;
+    startTransition(async () => {
+      await verplaatsPlanningItem(item.id, nieuweDatum);
+      router.refresh();
+    });
+  }
+
+  function dropOpDag(e: DragEvent, iso: string) {
+    e.preventDefault();
+    setDragOverIso(null);
+    const id = e.dataTransfer.getData("text/plain");
+    const item = items.find((i) => i.id === id);
+    if (item) verplaats(item, iso);
+    setDraggedId(null);
+  }
+
   const weekZondag = weekDagen[6];
   const weekLabel = `${weekMaandag.toLocaleDateString("nl-NL", { day: "numeric", month: "short" })} - ${weekZondag.toLocaleDateString("nl-NL", { day: "numeric", month: "short" })}`;
 
@@ -256,17 +300,53 @@ export function AgendaBoard({
         <h1 className="text-xl font-semibold text-slate-900">Agenda</h1>
         <div className="flex gap-2">
           <HuiswerkAIImport subjects={subjects} />
-          <Button icon={<Icon name="plus" size={18} />} onClick={() => setFormOpen(true)}>
+          <Button
+            icon={<Icon name="plus" size={18} />}
+            onClick={() => {
+              setEstimatedMinutes(null);
+              setFormOpen(true);
+            }}
+          >
             Nieuw item
           </Button>
         </div>
       </div>
 
+      {vandaagOpenItems.length > 0 && (
+        <Card className="flex items-center gap-3 border-blue-100 bg-blue-50/60 py-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-600">
+            <Icon name="target" size={18} />
+          </span>
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-slate-900">
+              Vandaag: {vandaagOpenItems.length} {vandaagOpenItems.length === 1 ? "taak" : "taken"}
+              {vandaagMinuten > 0 && ` - ongeveer ${formatMinuten(vandaagMinuten)} in totaal`}
+            </p>
+            <p className="text-xs text-slate-500">
+              {vandaagZonderInschatting > 0
+                ? `${vandaagZonderInschatting} zonder tijdsinschatting - vul die in voor een realistischer beeld.`
+                : "Elke taak heeft een tijdsinschatting, zo weet je precies wat er vandaag in past."}
+            </p>
+          </div>
+        </Card>
+      )}
+
       <Card className="flex items-center justify-between gap-2 py-3">
         <button
           onClick={() => setWeekOffset((w) => w - 1)}
+          onDragOver={(e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
+          }}
+          onDrop={(e) => {
+            e.preventDefault();
+            const id = e.dataTransfer.getData("text/plain");
+            const item = items.find((i) => i.id === id);
+            if (item) verplaats(item, isoPlusDagen(item.due_date, -7));
+            setDraggedId(null);
+          }}
           className="flex items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
-          aria-label="Vorige week"
+          aria-label="Vorige week (sleep hier een item op om het een week eerder te plannen)"
         >
           <Icon name="chevron-left" size={18} />
           <span className="hidden sm:inline">Vorige week</span>
@@ -286,8 +366,19 @@ export function AgendaBoard({
 
         <button
           onClick={() => setWeekOffset((w) => w + 1)}
+          onDragOver={(e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
+          }}
+          onDrop={(e) => {
+            e.preventDefault();
+            const id = e.dataTransfer.getData("text/plain");
+            const item = items.find((i) => i.id === id);
+            if (item) verplaats(item, isoPlusDagen(item.due_date, 7));
+            setDraggedId(null);
+          }}
           className="flex items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
-          aria-label="Volgende week"
+          aria-label="Volgende week (sleep hier een item op om het een week later te plannen)"
         >
           <span className="hidden sm:inline">Volgende week</span>
           <Icon name="chevron-right" size={18} />
@@ -382,6 +473,33 @@ export function AgendaBoard({
 
             <div>
               <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                Geschatte tijd (optioneel)
+              </label>
+              <div className="flex flex-wrap gap-1.5">
+                {TIJD_OPTIES.map((minuten) => (
+                  <button
+                    type="button"
+                    key={minuten}
+                    onClick={() => setEstimatedMinutes((huidig) => (huidig === minuten ? null : minuten))}
+                    className={clsx(
+                      "rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors",
+                      estimatedMinutes === minuten
+                        ? "border-slate-900 bg-slate-900 text-white"
+                        : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                    )}
+                  >
+                    {formatMinuten(minuten)}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-1.5 text-xs text-slate-500">
+                Helpt om in te schatten wat er op een dag realistisch in past.
+              </p>
+              <input type="hidden" name="estimatedMinutes" value={estimatedMinutes ?? ""} />
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">
                 Toelichting (optioneel)
               </label>
               <textarea
@@ -407,9 +525,17 @@ export function AgendaBoard({
           return (
             <div
               key={iso}
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "move";
+                if (dragOverIso !== iso) setDragOverIso(iso);
+              }}
+              onDragLeave={() => setDragOverIso((huidig) => (huidig === iso ? null : huidig))}
+              onDrop={(e) => dropOpDag(e, iso)}
               className={clsx(
-                "flex min-h-[220px] flex-col gap-2 rounded-2xl border p-2.5",
-                isVandaag ? "border-blue-300 bg-blue-50/50" : "border-slate-200 bg-white"
+                "flex min-h-[220px] flex-col gap-2 rounded-2xl border p-2.5 transition-colors",
+                isVandaag ? "border-blue-300 bg-blue-50/50" : "border-slate-200 bg-white",
+                dragOverIso === iso && "border-blue-400 bg-blue-50 ring-2 ring-blue-200"
               )}
             >
               <div className="text-center">
@@ -456,10 +582,22 @@ export function AgendaBoard({
                   return (
                     <div
                       key={item.id}
+                      draggable={!isVoorstel}
+                      onDragStart={(e) => {
+                        setDraggedId(item.id);
+                        e.dataTransfer.setData("text/plain", item.id);
+                        e.dataTransfer.effectAllowed = "move";
+                      }}
+                      onDragEnd={() => {
+                        setDraggedId(null);
+                        setDragOverIso(null);
+                      }}
                       className={clsx(
-                        "rounded-lg border px-2 py-1.5 text-xs",
+                        "rounded-lg border px-2 py-1.5 text-xs transition-opacity",
                         meta.badgeClass,
-                        isKlaar && "opacity-50"
+                        isKlaar && "opacity-50",
+                        !isVoorstel && "cursor-grab active:cursor-grabbing",
+                        draggedId === item.id && "opacity-30"
                       )}
                     >
                       <div className="flex items-start gap-1">
@@ -473,6 +611,11 @@ export function AgendaBoard({
                           {item.title}
                         </span>
                       </div>
+                      {item.estimated_minutes && (
+                        <p className="mt-0.5 pl-4 text-[10px] text-slate-500">
+                          ~{formatMinuten(item.estimated_minutes)}
+                        </p>
+                      )}
                       <div className="mt-1 flex items-center gap-2">
                         {isVoorstel ? (
                           <>
@@ -587,8 +730,35 @@ export function AgendaBoard({
                           </p>
                           <p className="truncate text-xs text-slate-500">
                             {[meta.label, subjectNaam(item.subject_id)].filter(Boolean).join(" - ")}
+                            {item.estimated_minutes && ` - ~${formatMinuten(item.estimated_minutes)}`}
                             {isVoorstel && " - voorstel, nog niet bevestigd"}
                           </p>
+                          {!isVoorstel && (
+                            <div className="mt-1 flex items-center gap-2 text-[11px] font-medium text-slate-400">
+                              <span>Verplaats:</span>
+                              <button
+                                disabled={pending}
+                                onClick={() => verplaats(item, isoPlusDagen(item.due_date, -1))}
+                                className="rounded px-1.5 py-0.5 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50"
+                              >
+                                -1 dag
+                              </button>
+                              <button
+                                disabled={pending}
+                                onClick={() => verplaats(item, isoPlusDagen(item.due_date, 1))}
+                                className="rounded px-1.5 py-0.5 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50"
+                              >
+                                +1 dag
+                              </button>
+                              <button
+                                disabled={pending}
+                                onClick={() => verplaats(item, isoPlusDagen(item.due_date, 7))}
+                                className="rounded px-1.5 py-0.5 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50"
+                              >
+                                +1 week
+                              </button>
+                            </div>
+                          )}
                         </div>
 
                         {isVoorstel ? (

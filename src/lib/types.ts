@@ -120,6 +120,7 @@ export interface PlanningItem {
   start_date: string | null;
   due_date: string;
   status: PlanningStatus;
+  estimated_minutes: number | null;
   created_by: string;
   created_at: string;
 }

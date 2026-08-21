@@ -32,6 +32,8 @@ export async function maakPlanningItem(formData: FormData) {
   const subjectId = String(formData.get("subjectId") || "") || null;
   const testTypeId = String(formData.get("testTypeId") || "") || null;
   const description = String(formData.get("description") || "").trim();
+  const estimatedMinutesRaw = String(formData.get("estimatedMinutes") || "");
+  const estimatedMinutes = estimatedMinutesRaw ? Number(estimatedMinutesRaw) : null;
 
   if (!title || !dueDate) return { error: "Vul een titel en datum in." };
 
@@ -46,6 +48,7 @@ export async function maakPlanningItem(formData: FormData) {
       description,
       due_date: dueDate,
       status: "open",
+      estimated_minutes: estimatedMinutes,
       created_by: user.id,
     })
     .select("id")
@@ -103,6 +106,12 @@ export async function updatePlanningStatus(id: string, status: "open" | "klaar" 
 export async function verwijderPlanningItem(id: string) {
   const supabase = await createClient();
   await supabase.from("planning_items").delete().eq("id", id);
+  revalidateAgendas();
+}
+
+export async function verplaatsPlanningItem(id: string, nieuweDatum: string) {
+  const supabase = await createClient();
+  await supabase.from("planning_items").update({ due_date: nieuweDatum }).eq("id", id);
   revalidateAgendas();
 }
 
