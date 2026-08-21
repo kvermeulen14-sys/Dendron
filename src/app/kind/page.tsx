@@ -2,8 +2,8 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/card";
 import { Icon } from "@/components/icon";
-import { PLANNING_TYPE_META } from "@/lib/planning";
-import type { PlanningItem } from "@/lib/types";
+import { KindVandaagLijst } from "@/components/kind-vandaag-lijst";
+import type { PlanningItem, Subject } from "@/lib/types";
 
 export default async function KindOverzicht() {
   const supabase = await createClient();
@@ -18,18 +18,44 @@ export default async function KindOverzicht() {
 
   const vandaag = new Date().toISOString().slice(0, 10);
 
-  const { data: items } = await supabase
-    .from("planning_items")
-    .select("*")
-    .eq("family_id", profile!.family_id)
-    .neq("status", "klaar")
-    .order("due_date", { ascending: true });
+  const [{ data: vandaagData }, { data: teLaatData }, { data: voorstellenData }, { data: toetsData }, { data: subjectsData }] =
+    await Promise.all([
+      supabase
+        .from("planning_items")
+        .select("*")
+        .eq("family_id", profile!.family_id)
+        .eq("due_date", vandaag)
+        .neq("status", "voorstel"),
+      supabase
+        .from("planning_items")
+        .select("*")
+        .eq("family_id", profile!.family_id)
+        .lt("due_date", vandaag)
+        .eq("status", "open"),
+      supabase
+        .from("planning_items")
+        .select("*")
+        .eq("family_id", profile!.family_id)
+        .eq("status", "voorstel"),
+      supabase
+        .from("planning_items")
+        .select("*")
+        .eq("family_id", profile!.family_id)
+        .eq("type", "toets")
+        .gte("due_date", vandaag)
+        .order("due_date", { ascending: true })
+        .limit(1)
+        .maybeSingle(),
+      supabase.from("subjects").select("*").eq("family_id", profile!.family_id),
+    ]);
 
-  const alle: PlanningItem[] = items ?? [];
-  const vandaagItems = alle.filter((i) => i.due_date === vandaag && i.status !== "voorstel");
-  const teLaat = alle.filter((i) => i.due_date < vandaag && i.status !== "voorstel");
-  const eerstvolgendeToets = alle.find((i) => i.type === "toets" && i.due_date >= vandaag);
-  const voorstellen = alle.filter((i) => i.status === "voorstel");
+  const vandaagItems = (vandaagData ?? []) as PlanningItem[];
+  const teLaat = (teLaatData ?? []) as PlanningItem[];
+  const voorstellen = (voorstellenData ?? []) as PlanningItem[];
+  const subjects = (subjectsData ?? []) as Subject[];
+  const eerstvolgendeToets = toetsData as PlanningItem | null;
+
+  const vandaagGedaan = vandaagItems.filter((i) => i.status === "klaar").length;
 
   return (
     <div className="flex flex-col gap-6">
@@ -73,35 +99,25 @@ export default async function KindOverzicht() {
       )}
 
       <Card>
-        <h2 className="mb-3 text-base font-semibold text-slate-900">Vandaag</h2>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-base font-semibold text-slate-900">Vandaag</h2>
+          {vandaagItems.length > 0 && (
+            <span className="text-xs font-medium text-slate-400">
+              {vandaagGedaan} van {vandaagItems.length} gedaan
+            </span>
+          )}
+        </div>
         {vandaagItems.length === 0 ? (
           <p className="text-sm text-slate-500">Niks gepland voor vandaag. Mooi rustig.</p>
         ) : (
-          <ul className="flex flex-col gap-2">
-            {vandaagItems.map((i) => {
-              const meta = PLANNING_TYPE_META[i.type];
-              return (
-                <li key={i.id} className="flex items-center gap-3 rounded-xl border border-slate-100 px-3.5 py-2.5">
-                  <Icon name={meta.icon} size={16} className="text-slate-500" />
-                  <span className="text-sm font-medium text-slate-800">{i.title}</span>
-                </li>
-              );
-            })}
-          </ul>
+          <KindVandaagLijst items={vandaagItems} subjects={subjects} />
         )}
       </Card>
 
       {teLaat.length > 0 && (
         <Card>
           <h2 className="mb-3 text-base font-semibold text-slate-900">Nog niet afgerond</h2>
-          <ul className="flex flex-col gap-2">
-            {teLaat.map((i) => (
-              <li key={i.id} className="flex items-center gap-3 rounded-xl border border-rose-100 bg-rose-50/40 px-3.5 py-2.5">
-                <Icon name="alert-circle" size={16} className="text-rose-500" />
-                <span className="text-sm font-medium text-slate-800">{i.title}</span>
-              </li>
-            ))}
-          </ul>
+          <KindVandaagLijst items={teLaat} subjects={subjects} variant="verlopen" />
         </Card>
       )}
 
