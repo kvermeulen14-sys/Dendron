@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
-import { createGeminiClient, vereistGeminiKey, GEMINI_MODEL, jsonSchemaVoorGemini } from "@/lib/gemini";
+import { createGeminiClient, vereistGeminiKey, genereerGestructureerd } from "@/lib/gemini";
 
 const MAX_BESTANDSGROOTTE = 15 * 1024 * 1024;
 const TOEGESTANE_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
@@ -73,18 +73,7 @@ export async function POST(request: Request) {
       parts.push({ text: `Bron:\n${String(tekst)}` });
     }
 
-    const response = await client.models.generateContent({
-      model: GEMINI_MODEL,
-      contents: [{ role: "user", parts }],
-      config: {
-        maxOutputTokens: 4096,
-        responseMimeType: "application/json",
-        responseJsonSchema: jsonSchemaVoorGemini(ExtractieSchema),
-      },
-    });
-
-    if (!response.text) throw new Error("Geen bruikbaar resultaat van de AI ontvangen.");
-    const geparsed = ExtractieSchema.parse(JSON.parse(response.text));
+    const geparsed = await genereerGestructureerd(client, ExtractieSchema, [{ role: "user", parts }]);
     return NextResponse.json({ items: geparsed.items });
   } catch (e) {
     return NextResponse.json(

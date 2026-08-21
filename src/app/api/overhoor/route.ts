@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
-import { createGeminiClient, vereistGeminiKey, GEMINI_MODEL, jsonSchemaVoorGemini } from "@/lib/gemini";
+import { createGeminiClient, vereistGeminiKey, genereerGestructureerd } from "@/lib/gemini";
 
 const MAX_KENNISBANK_TEKENS = 14000;
 
@@ -76,18 +76,13 @@ ${kennisbank}`;
 
   try {
     const client = createGeminiClient();
-    const response = await client.models.generateContent({
-      model: GEMINI_MODEL,
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      config: {
-        maxOutputTokens: 1024,
-        responseMimeType: "application/json",
-        responseJsonSchema: jsonSchemaVoorGemini(ResponsSchema),
-      },
-    });
-
-    if (!response.text) throw new Error("Geen bruikbaar resultaat van de AI ontvangen.");
-    return NextResponse.json(ResponsSchema.parse(JSON.parse(response.text)));
+    const geparsed = await genereerGestructureerd(
+      client,
+      ResponsSchema,
+      [{ role: "user", parts: [{ text: prompt }] }],
+      2048
+    );
+    return NextResponse.json(geparsed);
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? `AI-verwerking mislukt: ${e.message}` : "AI-verwerking mislukt." },

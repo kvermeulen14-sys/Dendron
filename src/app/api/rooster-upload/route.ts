@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
-import { createGeminiClient, vereistGeminiKey, GEMINI_MODEL, jsonSchemaVoorGemini } from "@/lib/gemini";
+import { createGeminiClient, vereistGeminiKey, genereerGestructureerd } from "@/lib/gemini";
 
 const MAX_BESTANDSGROOTTE = 15 * 1024 * 1024; // 15MB
 const TOEGESTANE_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
@@ -75,23 +75,12 @@ export async function POST(request: Request) {
       "Herken alle losse lesuren met dag van de week, begintijd, eindtijd en vaknaam. Sla pauzes, " +
       "tussenuren en lege vakken over. Geef de lijst terug gesorteerd op dag en daarna op begintijd.";
 
-    const response = await client.models.generateContent({
-      model: GEMINI_MODEL,
-      contents: [
-        {
-          role: "user",
-          parts: [{ inlineData: { mimeType: file.type, data: base64 } }, { text: prompt }],
-        },
-      ],
-      config: {
-        maxOutputTokens: 4096,
-        responseMimeType: "application/json",
-        responseJsonSchema: jsonSchemaVoorGemini(ExtractieSchema),
+    const geparsed = await genereerGestructureerd(client, ExtractieSchema, [
+      {
+        role: "user",
+        parts: [{ inlineData: { mimeType: file.type, data: base64 } }, { text: prompt }],
       },
-    });
-
-    if (!response.text) throw new Error("Geen bruikbaar resultaat van de AI ontvangen.");
-    const geparsed = ExtractieSchema.parse(JSON.parse(response.text));
+    ]);
 
     const regels = geparsed.lessen.map((r) => ({
       dagVanWeek: naarDagNummer(r.dag),

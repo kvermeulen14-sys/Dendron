@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
-import { createGeminiClient, vereistGeminiKey, GEMINI_MODEL, jsonSchemaVoorGemini } from "@/lib/gemini";
+import { createGeminiClient, vereistGeminiKey, genereerGestructureerd } from "@/lib/gemini";
 
 const MAX_BESTANDSGROOTTE = 15 * 1024 * 1024; // 15MB
 const TOEGESTANE_TYPES = ["application/pdf", "image/jpeg", "image/jpg", "image/png", "image/webp", "application/json"];
@@ -111,18 +111,7 @@ export async function POST(request: Request) {
       ];
     }
 
-    const response = await client.models.generateContent({
-      model: GEMINI_MODEL,
-      contents: [{ role: "user", parts }],
-      config: {
-        maxOutputTokens: 4096,
-        responseMimeType: "application/json",
-        responseJsonSchema: jsonSchemaVoorGemini(ExtractieSchema),
-      },
-    });
-
-    if (!response.text) throw new Error("Geen bruikbaar resultaat van de AI ontvangen.");
-    geextraheerd = ExtractieSchema.parse(JSON.parse(response.text));
+    geextraheerd = await genereerGestructureerd(client, ExtractieSchema, [{ role: "user", parts }]);
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? `AI-verwerking mislukt: ${e.message}` : "AI-verwerking mislukt." },
