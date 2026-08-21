@@ -49,7 +49,14 @@ export default async function VakkenPage() {
                 <Icon name={s.icon} size={20} />
               </span>
               <div>
-                <p className="text-sm font-semibold text-slate-900">{s.name}</p>
+                <p className="flex items-center gap-1.5 text-sm font-semibold text-slate-900">
+                  {s.name}
+                  {s.code && (
+                    <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-slate-500">
+                      {s.code}
+                    </span>
+                  )}
+                </p>
                 <p className="text-xs text-slate-500">
                   {(s.materials as unknown as { count: number }[])?.[0]?.count ?? 0} stuk(s) lesstof
                 </p>

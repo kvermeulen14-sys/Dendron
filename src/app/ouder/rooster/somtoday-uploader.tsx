@@ -140,12 +140,14 @@ export function SomTodayUploader({ periodes }: { periodes: RoosterPeriode[] }) {
                   </select>
                   <input
                     type="time"
+                    step="300"
                     value={regel.startTijd}
                     onChange={(e) => bijwerken(i, "startTijd", e.target.value)}
                     className="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-xs"
                   />
                   <input
                     type="time"
+                    step="300"
                     value={regel.eindTijd}
                     onChange={(e) => bijwerken(i, "eindTijd", e.target.value)}
                     className="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-xs"

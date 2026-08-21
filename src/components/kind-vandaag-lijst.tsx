@@ -39,6 +39,11 @@ export function KindVandaagLijst({
     return subjects.find((s) => s.id === id)?.name ?? null;
   }
 
+  function subjectCode(id: string | null) {
+    if (!id) return null;
+    return subjects.find((s) => s.id === id)?.code ?? null;
+  }
+
   async function afvinken(item: PlanningItem) {
     setBezigId(item.id);
     await updatePlanningStatus(item.id, item.status === "klaar" ? "open" : "klaar");
@@ -83,12 +88,22 @@ export function KindVandaagLijst({
               className={clsx("shrink-0", variant === "verlopen" && !isKlaar ? "text-rose-500" : "text-slate-400")}
             />
             <div className="min-w-0 flex-1">
-              <p className={clsx("truncate text-sm font-medium text-slate-800", isKlaar && "line-through")}>
-                {item.title}
-              </p>
-              {(subjectNaam(item.subject_id) || item.estimated_minutes) && (
+              <div className="flex items-center gap-1.5">
+                <p className={clsx("truncate text-sm font-medium text-slate-800", isKlaar && "line-through")}>
+                  {item.title}
+                </p>
+                {subjectCode(item.subject_id) && (
+                  <span className="shrink-0 rounded bg-slate-100 px-1 py-0.5 text-[9px] font-bold text-slate-500">
+                    {subjectCode(item.subject_id)}
+                  </span>
+                )}
+              </div>
+              {((!subjectCode(item.subject_id) && subjectNaam(item.subject_id)) || item.estimated_minutes) && (
                 <p className="truncate text-xs text-slate-500">
-                  {[subjectNaam(item.subject_id), item.estimated_minutes ? `~${formatMinuten(item.estimated_minutes)}` : null]
+                  {[
+                    !subjectCode(item.subject_id) ? subjectNaam(item.subject_id) : null,
+                    item.estimated_minutes ? `~${formatMinuten(item.estimated_minutes)}` : null,
+                  ]
                     .filter(Boolean)
                     .join(" · ")}
                 </p>

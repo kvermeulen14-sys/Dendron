@@ -18,6 +18,7 @@ export async function maakVak(formData: FormData) {
   if (!profile) return { error: "Profiel niet gevonden." };
 
   const name = String(formData.get("name") || "").trim();
+  const code = String(formData.get("code") || "").trim().toUpperCase() || null;
   const icon = String(formData.get("icon") || "book-open");
   const aiInstructions = String(formData.get("aiInstructions") || "").trim();
 
@@ -26,12 +27,16 @@ export async function maakVak(formData: FormData) {
   const { error } = await supabase.from("subjects").insert({
     family_id: profile.family_id,
     name,
+    code,
     icon,
     ai_instructions: aiInstructions,
     created_by: user.id,
   });
 
-  if (error) return { error: error.message };
+  if (error) {
+    if (error.code === "23505") return { error: "Deze code is al in gebruik bij een ander vak." };
+    return { error: error.message };
+  }
 
   revalidatePath("/ouder/vakken");
   revalidatePath("/kind/vakken");
@@ -46,6 +51,7 @@ export async function bewerkVak(subjectId: string, formData: FormData) {
   if (!user) return { error: "Niet ingelogd." };
 
   const name = String(formData.get("name") || "").trim();
+  const code = String(formData.get("code") || "").trim().toUpperCase() || null;
   const icon = String(formData.get("icon") || "book-open");
   const aiInstructions = String(formData.get("aiInstructions") || "").trim();
 
@@ -53,10 +59,13 @@ export async function bewerkVak(subjectId: string, formData: FormData) {
 
   const { error } = await supabase
     .from("subjects")
-    .update({ name, icon, ai_instructions: aiInstructions })
+    .update({ name, code, icon, ai_instructions: aiInstructions })
     .eq("id", subjectId);
 
-  if (error) return { error: error.message };
+  if (error) {
+    if (error.code === "23505") return { error: "Deze code is al in gebruik bij een ander vak." };
+    return { error: error.message };
+  }
 
   revalidatePath("/ouder/vakken");
   revalidatePath(`/ouder/vakken/${subjectId}`);

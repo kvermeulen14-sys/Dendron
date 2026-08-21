@@ -35,7 +35,14 @@ export default async function VakDetailPage({
           <Icon name={subject.icon} size={22} />
         </span>
         <div className="flex-1">
-          <h1 className="text-xl font-semibold text-slate-900">{subject.name}</h1>
+          <h1 className="flex items-center gap-2 text-xl font-semibold text-slate-900">
+            {subject.name}
+            {subject.code && (
+              <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs font-bold tracking-wide text-slate-500">
+                {subject.code}
+              </span>
+            )}
+          </h1>
           <p className="text-sm text-slate-500">
             Kennisbank voor de AI-vakdocent van dit vak.
           </p>

@@ -271,6 +271,7 @@ export function RoosterBeheer({
                   <label className="mb-1.5 block text-sm font-medium text-slate-700">Begintijd</label>
                   <input
                     type="time"
+                    step="300"
                     name="startTijd"
                     required
                     defaultValue={bewerkItem?.start_tijd?.slice(0, 5) ?? ""}
@@ -281,6 +282,7 @@ export function RoosterBeheer({
                   <label className="mb-1.5 block text-sm font-medium text-slate-700">Eindtijd</label>
                   <input
                     type="time"
+                    step="300"
                     name="eindTijd"
                     required
                     defaultValue={bewerkItem?.eind_tijd?.slice(0, 5) ?? ""}

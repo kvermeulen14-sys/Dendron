@@ -26,6 +26,7 @@ export interface Subject {
   id: string;
   family_id: string;
   name: string;
+  code: string | null;
   icon: string;
   color: string;
   ai_instructions: string;

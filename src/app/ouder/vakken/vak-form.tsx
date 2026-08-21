@@ -36,14 +36,25 @@ export function VakForm() {
           }}
           className="flex flex-col gap-4"
         >
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-slate-700">Vaknaam</label>
-            <input
-              name="name"
-              required
-              placeholder="bijv. Wiskunde"
-              className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
-            />
+          <div className="grid grid-cols-[1fr_auto] gap-3">
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">Vaknaam</label>
+              <input
+                name="name"
+                required
+                placeholder="bijv. Wiskunde"
+                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">Code</label>
+              <input
+                name="code"
+                maxLength={4}
+                placeholder="WI"
+                className="w-20 rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm uppercase focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+              />
+            </div>
           </div>
 
           <div>

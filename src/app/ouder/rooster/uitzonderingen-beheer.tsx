@@ -141,6 +141,7 @@ export function UitzonderingenBeheer({
                     <label className="mb-1.5 block text-sm font-medium text-slate-700">Begintijd</label>
                     <input
                       type="time"
+                      step="300"
                       name="startTijd"
                       required
                       className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
@@ -150,6 +151,7 @@ export function UitzonderingenBeheer({
                     <label className="mb-1.5 block text-sm font-medium text-slate-700">Eindtijd</label>
                     <input
                       type="time"
+                      step="300"
                       name="eindTijd"
                       required
                       className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"

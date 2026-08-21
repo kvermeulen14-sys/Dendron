@@ -62,6 +62,23 @@ function formatMinuten(minuten: number) {
 
 const TIJD_OPTIES = [15, 30, 45, 60, 90, 120];
 
+// Schaal voor de proportionele blokhoogte in de agenda: hoe langer iets
+// duurt, hoe hoger het vakje - met een minimum zodat de tekst leesbaar
+// blijft bij korte taken.
+const PX_PER_MINUUT = 0.9;
+const MIN_BLOK_HOOGTE = 46;
+const ONBEKENDE_DUUR_MINUTEN = 30;
+
+function blokHoogte(minuten: number) {
+  return Math.max(MIN_BLOK_HOOGTE, Math.round(minuten * PX_PER_MINUUT));
+}
+
+function tijdVerschilMinuten(start: string, eind: string) {
+  const [sh, sm] = start.split(":").map(Number);
+  const [eh, em] = eind.split(":").map(Number);
+  return Math.max(0, eh * 60 + em - (sh * 60 + sm));
+}
+
 function naarIsoWeekdag(datum: Date) {
   const jsDag = datum.getDay(); // 0 = zondag
   return jsDag === 0 ? 7 : jsDag; // 1 = maandag ... 7 = zondag
@@ -103,6 +120,7 @@ interface RoosterBlok {
   tijd: string;
   titel: string;
   isFietsen: boolean;
+  duurMinuten: number;
 }
 
 function vindPeriode(periodes: RoosterPeriode[], iso: string) {
@@ -158,6 +176,7 @@ function roosterBlokkenVoorDag(
       tijd: `${tijdPlusMinuten(eerste.start_tijd, -reistijdMinuten)}-${tijdKort(eerste.start_tijd)}`,
       titel: "Fietsen naar school",
       isFietsen: true,
+      duurMinuten: reistijdMinuten,
     });
   }
   for (const les of lessen) {
@@ -165,6 +184,7 @@ function roosterBlokkenVoorDag(
       tijd: `${tijdKort(les.start_tijd)}-${tijdKort(les.eind_tijd)}`,
       titel: les.titel,
       isFietsen: false,
+      duurMinuten: tijdVerschilMinuten(les.start_tijd, les.eind_tijd),
     });
   }
   if (reistijdMinuten > 0) {
@@ -172,6 +192,7 @@ function roosterBlokkenVoorDag(
       tijd: `${tijdKort(laatste.eind_tijd)}-${tijdPlusMinuten(laatste.eind_tijd, reistijdMinuten)}`,
       titel: "Fietsen naar huis",
       isFietsen: true,
+      duurMinuten: reistijdMinuten,
     });
   }
   return blokken;
@@ -239,6 +260,11 @@ export function AgendaBoard({
   function subjectNaam(id: string | null) {
     if (!id) return null;
     return subjects.find((s) => s.id === id)?.name ?? null;
+  }
+
+  function subjectCode(id: string | null) {
+    if (!id) return null;
+    return subjects.find((s) => s.id === id)?.code ?? null;
   }
 
   async function handleSubmit(formData: FormData) {
@@ -681,13 +707,14 @@ export function AgendaBoard({
                   {roosterBlokken.map((b, i) => (
                     <div
                       key={i}
+                      style={{ minHeight: blokHoogte(b.duurMinuten) }}
                       className={clsx(
-                        "flex items-start gap-1 rounded-lg px-1.5 py-1 text-xs leading-snug",
+                        "flex items-center gap-1 rounded-lg px-1.5 py-1 text-xs leading-snug",
                         b.isFietsen ? "text-slate-400" : "bg-slate-50 text-slate-600"
                       )}
                     >
-                      <Icon name={b.isFietsen ? "bike" : "school"} size={12} className="mt-0.5 shrink-0" />
-                      <span className="line-clamp-1">
+                      <Icon name={b.isFietsen ? "bike" : "school"} size={12} className="shrink-0" />
+                      <span className="line-clamp-2">
                         {b.tijd} {b.titel}
                       </span>
                     </div>
@@ -716,32 +743,43 @@ export function AgendaBoard({
                         setDraggedId(null);
                         setDragOverIso(null);
                       }}
+                      style={{ minHeight: blokHoogte(item.estimated_minutes ?? ONBEKENDE_DUUR_MINUTEN) }}
                       className={clsx(
-                        "rounded-lg border px-2.5 py-2 text-sm transition-opacity",
+                        "flex flex-col justify-between rounded-lg border px-2.5 py-2 text-sm transition-opacity",
                         meta.badgeClass,
                         isKlaar && "opacity-50",
                         !isVoorstel && "cursor-grab active:cursor-grabbing",
                         draggedId === item.id && "opacity-30"
                       )}
                     >
-                      <div className="flex items-start gap-1.5">
-                        <Icon name={meta.icon} size={14} className="mt-0.5 shrink-0" />
-                        <span
-                          className={clsx(
-                            "line-clamp-2 font-medium leading-snug",
-                            isKlaar && "line-through"
+                      <div>
+                        <div className="flex items-start gap-1.5">
+                          <Icon name={meta.icon} size={14} className="mt-0.5 shrink-0" />
+                          <span
+                            className={clsx(
+                              "line-clamp-2 flex-1 font-medium leading-snug",
+                              isKlaar && "line-through"
+                            )}
+                          >
+                            {item.title}
+                          </span>
+                          {subjectCode(item.subject_id) && (
+                            <span className="shrink-0 rounded bg-white/70 px-1 py-0.5 text-[9px] font-bold leading-none text-slate-600">
+                              {subjectCode(item.subject_id)}
+                            </span>
                           )}
-                        >
-                          {item.title}
-                        </span>
+                        </div>
+                        {((!subjectCode(item.subject_id) && subjectNaam(item.subject_id)) || item.estimated_minutes) && (
+                          <p className="mt-0.5 truncate pl-5 text-xs text-slate-500">
+                            {[
+                              !subjectCode(item.subject_id) ? subjectNaam(item.subject_id) : null,
+                              item.estimated_minutes ? `~${formatMinuten(item.estimated_minutes)}` : null,
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          </p>
+                        )}
                       </div>
-                      {(subjectNaam(item.subject_id) || item.estimated_minutes) && (
-                        <p className="mt-0.5 truncate pl-5 text-xs text-slate-500">
-                          {[subjectNaam(item.subject_id), item.estimated_minutes ? `~${formatMinuten(item.estimated_minutes)}` : null]
-                            .filter(Boolean)
-                            .join(" · ")}
-                        </p>
-                      )}
                       <div className="mt-1.5 flex items-center gap-2.5">
                         {isVoorstel ? (
                           <>
@@ -853,16 +891,25 @@ export function AgendaBoard({
                         </span>
 
                         <div className="min-w-0 flex-1">
-                          <p
-                            className={clsx(
-                              "truncate text-sm font-medium text-slate-800",
-                              isKlaar && "line-through"
+                          <div className="flex items-center gap-1.5">
+                            <p
+                              className={clsx(
+                                "truncate text-sm font-medium text-slate-800",
+                                isKlaar && "line-through"
+                              )}
+                            >
+                              {item.title}
+                            </p>
+                            {subjectCode(item.subject_id) && (
+                              <span className="shrink-0 rounded bg-slate-100 px-1 py-0.5 text-[9px] font-bold text-slate-500">
+                                {subjectCode(item.subject_id)}
+                              </span>
                             )}
-                          >
-                            {item.title}
-                          </p>
+                          </div>
                           <p className="truncate text-xs text-slate-500">
-                            {[meta.label, subjectNaam(item.subject_id)].filter(Boolean).join(" - ")}
+                            {[meta.label, !subjectCode(item.subject_id) ? subjectNaam(item.subject_id) : null]
+                              .filter(Boolean)
+                              .join(" - ")}
                             {item.estimated_minutes && ` - ~${formatMinuten(item.estimated_minutes)}`}
                             {isVoorstel && " - voorstel, nog niet bevestigd"}
                           </p>
