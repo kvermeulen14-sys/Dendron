@@ -67,7 +67,7 @@ export function KennisbankUploader({ subjectId }: { subjectId: string }) {
         <input
           ref={inputRef}
           type="file"
-          accept="application/pdf,image/jpeg,image/png,image/webp"
+          accept="application/pdf,image/jpeg,image/png,image/webp,application/json,.json"
           className="hidden"
           onChange={(e) => {
             const file = e.target.files?.[0];
@@ -92,7 +92,7 @@ export function KennisbankUploader({ subjectId }: { subjectId: string }) {
               <Icon name="upload" size={24} />
             </span>
             <p className="text-sm font-medium text-slate-700">
-              Sleep een PDF of foto van lesstof hierheen, of klik om te kiezen
+              Sleep een PDF, foto of JSON-bestand van lesstof hierheen, of klik om te kiezen
             </p>
             <p className="text-xs text-slate-400">
               De AI herkent automatisch hoofdstuk- en opdrachtnummers. Max 15MB.

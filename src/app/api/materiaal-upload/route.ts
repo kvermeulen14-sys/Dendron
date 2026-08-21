@@ -6,7 +6,11 @@ import { createClient } from "@/lib/supabase/server";
 import { createClaudeClient, vereistClaudeKey, CLAUDE_MODEL } from "@/lib/claude";
 
 const MAX_BESTANDSGROOTTE = 15 * 1024 * 1024; // 15MB
-const TOEGESTANE_TYPES = ["application/pdf", "image/jpeg", "image/jpg", "image/png", "image/webp"];
+const TOEGESTANE_TYPES = ["application/pdf", "image/jpeg", "image/jpg", "image/png", "image/webp", "application/json"];
+
+function isJsonBestand(file: File) {
+  return file.type === "application/json" || file.name.toLowerCase().endsWith(".json");
+}
 
 const ExtractieSchema = z.object({
   title: z.string().describe("Korte titel voor dit materiaal, bijv. 'Hoofdstuk 4 - Breuken'"),
@@ -50,9 +54,9 @@ export async function POST(request: Request) {
   if (!(file instanceof File) || !subjectId) {
     return NextResponse.json({ error: "Kies een bestand en een vak." }, { status: 400 });
   }
-  if (!TOEGESTANE_TYPES.includes(file.type)) {
+  if (!TOEGESTANE_TYPES.includes(file.type) && !isJsonBestand(file)) {
     return NextResponse.json(
-      { error: "Alleen PDF's en foto's (JPEG/PNG/WebP) worden ondersteund." },
+      { error: "Alleen PDF's, foto's (JPEG/PNG/WebP) en JSON-bestanden worden ondersteund." },
       { status: 400 }
     );
   }
@@ -68,27 +72,57 @@ export async function POST(request: Request) {
   if (!subject) return NextResponse.json({ error: "Vak niet gevonden." }, { status: 404 });
 
   const bytes = await file.arrayBuffer();
-  const base64 = Buffer.from(bytes).toString("base64");
-  const bronType = file.type === "application/pdf" ? "pdf" : "foto";
+  const isJson = isJsonBestand(file);
+  const bronType = isJson ? "tekst" : file.type === "application/pdf" ? "pdf" : "foto";
 
   let geextraheerd: { title: string; hoofdstuk?: string; opdrachten?: string; samenvatting: string };
   try {
     const client = createClaudeClient();
 
-    const prompt =
-      bronType === "pdf"
-        ? "Analyseer dit lesmateriaal (PDF) voor een leerling op de Nederlandse middelbare school (Havo). Herken hoofdstuk- en opdrachtnummers waar mogelijk en zet de inhoud om in een heldere, gestructureerde samenvatting die een AI-vakdocent kan gebruiken om de leerling te helpen."
-        : "Analyseer deze foto van lesmateriaal (bijv. een pagina uit een boek, aantekeningen, of een diagram) voor een leerling op de Nederlandse middelbare school (Havo). Herken hoofdstuk- en opdrachtnummers waar mogelijk en beschrijf de inhoud (inclusief eventuele afbeeldingen/diagrammen/sommen) zodat een AI-vakdocent dit later kan gebruiken om uitleg te geven.";
+    let content: (
+      | { type: "text"; text: string }
+      | { type: "document"; source: { type: "base64"; media_type: "application/pdf"; data: string } }
+      | { type: "image"; source: { type: "base64"; media_type: "image/jpeg" | "image/png" | "image/webp"; data: string } }
+    )[];
 
-    const bestandsBlok =
-      bronType === "pdf"
-        ? ({ type: "document", source: { type: "base64", media_type: "application/pdf", data: base64 } } as const)
-        : ({ type: "image", source: { type: "base64", media_type: file.type as "image/jpeg" | "image/png" | "image/webp", data: base64 } } as const);
+    if (isJson) {
+      const jsonTekst = Buffer.from(bytes).toString("utf-8");
+      content = [
+        {
+          type: "text",
+          text:
+            "Dit is een JSON-bestand met lesstof voor een leerling op de Nederlandse middelbare school (Havo) - " +
+            "bijvoorbeeld een export uit een andere leer-app, of handmatig opgestelde structuur. Herken hoofdstuk- " +
+            "en opdrachtnummers waar mogelijk (indien aanwezig in de data) en zet de inhoud om in een heldere, " +
+            "goed leesbare, gestructureerde samenvatting die een AI-vakdocent kan gebruiken om de leerling te " +
+            "helpen. Negeer technische/opmaak-velden die geen leerinhoud bevatten.\n\nJSON-inhoud:\n" +
+            jsonTekst.slice(0, 100000),
+        },
+      ];
+    } else if (bronType === "pdf") {
+      const base64 = Buffer.from(bytes).toString("base64");
+      content = [
+        { type: "document", source: { type: "base64", media_type: "application/pdf", data: base64 } },
+        {
+          type: "text",
+          text: "Analyseer dit lesmateriaal (PDF) voor een leerling op de Nederlandse middelbare school (Havo). Herken hoofdstuk- en opdrachtnummers waar mogelijk en zet de inhoud om in een heldere, gestructureerde samenvatting die een AI-vakdocent kan gebruiken om de leerling te helpen.",
+        },
+      ];
+    } else {
+      const base64 = Buffer.from(bytes).toString("base64");
+      content = [
+        { type: "image", source: { type: "base64", media_type: file.type as "image/jpeg" | "image/png" | "image/webp", data: base64 } },
+        {
+          type: "text",
+          text: "Analyseer deze foto van lesmateriaal (bijv. een pagina uit een boek, aantekeningen, of een diagram) voor een leerling op de Nederlandse middelbare school (Havo). Herken hoofdstuk- en opdrachtnummers waar mogelijk en beschrijf de inhoud (inclusief eventuele afbeeldingen/diagrammen/sommen) zodat een AI-vakdocent dit later kan gebruiken om uitleg te geven.",
+        },
+      ];
+    }
 
     const response = await client.beta.messages.parse({
       model: CLAUDE_MODEL,
       max_tokens: 4096,
-      messages: [{ role: "user", content: [bestandsBlok, { type: "text", text: prompt }] }],
+      messages: [{ role: "user", content }],
       output_format: betaZodOutputFormat(ExtractieSchema),
     });
 
@@ -103,7 +137,7 @@ export async function POST(request: Request) {
 
   const storagePad = `${profile.family_id}/${subjectId}/${randomUUID()}-${veiligeBestandsnaam(file.name)}`;
   const { error: uploadError } = await supabase.storage.from("lesstof").upload(storagePad, bytes, {
-    contentType: file.type,
+    contentType: file.type || (isJson ? "application/json" : "application/octet-stream"),
     upsert: false,
   });
   if (uploadError) {
