@@ -1,0 +1,122 @@
+/*
+ * Kleurenpalet van Dendron.
+ *
+ * Pas de --hue-* en --sat-* waarden hieronder aan om de kleur van een
+ * categorie te wijzigen (hue = kleurtoon 0-360, sat = verzadiging 0-100%).
+ * Alle 10 tinten (50 t/m 900) van die categorie schuiven automatisch mee,
+ * dus je hoeft maar op 1 plek iets te veranderen. Handig om te proberen:
+ * https://oklch.com of gewoon een beetje spelen met de graden hieronder.
+ *
+ * - accent: de hoofdkleur van de tool (knoppen, links, actieve status)
+ * - vakantie / toets / anders: kleur per type periode op de jaarkalender
+ *   (toets/toetsweek is bewust geen rood - dat oogt als alarm/fout)
+ * - huiswerk / leermoment / prive: kleur per type item in de agenda
+ */
+:root {
+  --hue-accent: 252;
+  --sat-accent: 82%;
+
+  --hue-vakantie: 165;
+  --sat-vakantie: 55%;
+
+  --hue-toets: 16;
+  --sat-toets: 88%;
+
+  --hue-anders: 285;
+  --sat-anders: 45%;
+
+  --hue-huiswerk: 205;
+  --sat-huiswerk: 80%;
+
+  --hue-leermoment: 225;
+  --sat-leermoment: 65%;
+
+  --hue-prive: 335;
+  --sat-prive: 60%;
+}
+
+@theme inline {
+  /* accent */
+  --color-accent-50: hsl(var(--hue-accent) var(--sat-accent) 97%);
+  --color-accent-100: hsl(var(--hue-accent) var(--sat-accent) 94%);
+  --color-accent-200: hsl(var(--hue-accent) var(--sat-accent) 87%);
+  --color-accent-300: hsl(var(--hue-accent) var(--sat-accent) 78%);
+  --color-accent-400: hsl(var(--hue-accent) var(--sat-accent) 68%);
+  --color-accent-500: hsl(var(--hue-accent) var(--sat-accent) 60%);
+  --color-accent-600: hsl(var(--hue-accent) var(--sat-accent) 53%);
+  --color-accent-700: hsl(var(--hue-accent) var(--sat-accent) 45%);
+  --color-accent-800: hsl(var(--hue-accent) var(--sat-accent) 37%);
+  --color-accent-900: hsl(var(--hue-accent) var(--sat-accent) 29%);
+
+  /* vakantie */
+  --color-vakantie-50: hsl(var(--hue-vakantie) var(--sat-vakantie) 97%);
+  --color-vakantie-100: hsl(var(--hue-vakantie) var(--sat-vakantie) 94%);
+  --color-vakantie-200: hsl(var(--hue-vakantie) var(--sat-vakantie) 87%);
+  --color-vakantie-300: hsl(var(--hue-vakantie) var(--sat-vakantie) 78%);
+  --color-vakantie-400: hsl(var(--hue-vakantie) var(--sat-vakantie) 68%);
+  --color-vakantie-500: hsl(var(--hue-vakantie) var(--sat-vakantie) 60%);
+  --color-vakantie-600: hsl(var(--hue-vakantie) var(--sat-vakantie) 53%);
+  --color-vakantie-700: hsl(var(--hue-vakantie) var(--sat-vakantie) 45%);
+  --color-vakantie-800: hsl(var(--hue-vakantie) var(--sat-vakantie) 37%);
+  --color-vakantie-900: hsl(var(--hue-vakantie) var(--sat-vakantie) 29%);
+
+  /* toets (ook gebruikt voor toetsweek op de jaarkalender) */
+  --color-toets-50: hsl(var(--hue-toets) var(--sat-toets) 97%);
+  --color-toets-100: hsl(var(--hue-toets) var(--sat-toets) 94%);
+  --color-toets-200: hsl(var(--hue-toets) var(--sat-toets) 87%);
+  --color-toets-300: hsl(var(--hue-toets) var(--sat-toets) 78%);
+  --color-toets-400: hsl(var(--hue-toets) var(--sat-toets) 68%);
+  --color-toets-500: hsl(var(--hue-toets) var(--sat-toets) 60%);
+  --color-toets-600: hsl(var(--hue-toets) var(--sat-toets) 53%);
+  --color-toets-700: hsl(var(--hue-toets) var(--sat-toets) 45%);
+  --color-toets-800: hsl(var(--hue-toets) var(--sat-toets) 37%);
+  --color-toets-900: hsl(var(--hue-toets) var(--sat-toets) 29%);
+
+  /* anders */
+  --color-anders-50: hsl(var(--hue-anders) var(--sat-anders) 97%);
+  --color-anders-100: hsl(var(--hue-anders) var(--sat-anders) 94%);
+  --color-anders-200: hsl(var(--hue-anders) var(--sat-anders) 87%);
+  --color-anders-300: hsl(var(--hue-anders) var(--sat-anders) 78%);
+  --color-anders-400: hsl(var(--hue-anders) var(--sat-anders) 68%);
+  --color-anders-500: hsl(var(--hue-anders) var(--sat-anders) 60%);
+  --color-anders-600: hsl(var(--hue-anders) var(--sat-anders) 53%);
+  --color-anders-700: hsl(var(--hue-anders) var(--sat-anders) 45%);
+  --color-anders-800: hsl(var(--hue-anders) var(--sat-anders) 37%);
+  --color-anders-900: hsl(var(--hue-anders) var(--sat-anders) 29%);
+
+  /* huiswerk */
+  --color-huiswerk-50: hsl(var(--hue-huiswerk) var(--sat-huiswerk) 97%);
+  --color-huiswerk-100: hsl(var(--hue-huiswerk) var(--sat-huiswerk) 94%);
+  --color-huiswerk-200: hsl(var(--hue-huiswerk) var(--sat-huiswerk) 87%);
+  --color-huiswerk-300: hsl(var(--hue-huiswerk) var(--sat-huiswerk) 78%);
+  --color-huiswerk-400: hsl(var(--hue-huiswerk) var(--sat-huiswerk) 68%);
+  --color-huiswerk-500: hsl(var(--hue-huiswerk) var(--sat-huiswerk) 60%);
+  --color-huiswerk-600: hsl(var(--hue-huiswerk) var(--sat-huiswerk) 53%);
+  --color-huiswerk-700: hsl(var(--hue-huiswerk) var(--sat-huiswerk) 45%);
+  --color-huiswerk-800: hsl(var(--hue-huiswerk) var(--sat-huiswerk) 37%);
+  --color-huiswerk-900: hsl(var(--hue-huiswerk) var(--sat-huiswerk) 29%);
+
+  /* leermoment */
+  --color-leermoment-50: hsl(var(--hue-leermoment) var(--sat-leermoment) 97%);
+  --color-leermoment-100: hsl(var(--hue-leermoment) var(--sat-leermoment) 94%);
+  --color-leermoment-200: hsl(var(--hue-leermoment) var(--sat-leermoment) 87%);
+  --color-leermoment-300: hsl(var(--hue-leermoment) var(--sat-leermoment) 78%);
+  --color-leermoment-400: hsl(var(--hue-leermoment) var(--sat-leermoment) 68%);
+  --color-leermoment-500: hsl(var(--hue-leermoment) var(--sat-leermoment) 60%);
+  --color-leermoment-600: hsl(var(--hue-leermoment) var(--sat-leermoment) 53%);
+  --color-leermoment-700: hsl(var(--hue-leermoment) var(--sat-leermoment) 45%);
+  --color-leermoment-800: hsl(var(--hue-leermoment) var(--sat-leermoment) 37%);
+  --color-leermoment-900: hsl(var(--hue-leermoment) var(--sat-leermoment) 29%);
+
+  /* prive */
+  --color-prive-50: hsl(var(--hue-prive) var(--sat-prive) 97%);
+  --color-prive-100: hsl(var(--hue-prive) var(--sat-prive) 94%);
+  --color-prive-200: hsl(var(--hue-prive) var(--sat-prive) 87%);
+  --color-prive-300: hsl(var(--hue-prive) var(--sat-prive) 78%);
+  --color-prive-400: hsl(var(--hue-prive) var(--sat-prive) 68%);
+  --color-prive-500: hsl(var(--hue-prive) var(--sat-prive) 60%);
+  --color-prive-600: hsl(var(--hue-prive) var(--sat-prive) 53%);
+  --color-prive-700: hsl(var(--hue-prive) var(--sat-prive) 45%);
+  --color-prive-800: hsl(var(--hue-prive) var(--sat-prive) 37%);
+  --color-prive-900: hsl(var(--hue-prive) var(--sat-prive) 29%);
+}

@@ -44,7 +44,7 @@ export function MateriaalBewerkForm({ material, subjectId }: { material: Materia
               name="title"
               required
               defaultValue={material.title}
-              className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+              className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
             />
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -53,7 +53,7 @@ export function MateriaalBewerkForm({ material, subjectId }: { material: Materia
               <input
                 name="hoofdstuk"
                 defaultValue={material.hoofdstuk ?? ""}
-                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
               />
             </div>
             <div>
@@ -61,7 +61,7 @@ export function MateriaalBewerkForm({ material, subjectId }: { material: Materia
               <input
                 name="opdrachten"
                 defaultValue={material.opdrachten ?? ""}
-                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
               />
             </div>
           </div>
@@ -74,7 +74,7 @@ export function MateriaalBewerkForm({ material, subjectId }: { material: Materia
               required
               rows={8}
               defaultValue={material.content}
-              className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+              className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
             />
           </div>
 

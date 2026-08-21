@@ -61,6 +61,32 @@ export async function maakRoosterPeriode(formData: FormData) {
   return { success: true };
 }
 
+export async function bewerkRoosterPeriode(id: string, formData: FormData) {
+  const ctx = await vereistOuder();
+  if ("error" in ctx) return ctx;
+  const { supabase } = ctx;
+
+  const naam = String(formData.get("naam") || "").trim();
+  const startDatum = String(formData.get("startDatum") || "");
+  const eindDatum = String(formData.get("eindDatum") || "");
+
+  if (!naam || !startDatum || !eindDatum) {
+    return { error: "Vul een naam en start- en einddatum in." };
+  }
+  if (eindDatum <= startDatum) {
+    return { error: "De einddatum moet na de startdatum liggen." };
+  }
+
+  const { error } = await supabase
+    .from("rooster_periodes")
+    .update({ naam, start_datum: startDatum, eind_datum: eindDatum })
+    .eq("id", id);
+
+  if (error) return { error: error.message };
+  revalidateRooster();
+  return { success: true };
+}
+
 export async function verwijderRoosterPeriode(id: string) {
   const supabase = await createClient();
   await supabase.from("rooster_periodes").delete().eq("id", id);
@@ -209,6 +235,43 @@ export async function maakRoosterUitzondering(formData: FormData) {
     eind_tijd: eindTijd,
     created_by: userId,
   });
+
+  if (error) return { error: error.message };
+  revalidateRooster();
+  return { success: true };
+}
+
+export async function bewerkRoosterUitzondering(id: string, formData: FormData) {
+  const ctx = await vereistOuder();
+  if ("error" in ctx) return ctx;
+  const { supabase } = ctx;
+
+  const datum = String(formData.get("datum") || "");
+  const type = String(formData.get("type") || "") as "vervallen" | "gewijzigd" | "extra";
+  const origineelItemId = String(formData.get("origineelItemId") || "") || null;
+  const titel = String(formData.get("titel") || "").trim() || null;
+  const startTijd = String(formData.get("startTijd") || "") || null;
+  const eindTijd = String(formData.get("eindTijd") || "") || null;
+
+  if (!datum || !type) return { error: "Vul een datum en soort wijziging in." };
+  if (type === "vervallen" && !origineelItemId) {
+    return { error: "Kies welk lesuur vervalt." };
+  }
+  if (type !== "vervallen" && (!titel || !startTijd || !eindTijd)) {
+    return { error: "Vul titel, begin- en eindtijd in." };
+  }
+
+  const { error } = await supabase
+    .from("rooster_uitzonderingen")
+    .update({
+      datum,
+      origineel_item_id: origineelItemId,
+      type,
+      titel,
+      start_tijd: startTijd,
+      eind_tijd: eindTijd,
+    })
+    .eq("id", id);
 
   if (error) return { error: error.message };
   revalidateRooster();

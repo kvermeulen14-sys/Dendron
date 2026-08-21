@@ -53,7 +53,7 @@ export default function RegistrerenPage() {
             Check je e-mail om je account te bevestigen. Daarna kun je inloggen en in het
             ouder-dashboard een account voor je kind aanmaken.
           </p>
-          <Link href="/login" className="mt-4 inline-block text-sm font-medium text-blue-600 hover:underline">
+          <Link href="/login" className="mt-4 inline-block text-sm font-medium text-accent-600 hover:underline">
             Naar inloggen
           </Link>
         </Card>
@@ -65,7 +65,7 @@ export default function RegistrerenPage() {
     <div className="flex min-h-screen items-center justify-center bg-slate-50 px-6 py-16">
       <div className="w-full max-w-sm">
         <div className="mb-6 flex flex-col items-center text-center">
-          <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-600 text-white">
+          <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-accent-600 text-white">
             <Icon name="users" size={26} />
           </div>
           <h1 className="text-xl font-semibold text-slate-900">Ouder-account aanmaken</h1>
@@ -83,7 +83,7 @@ export default function RegistrerenPage() {
                 required
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
               />
             </div>
             <div>
@@ -94,7 +94,7 @@ export default function RegistrerenPage() {
                 value={familyName}
                 onChange={(e) => setFamilyName(e.target.value)}
                 placeholder="bijv. Familie Vermeulen"
-                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
               />
             </div>
             <div>
@@ -106,7 +106,7 @@ export default function RegistrerenPage() {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
               />
             </div>
             <div>
@@ -119,7 +119,7 @@ export default function RegistrerenPage() {
                 minLength={6}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
               />
             </div>
 
@@ -133,7 +133,7 @@ export default function RegistrerenPage() {
 
         <p className="mt-6 text-center text-sm text-slate-500">
           Al een account?{" "}
-          <Link href="/login" className="font-medium text-blue-600 hover:underline">
+          <Link href="/login" className="font-medium text-accent-600 hover:underline">
             Inloggen
           </Link>
         </p>

@@ -61,7 +61,7 @@ export function KennisbankUploader({ subjectId }: { subjectId: string }) {
         onClick={() => !bezig && inputRef.current?.click()}
         className={clsx(
           "flex min-h-[220px] cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed p-8 text-center transition-colors",
-          slepen ? "border-blue-400 bg-blue-50" : "border-slate-200 bg-slate-50 hover:bg-slate-100"
+          slepen ? "border-accent-400 bg-accent-50" : "border-slate-200 bg-slate-50 hover:bg-slate-100"
         )}
       >
         <input
@@ -78,7 +78,7 @@ export function KennisbankUploader({ subjectId }: { subjectId: string }) {
 
         {bezig ? (
           <>
-            <span className="flex h-12 w-12 animate-pulse items-center justify-center rounded-2xl bg-blue-100 text-blue-600">
+            <span className="flex h-12 w-12 animate-pulse items-center justify-center rounded-2xl bg-accent-100 text-accent-600">
               <Icon name="sparkles" size={24} />
             </span>
             <p className="text-sm font-medium text-slate-700">
@@ -88,7 +88,7 @@ export function KennisbankUploader({ subjectId }: { subjectId: string }) {
           </>
         ) : (
           <>
-            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-100 text-blue-600">
+            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-accent-100 text-accent-600">
               <Icon name="upload" size={24} />
             </span>
             <p className="text-sm font-medium text-slate-700">

@@ -6,7 +6,7 @@ export default function HomePage() {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-slate-50 px-6 py-16">
       <div className="w-full max-w-md text-center">
-        <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-sm shadow-blue-600/30">
+        <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-accent-600 text-white shadow-sm shadow-accent-600/30">
           <Icon name="book-open" size={32} />
         </div>
         <h1 className="text-2xl font-semibold text-slate-900">Dendron</h1>

@@ -93,7 +93,7 @@ export function JaarOverzicht({ events }: { events: JaarEvent[] }) {
                         className={clsx(
                           "relative border-r border-slate-100 last:border-r-0",
                           cel.bg,
-                          iso === vandaagIso && "ring-1 ring-inset ring-blue-500"
+                          iso === vandaagIso && "ring-1 ring-inset ring-accent-500"
                         )}
                       >
                         <span className={clsx("absolute left-1 top-0.5 text-[9px] leading-[11px]", cel.text)}>

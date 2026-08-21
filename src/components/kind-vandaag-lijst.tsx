@@ -61,7 +61,7 @@ export function KindVandaagLijst({
           <li
             key={item.id}
             className={clsx(
-              "flex items-center gap-3 rounded-xl border px-3.5 py-2.5",
+              "relative flex flex-col gap-2 rounded-xl border p-3 pb-11",
               isKlaar
                 ? "border-slate-100 bg-slate-50 opacity-60"
                 : variant === "verlopen"
@@ -69,46 +69,50 @@ export function KindVandaagLijst({
                   : "border-slate-100"
             )}
           >
+            <div className="flex items-start gap-2.5">
+              <Icon
+                name={meta.icon}
+                size={16}
+                className={clsx("mt-0.5 shrink-0", variant === "verlopen" && !isKlaar ? "text-rose-500" : "text-slate-400")}
+              />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5">
+                  <p className={clsx("truncate text-sm font-medium text-slate-800", isKlaar && "line-through")}>
+                    {item.title}
+                  </p>
+                  {subjectCode(item.subject_id) && (
+                    <span className="shrink-0 rounded bg-slate-100 px-1 py-0.5 text-[9px] font-bold text-slate-500">
+                      {subjectCode(item.subject_id)}
+                    </span>
+                  )}
+                </div>
+                {((!subjectCode(item.subject_id) && subjectNaam(item.subject_id)) || item.estimated_minutes) && (
+                  <p className="truncate text-xs text-slate-500">
+                    {[
+                      !subjectCode(item.subject_id) ? subjectNaam(item.subject_id) : null,
+                      item.estimated_minutes ? `~${formatMinuten(item.estimated_minutes)}` : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </p>
+                )}
+              </div>
+            </div>
+
             <button
               onClick={() => afvinken(item)}
               disabled={bezig}
               aria-label={isKlaar ? "Weer openzetten" : "Afvinken"}
               className={clsx(
-                "flex h-7 w-7 shrink-0 items-center justify-center rounded-full border transition-colors disabled:opacity-50",
+                "absolute bottom-2 right-2 flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold shadow-sm transition-colors disabled:opacity-50",
                 isKlaar
-                  ? "border-emerald-500 bg-emerald-500 text-white"
-                  : "border-slate-300 text-transparent hover:border-emerald-400 hover:text-emerald-400"
+                  ? "bg-emerald-500 text-white"
+                  : "bg-white text-slate-500 ring-1 ring-inset ring-slate-200 hover:bg-emerald-50 hover:text-emerald-700 hover:ring-emerald-300 active:scale-95"
               )}
             >
               <Icon name={bezig ? "loader" : "check"} size={14} className={bezig ? "animate-spin" : undefined} />
+              {isKlaar ? "Klaar" : "Afvinken"}
             </button>
-            <Icon
-              name={meta.icon}
-              size={16}
-              className={clsx("shrink-0", variant === "verlopen" && !isKlaar ? "text-rose-500" : "text-slate-400")}
-            />
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-1.5">
-                <p className={clsx("truncate text-sm font-medium text-slate-800", isKlaar && "line-through")}>
-                  {item.title}
-                </p>
-                {subjectCode(item.subject_id) && (
-                  <span className="shrink-0 rounded bg-slate-100 px-1 py-0.5 text-[9px] font-bold text-slate-500">
-                    {subjectCode(item.subject_id)}
-                  </span>
-                )}
-              </div>
-              {((!subjectCode(item.subject_id) && subjectNaam(item.subject_id)) || item.estimated_minutes) && (
-                <p className="truncate text-xs text-slate-500">
-                  {[
-                    !subjectCode(item.subject_id) ? subjectNaam(item.subject_id) : null,
-                    item.estimated_minutes ? `~${formatMinuten(item.estimated_minutes)}` : null,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </p>
-              )}
-            </div>
           </li>
         );
       })}

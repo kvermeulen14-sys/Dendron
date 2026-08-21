@@ -7,26 +7,26 @@ export const PLANNING_TYPE_META: Record<
   huiswerk: {
     label: "Huiswerk",
     icon: "pencil-line",
-    color: "amber",
-    badgeClass: "bg-amber-50 text-amber-700 border-amber-200",
+    color: "huiswerk",
+    badgeClass: "bg-huiswerk-50 text-huiswerk-700 border-huiswerk-200",
   },
   toets: {
     label: "Toets",
     icon: "target",
-    color: "rose",
-    badgeClass: "bg-rose-50 text-rose-700 border-rose-200",
+    color: "toets",
+    badgeClass: "bg-toets-50 text-toets-700 border-toets-200",
   },
   prive: {
     label: "Prive",
     icon: "heart",
-    color: "violet",
-    badgeClass: "bg-violet-50 text-violet-700 border-violet-200",
+    color: "prive",
+    badgeClass: "bg-prive-50 text-prive-700 border-prive-200",
   },
   leermoment: {
     label: "Leermoment",
     icon: "brain",
-    color: "emerald",
-    badgeClass: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    color: "leermoment",
+    badgeClass: "bg-leermoment-50 text-leermoment-700 border-leermoment-200",
   },
 };
 

@@ -87,7 +87,7 @@ export function ToetsweekPlanner({
             setToetsweekId(e.target.value);
             setResultaat(null);
           }}
-          className="w-full max-w-sm rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+          className="w-full max-w-sm rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
         >
           {toetsweken.map((t) => (
             <option key={t.id} value={t.id}>
@@ -102,7 +102,7 @@ export function ToetsweekPlanner({
         <Card>
           <p className="text-sm text-slate-500">
             Nog geen toetsen in deze periode gevonden.{" "}
-            <Link href={agendaHref} className="font-medium text-blue-600 hover:underline">
+            <Link href={agendaHref} className="font-medium text-accent-600 hover:underline">
               Voeg ze eerst toe in de agenda
             </Link>
             , kom dan hier terug om ze in 1 keer te plannen.

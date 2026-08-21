@@ -89,7 +89,7 @@ export function OverhoorPanel({ subjectId, subjectName }: { subjectId: string; s
     return (
       <Card className="flex flex-col gap-4">
         <div className="flex items-center gap-2">
-          <Icon name="target" size={18} className="text-blue-600" />
+          <Icon name="target" size={18} className="text-accent-600" />
           <p className="text-sm font-semibold text-slate-900">Overhoor mij over {subjectName}</p>
         </div>
 
@@ -145,7 +145,7 @@ export function OverhoorPanel({ subjectId, subjectName }: { subjectId: string; s
     <Card className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Icon name="target" size={18} className="text-blue-600" />
+          <Icon name="target" size={18} className="text-accent-600" />
           <p className="text-sm font-semibold text-slate-900">Overhoren - {subjectName}</p>
         </div>
         <button onClick={stop} className="text-xs font-medium text-slate-500 hover:underline">
@@ -180,7 +180,7 @@ export function OverhoorPanel({ subjectId, subjectName }: { subjectId: string; s
               onChange={(e) => setAntwoord(e.target.value)}
               rows={3}
               placeholder="Typ hier je antwoord..."
-              className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+              className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
             />
             {error && <p className="text-sm text-rose-600">{error}</p>}
             <Button loading={bezig} disabled={!antwoord.trim()} onClick={() => haalVolgendeVraagOp(antwoord)}>

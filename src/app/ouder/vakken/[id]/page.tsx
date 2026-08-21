@@ -31,7 +31,7 @@ export default async function VakDetailPage({
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center gap-3">
-        <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+        <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-accent-50 text-accent-600">
           <Icon name={subject.icon} size={22} />
         </span>
         <div className="flex-1">

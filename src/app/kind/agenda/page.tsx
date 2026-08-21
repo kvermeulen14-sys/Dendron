@@ -20,6 +20,7 @@ export default async function KindAgendaPage() {
     { data: roosterItems },
     { data: uitzonderingen },
     { data: family },
+    { data: jaarEvents },
   ] = await Promise.all([
     supabase
       .from("planning_items")
@@ -32,6 +33,7 @@ export default async function KindAgendaPage() {
     supabase.from("rooster_items").select("*").eq("family_id", profile!.family_id),
     supabase.from("rooster_uitzonderingen").select("*").eq("family_id", profile!.family_id),
     supabase.from("families").select("reistijd_minuten").eq("id", profile!.family_id).single(),
+    supabase.from("jaar_events").select("*").eq("family_id", profile!.family_id),
   ]);
 
   return (
@@ -43,6 +45,7 @@ export default async function KindAgendaPage() {
       roosterItems={roosterItems ?? []}
       uitzonderingen={uitzonderingen ?? []}
       reistijdMinuten={family?.reistijd_minuten ?? 15}
+      jaarEvents={jaarEvents ?? []}
     />
   );
 }

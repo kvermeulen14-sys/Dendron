@@ -38,7 +38,7 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-slate-50 px-6 py-16">
       <div className="w-full max-w-sm">
         <div className="mb-6 flex flex-col items-center text-center">
-          <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-600 text-white">
+          <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-accent-600 text-white">
             <Icon name="book-open" size={26} />
           </div>
           <h1 className="text-xl font-semibold text-slate-900">Inloggen</h1>
@@ -56,7 +56,7 @@ export default function LoginPage() {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
               />
             </div>
             <div>
@@ -68,7 +68,7 @@ export default function LoginPage() {
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
               />
             </div>
 
@@ -82,7 +82,7 @@ export default function LoginPage() {
 
         <p className="mt-6 text-center text-sm text-slate-500">
           Nog geen ouder-account?{" "}
-          <Link href="/registreren" className="font-medium text-blue-600 hover:underline">
+          <Link href="/registreren" className="font-medium text-accent-600 hover:underline">
             Account aanmaken
           </Link>
         </p>

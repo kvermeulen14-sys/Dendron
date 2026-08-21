@@ -6,8 +6,13 @@ import { Button } from "@/components/ui/button";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { Card } from "@/components/ui/card";
 import { Modal } from "@/components/ui/modal";
+import { TijdSelect } from "@/components/ui/tijd-select";
 import { Icon } from "@/components/icon";
-import { maakRoosterUitzondering, verwijderRoosterUitzondering } from "@/lib/actions/rooster";
+import {
+  maakRoosterUitzondering,
+  bewerkRoosterUitzondering,
+  verwijderRoosterUitzondering,
+} from "@/lib/actions/rooster";
 import type { RoosterItem, RoosterUitzondering, UitzonderingType } from "@/lib/types";
 
 const DAGNAMEN = ["", "Maandag", "Dinsdag", "Woensdag", "Donderdag", "Vrijdag", "Zaterdag", "Zondag"];
@@ -26,16 +31,33 @@ export function UitzonderingenBeheer({
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [bewerkId, setBewerkId] = useState<string | null>(null);
   const [datum, setDatum] = useState("");
   const [type, setType] = useState<UitzonderingType>("vervallen");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+
+  const bewerkUitzondering = bewerkId ? uitzonderingen.find((u) => u.id === bewerkId) ?? null : null;
+  const modalOpen = open || bewerkUitzondering !== null;
 
   const lesurenOpDatum = useMemo(() => {
     if (!datum) return [];
     const dag = isoWeekdag(new Date(datum + "T00:00:00"));
     return roosterItems.filter((i) => i.dag_van_week === dag).sort((a, b) => a.start_tijd.localeCompare(b.start_tijd));
   }, [datum, roosterItems]);
+
+  function sluitModal() {
+    setOpen(false);
+    setBewerkId(null);
+    setDatum("");
+    setError(null);
+  }
+
+  function bewerk(u: RoosterUitzondering) {
+    setBewerkId(u.id);
+    setDatum(u.datum);
+    setType(u.type);
+  }
 
   function verwijder(id: string) {
     startTransition(async () => {
@@ -54,22 +76,32 @@ export function UitzonderingenBeheer({
             er komt iets bij) - zonder het standaardrooster aan te passen.
           </p>
         </div>
-        <Button size="md" icon={<Icon name="plus" size={16} />} onClick={() => setOpen(true)}>
+        <Button
+          size="md"
+          icon={<Icon name="plus" size={16} />}
+          onClick={() => {
+            setBewerkId(null);
+            setDatum("");
+            setType("vervallen");
+            setOpen(true);
+          }}
+        >
           Uitzondering
         </Button>
       </div>
 
-      <Modal open={open} onClose={() => setOpen(false)} title="Uitzondering toevoegen">
+      <Modal open={modalOpen} onClose={sluitModal} title={bewerkUitzondering ? "Uitzondering bewerken" : "Uitzondering toevoegen"}>
           <form
             action={async (formData) => {
               setError(null);
-              const res = await maakRoosterUitzondering(formData);
+              const res = bewerkUitzondering
+                ? await bewerkRoosterUitzondering(bewerkUitzondering.id, formData)
+                : await maakRoosterUitzondering(formData);
               if (res?.error) {
                 setError(res.error);
                 return;
               }
-              setOpen(false);
-              setDatum("");
+              sluitModal();
               router.refresh();
             }}
             className="flex flex-col gap-4"
@@ -82,7 +114,7 @@ export function UitzonderingenBeheer({
                 required
                 value={datum}
                 onChange={(e) => setDatum(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
               />
             </div>
 
@@ -109,7 +141,8 @@ export function UitzonderingenBeheer({
                 <select
                   name="origineelItemId"
                   required
-                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                  defaultValue={bewerkUitzondering?.origineel_item_id ?? ""}
+                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
                 >
                   <option value="">
                     {datum ? "Kies een lesuur" : "Kies eerst een datum"}
@@ -132,29 +165,28 @@ export function UitzonderingenBeheer({
                   <input
                     name="titel"
                     required
+                    defaultValue={bewerkUitzondering?.titel ?? ""}
                     placeholder="bijv. Wiskunde (verplaatst)"
-                    className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                    className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="mb-1.5 block text-sm font-medium text-slate-700">Begintijd</label>
-                    <input
-                      type="time"
-                      step="300"
+                    <TijdSelect
                       name="startTijd"
                       required
-                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                      placeholder="Kies een tijd"
+                      defaultValue={bewerkUitzondering?.start_tijd?.slice(0, 5) ?? ""}
                     />
                   </div>
                   <div>
                     <label className="mb-1.5 block text-sm font-medium text-slate-700">Eindtijd</label>
-                    <input
-                      type="time"
-                      step="300"
+                    <TijdSelect
                       name="eindTijd"
                       required
-                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                      placeholder="Kies een tijd"
+                      defaultValue={bewerkUitzondering?.eind_tijd?.slice(0, 5) ?? ""}
                     />
                   </div>
                 </div>
@@ -164,8 +196,8 @@ export function UitzonderingenBeheer({
             {error && <p className="text-sm text-rose-600">{error}</p>}
 
             <div className="flex gap-2">
-              <SubmitButton>Opslaan</SubmitButton>
-              <Button type="button" variant="secondary" onClick={() => setOpen(false)}>
+              <SubmitButton pendingText="Bezig...">{bewerkUitzondering ? "Wijzigingen opslaan" : "Opslaan"}</SubmitButton>
+              <Button type="button" variant="secondary" onClick={sluitModal}>
                 Annuleren
               </Button>
             </div>
@@ -194,6 +226,13 @@ export function UitzonderingenBeheer({
                     </p>
                   )}
                 </div>
+                <button
+                  onClick={() => bewerk(u)}
+                  className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                  aria-label="Bewerken"
+                >
+                  <Icon name="pencil-line" size={16} />
+                </button>
                 <button
                   disabled={pending}
                   onClick={() => verwijder(u.id)}

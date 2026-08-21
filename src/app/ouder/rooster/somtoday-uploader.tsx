@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
+import { TijdSelect } from "@/components/ui/tijd-select";
 import { Icon } from "@/components/icon";
 import { TekstOfBestandInvoer } from "@/components/tekst-of-bestand-invoer";
 import { maakRoosterItemsBulk } from "@/lib/actions/rooster";
@@ -138,18 +139,16 @@ export function SomTodayUploader({ periodes }: { periodes: RoosterPeriode[] }) {
                       </option>
                     ))}
                   </select>
-                  <input
-                    type="time"
-                    step="300"
+                  <TijdSelect
                     value={regel.startTijd}
                     onChange={(e) => bijwerken(i, "startTijd", e.target.value)}
+                    placeholder=""
                     className="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-xs"
                   />
-                  <input
-                    type="time"
-                    step="300"
+                  <TijdSelect
                     value={regel.eindTijd}
                     onChange={(e) => bijwerken(i, "eindTijd", e.target.value)}
+                    placeholder=""
                     className="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-xs"
                   />
                   <input
@@ -171,7 +170,7 @@ export function SomTodayUploader({ periodes }: { periodes: RoosterPeriode[] }) {
 
             <button
               onClick={voegRegelToe}
-              className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline"
+              className="flex items-center gap-1 text-xs font-medium text-accent-600 hover:underline"
             >
               <Icon name="plus" size={12} /> Regel toevoegen
             </button>
@@ -184,7 +183,7 @@ export function SomTodayUploader({ periodes }: { periodes: RoosterPeriode[] }) {
                 <select
                   value={periodeId}
                   onChange={(e) => setPeriodeId(e.target.value)}
-                  className="rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                  className="rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
                 >
                   {periodes.length === 0 && <option value="">Maak eerst een periode aan</option>}
                   {periodes.map((p) => (

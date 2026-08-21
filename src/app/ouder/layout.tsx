@@ -34,7 +34,7 @@ export default async function OuderLayout({ children }: { children: React.ReactN
       navItems={NAV_ITEMS}
       userName={profile.full_name || "Ouder"}
       roleLabel="Ouder-dashboard"
-      accentClass="bg-blue-600"
+      accentClass="bg-accent-600"
     >
       {children}
     </NavShell>

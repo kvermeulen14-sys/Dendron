@@ -2,31 +2,46 @@ import type { JaarEvent, JaarEventType } from "@/lib/types";
 
 export const JAAR_EVENT_META: Record<
   JaarEventType,
-  { label: string; badgeClass: string; dotClass: string; cellClass: string; cellWeekendClass: string; cellTextClass: string }
+  {
+    label: string;
+    badgeClass: string;
+    dotClass: string;
+    cellClass: string;
+    cellWeekendClass: string;
+    cellTextClass: string;
+    dayTintClass: string;
+    dayLabelClass: string;
+  }
 > = {
   vakantie: {
     label: "Vakantie",
-    badgeClass: "bg-emerald-50 text-emerald-700 border-emerald-200",
-    dotClass: "bg-emerald-500",
-    cellClass: "bg-emerald-200",
-    cellWeekendClass: "bg-emerald-300",
-    cellTextClass: "text-emerald-900",
+    badgeClass: "bg-vakantie-50 text-vakantie-700 border-vakantie-200",
+    dotClass: "bg-vakantie-500",
+    cellClass: "bg-vakantie-200",
+    cellWeekendClass: "bg-vakantie-300",
+    cellTextClass: "text-vakantie-900",
+    dayTintClass: "bg-vakantie-50",
+    dayLabelClass: "bg-vakantie-100 text-vakantie-800",
   },
   toetsweek: {
     label: "Toetsweek",
-    badgeClass: "bg-rose-50 text-rose-700 border-rose-200",
-    dotClass: "bg-rose-500",
-    cellClass: "bg-rose-200",
-    cellWeekendClass: "bg-rose-300",
-    cellTextClass: "text-rose-900",
+    badgeClass: "bg-toets-50 text-toets-700 border-toets-200",
+    dotClass: "bg-toets-500",
+    cellClass: "bg-toets-200",
+    cellWeekendClass: "bg-toets-300",
+    cellTextClass: "text-toets-900",
+    dayTintClass: "bg-toets-50",
+    dayLabelClass: "bg-toets-100 text-toets-800",
   },
   anders: {
     label: "Anders",
-    badgeClass: "bg-violet-50 text-violet-700 border-violet-200",
-    dotClass: "bg-violet-500",
-    cellClass: "bg-violet-200",
-    cellWeekendClass: "bg-violet-300",
-    cellTextClass: "text-violet-900",
+    badgeClass: "bg-anders-50 text-anders-700 border-anders-200",
+    dotClass: "bg-anders-500",
+    cellClass: "bg-anders-200",
+    cellWeekendClass: "bg-anders-300",
+    cellTextClass: "text-anders-900",
+    dayTintClass: "bg-anders-50",
+    dayLabelClass: "bg-anders-100 text-anders-800",
   },
 };
 

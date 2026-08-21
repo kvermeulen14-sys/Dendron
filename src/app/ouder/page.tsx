@@ -51,7 +51,7 @@ export default async function OuderOverzicht() {
       <Card>
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-base font-semibold text-slate-900">Eerstvolgende toetsen</h2>
-          <Link href="/ouder/agenda" className="text-sm font-medium text-blue-600 hover:underline">
+          <Link href="/ouder/agenda" className="text-sm font-medium text-accent-600 hover:underline">
             Hele agenda
           </Link>
         </div>
@@ -78,7 +78,7 @@ export default async function OuderOverzicht() {
       <div className="grid gap-4 sm:grid-cols-2">
         <Link href="/ouder/vakken">
           <Card className="flex h-full items-center gap-3 transition-shadow hover:shadow-md">
-            <Icon name="book-open" size={22} className="text-blue-600" />
+            <Icon name="book-open" size={22} className="text-accent-600" />
             <div>
               <p className="text-sm font-semibold text-slate-900">Vakken & lesstof</p>
               <p className="text-xs text-slate-500">Beheer wat de AI-vakdocent weet</p>
@@ -87,7 +87,7 @@ export default async function OuderOverzicht() {
         </Link>
         <Link href="/ouder/account">
           <Card className="flex h-full items-center gap-3 transition-shadow hover:shadow-md">
-            <Icon name="users" size={22} className="text-blue-600" />
+            <Icon name="users" size={22} className="text-accent-600" />
             <div>
               <p className="text-sm font-semibold text-slate-900">Kind-account</p>
               <p className="text-xs text-slate-500">Inloggegevens beheren</p>
@@ -112,7 +112,7 @@ function Stat({
 }) {
   const toneClasses: Record<string, string> = {
     rose: "bg-rose-50 text-rose-600",
-    blue: "bg-blue-50 text-blue-600",
+    blue: "bg-accent-50 text-accent-600",
     amber: "bg-amber-50 text-amber-600",
     emerald: "bg-emerald-50 text-emerald-600",
   };

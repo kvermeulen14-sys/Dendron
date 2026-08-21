@@ -43,7 +43,7 @@ export function VakForm() {
                 name="name"
                 required
                 placeholder="bijv. Wiskunde"
-                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
               />
             </div>
             <div>
@@ -52,7 +52,7 @@ export function VakForm() {
                 name="code"
                 maxLength={4}
                 placeholder="WI"
-                className="w-20 rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm uppercase focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                className="w-20 rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm uppercase focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
               />
             </div>
           </div>
@@ -68,7 +68,7 @@ export function VakForm() {
                   className={clsx(
                     "flex h-10 w-10 items-center justify-center rounded-xl border",
                     icon === opt
-                      ? "border-blue-600 bg-blue-50 text-blue-600"
+                      ? "border-accent-600 bg-accent-50 text-accent-600"
                       : "border-slate-200 text-slate-500 hover:bg-slate-50"
                   )}
                 >
@@ -87,7 +87,7 @@ export function VakForm() {
               name="aiInstructions"
               rows={3}
               placeholder="bijv. Blijf dicht bij de examenstof van niveau Havo 2. Geef nooit meteen het antwoord, stel eerst een tegenvraag."
-              className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+              className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
             />
           </div>
 

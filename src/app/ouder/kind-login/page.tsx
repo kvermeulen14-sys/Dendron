@@ -38,7 +38,7 @@ export default async function KindLoginPage() {
         <Card>
           <p className="text-sm text-slate-500">
             Nog geen kind-account.{" "}
-            <Link href="/ouder/account" className="font-medium text-blue-600 hover:underline">
+            <Link href="/ouder/account" className="font-medium text-accent-600 hover:underline">
               Maak er eerst een aan
             </Link>
             .

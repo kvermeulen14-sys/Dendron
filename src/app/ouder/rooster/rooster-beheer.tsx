@@ -7,9 +7,11 @@ import { Button } from "@/components/ui/button";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { Card } from "@/components/ui/card";
 import { Modal } from "@/components/ui/modal";
+import { TijdSelect } from "@/components/ui/tijd-select";
 import { Icon } from "@/components/icon";
 import {
   maakRoosterPeriode,
+  bewerkRoosterPeriode,
   verwijderRoosterPeriode,
   maakRoosterItem,
   bewerkRoosterItem,
@@ -44,6 +46,7 @@ export function RoosterBeheer({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [periodeFormOpen, setPeriodeFormOpen] = useState(false);
+  const [bewerkPeriodeId, setBewerkPeriodeId] = useState<string | null>(null);
   const [periodeError, setPeriodeError] = useState<string | null>(null);
   const [selectedPeriodeId, setSelectedPeriodeId] = useState<string | null>(periodes[0]?.id ?? null);
   const [itemFormOpen, setItemFormOpen] = useState(false);
@@ -54,6 +57,15 @@ export function RoosterBeheer({
     () => roosterItems.filter((i) => i.periode_id === selectedPeriodeId).sort((a, b) => a.start_tijd.localeCompare(b.start_tijd)),
     [roosterItems, selectedPeriodeId]
   );
+
+  const bewerkPeriode = bewerkPeriodeId ? periodes.find((p) => p.id === bewerkPeriodeId) ?? null : null;
+  const periodeModalOpen = periodeFormOpen || bewerkPeriode !== null;
+
+  function sluitPeriodeModal() {
+    setPeriodeFormOpen(false);
+    setBewerkPeriodeId(null);
+    setPeriodeError(null);
+  }
 
   const bewerkItem = bewerkId ? itemsVoorPeriode.find((i) => i.id === bewerkId) ?? null : null;
   const itemModalOpen = itemFormOpen || bewerkItem !== null;
@@ -94,16 +106,18 @@ export function RoosterBeheer({
           </Button>
         </div>
 
-        <Modal open={periodeFormOpen} onClose={() => setPeriodeFormOpen(false)} title="Nieuwe periode">
+        <Modal open={periodeModalOpen} onClose={sluitPeriodeModal} title={bewerkPeriode ? "Periode bewerken" : "Nieuwe periode"}>
           <form
             action={async (formData) => {
               setPeriodeError(null);
-              const res = await maakRoosterPeriode(formData);
+              const res = bewerkPeriode
+                ? await bewerkRoosterPeriode(bewerkPeriode.id, formData)
+                : await maakRoosterPeriode(formData);
               if (res?.error) {
                 setPeriodeError(res.error);
                 return;
               }
-              setPeriodeFormOpen(false);
+              sluitPeriodeModal();
               router.refresh();
             }}
             className="flex flex-col gap-4"
@@ -113,8 +127,9 @@ export function RoosterBeheer({
               <input
                 name="naam"
                 required
+                defaultValue={bewerkPeriode?.naam ?? ""}
                 placeholder="bijv. Periode 1"
-                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
               />
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -124,7 +139,8 @@ export function RoosterBeheer({
                   type="date"
                   name="startDatum"
                   required
-                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                  defaultValue={bewerkPeriode?.start_datum ?? ""}
+                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
                 />
               </div>
               <div>
@@ -133,14 +149,15 @@ export function RoosterBeheer({
                   type="date"
                   name="eindDatum"
                   required
-                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                  defaultValue={bewerkPeriode?.eind_datum ?? ""}
+                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
                 />
               </div>
             </div>
             {periodeError && <p className="text-sm text-rose-600">{periodeError}</p>}
             <div className="flex gap-2">
-              <SubmitButton>Opslaan</SubmitButton>
-              <Button type="button" variant="secondary" onClick={() => setPeriodeFormOpen(false)}>
+              <SubmitButton pendingText="Bezig...">{bewerkPeriode ? "Wijzigingen opslaan" : "Opslaan"}</SubmitButton>
+              <Button type="button" variant="secondary" onClick={sluitPeriodeModal}>
                 Annuleren
               </Button>
             </div>
@@ -171,6 +188,13 @@ export function RoosterBeheer({
                   <span className={clsx("ml-2 text-xs", selectedPeriodeId === p.id ? "text-slate-300" : "text-slate-400")}>
                     {formatDatum(p.start_datum)} - {formatDatum(p.eind_datum)}
                   </span>
+                </button>
+                <button
+                  onClick={() => setBewerkPeriodeId(p.id)}
+                  className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                  aria-label="Periode bewerken"
+                >
+                  <Icon name="pencil-line" size={14} />
                 </button>
                 <button
                   disabled={pending}
@@ -228,7 +252,7 @@ export function RoosterBeheer({
                 <select
                   name="subjectId"
                   defaultValue={bewerkItem?.subject_id ?? ""}
-                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
                 >
                   <option value="">Geen specifiek vak</option>
                   {subjects.map((s) => (
@@ -245,7 +269,7 @@ export function RoosterBeheer({
                   required
                   defaultValue={bewerkItem?.titel ?? ""}
                   placeholder="bijv. Wiskunde"
-                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
                 />
               </div>
               <div>
@@ -254,7 +278,7 @@ export function RoosterBeheer({
                   name="dagVanWeek"
                   required
                   defaultValue={bewerkItem?.dag_van_week ?? ""}
-                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
                 >
                   <option value="" disabled>
                     Kies een dag
@@ -269,24 +293,20 @@ export function RoosterBeheer({
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="mb-1.5 block text-sm font-medium text-slate-700">Begintijd</label>
-                  <input
-                    type="time"
-                    step="300"
+                  <TijdSelect
                     name="startTijd"
                     required
+                    placeholder="Kies een tijd"
                     defaultValue={bewerkItem?.start_tijd?.slice(0, 5) ?? ""}
-                    className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
                   />
                 </div>
                 <div>
                   <label className="mb-1.5 block text-sm font-medium text-slate-700">Eindtijd</label>
-                  <input
-                    type="time"
-                    step="300"
+                  <TijdSelect
                     name="eindTijd"
                     required
+                    placeholder="Kies een tijd"
                     defaultValue={bewerkItem?.eind_tijd?.slice(0, 5) ?? ""}
-                    className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
                   />
                 </div>
               </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition, type DragEvent } from "react";
+import { useEffect, useMemo, useState, useTransition, type DragEvent } from "react";
 import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import { Icon } from "@/components/icon";
@@ -9,7 +9,9 @@ import { SubmitButton } from "@/components/ui/submit-button";
 import { Card } from "@/components/ui/card";
 import { Modal } from "@/components/ui/modal";
 import { HuiswerkAIImport } from "@/components/huiswerk-ai-import";
+import { TijdSelect } from "@/components/ui/tijd-select";
 import { PLANNING_TYPE_META } from "@/lib/planning";
+import { JAAR_EVENT_META, eventsOpDatum } from "@/lib/jaarkalender";
 import {
   bewerkPlanningItem,
   maakPlanningItem,
@@ -18,6 +20,7 @@ import {
   verwijderPlanningItem,
 } from "@/lib/actions/planning";
 import type {
+  JaarEvent,
   PlanningItem,
   PlanningType,
   RoosterItem,
@@ -62,15 +65,18 @@ function formatMinuten(minuten: number) {
 
 const TIJD_OPTIES = [15, 30, 45, 60, 90, 120];
 
-// Schaal voor de proportionele blokhoogte in de agenda: hoe langer iets
-// duurt, hoe hoger het vakje - met een minimum zodat de tekst leesbaar
-// blijft bij korte taken.
-const PX_PER_MINUUT = 0.9;
-const MIN_BLOK_HOOGTE = 46;
+// Tijdlijn-schaal voor de dag-per-dag agenda: elk uur krijgt een vaste
+// hoogte, zodat je in 1 oogopslag ziet hoeveel tijd iets kost en hoeveel
+// ruimte er nog over is - net als in een gewone agenda-app. Het venster
+// (6-22u) breidt automatisch uit als er iets buiten die uren gepland staat.
+const UUR_HOOGTE = 52;
+const STANDAARD_VAN_UUR = 6;
+const STANDAARD_TOT_UUR = 22;
+const MIN_BLOK_PX = 18;
 const ONBEKENDE_DUUR_MINUTEN = 30;
 
-function blokHoogte(minuten: number) {
-  return Math.max(MIN_BLOK_HOOGTE, Math.round(minuten * PX_PER_MINUUT));
+function hoogteVoorDuur(duurMinuten: number) {
+  return Math.max(MIN_BLOK_PX, (duurMinuten / 60) * UUR_HOOGTE);
 }
 
 function tijdVerschilMinuten(start: string, eind: string) {
@@ -121,6 +127,13 @@ interface RoosterBlok {
   titel: string;
   isFietsen: boolean;
   duurMinuten: number;
+  startMinuten: number;
+  bron: "rooster" | "gewijzigd" | "extra";
+}
+
+function tijdNaarMinuten(tijd: string) {
+  const [h, m] = tijd.slice(0, 5).split(":").map(Number);
+  return h * 60 + m;
 }
 
 function vindPeriode(periodes: RoosterPeriode[], iso: string) {
@@ -143,7 +156,7 @@ function roosterBlokkenVoorDag(
     dagUitzonderingen.filter((u) => u.type === "gewijzigd").map((u) => [u.origineel_item_id, u])
   );
 
-  let lessen: { titel: string; start_tijd: string; eind_tijd: string }[] = periode
+  let lessen: { titel: string; start_tijd: string; eind_tijd: string; bron: "rooster" | "gewijzigd" | "extra" }[] = periode
     ? roosterItems
         .filter((i) => i.periode_id === periode.id && i.dag_van_week === weekdag && !vervallenIds.has(i.id))
         .map((i) => {
@@ -153,14 +166,15 @@ function roosterBlokkenVoorDag(
                 titel: wijziging.titel ?? i.titel,
                 start_tijd: wijziging.start_tijd ?? i.start_tijd,
                 eind_tijd: wijziging.eind_tijd ?? i.eind_tijd,
+                bron: "gewijzigd" as const,
               }
-            : { titel: i.titel, start_tijd: i.start_tijd, eind_tijd: i.eind_tijd };
+            : { titel: i.titel, start_tijd: i.start_tijd, eind_tijd: i.eind_tijd, bron: "rooster" as const };
         })
     : [];
 
   for (const extra of dagUitzonderingen.filter((u) => u.type === "extra")) {
     if (extra.titel && extra.start_tijd && extra.eind_tijd) {
-      lessen.push({ titel: extra.titel, start_tijd: extra.start_tijd, eind_tijd: extra.eind_tijd });
+      lessen.push({ titel: extra.titel, start_tijd: extra.start_tijd, eind_tijd: extra.eind_tijd, bron: "extra" });
     }
   }
 
@@ -172,11 +186,14 @@ function roosterBlokkenVoorDag(
   const laatste = lessen[lessen.length - 1];
 
   if (reistijdMinuten > 0) {
+    const start = tijdPlusMinuten(eerste.start_tijd, -reistijdMinuten);
     blokken.push({
-      tijd: `${tijdPlusMinuten(eerste.start_tijd, -reistijdMinuten)}-${tijdKort(eerste.start_tijd)}`,
+      tijd: `${start}-${tijdKort(eerste.start_tijd)}`,
       titel: "Fietsen naar school",
       isFietsen: true,
       duurMinuten: reistijdMinuten,
+      startMinuten: tijdNaarMinuten(start),
+      bron: "rooster",
     });
   }
   for (const les of lessen) {
@@ -185,6 +202,8 @@ function roosterBlokkenVoorDag(
       titel: les.titel,
       isFietsen: false,
       duurMinuten: tijdVerschilMinuten(les.start_tijd, les.eind_tijd),
+      startMinuten: tijdNaarMinuten(les.start_tijd),
+      bron: les.bron,
     });
   }
   if (reistijdMinuten > 0) {
@@ -193,6 +212,8 @@ function roosterBlokkenVoorDag(
       titel: "Fietsen naar huis",
       isFietsen: true,
       duurMinuten: reistijdMinuten,
+      startMinuten: tijdNaarMinuten(laatste.eind_tijd),
+      bron: "rooster",
     });
   }
   return blokken;
@@ -206,6 +227,7 @@ export function AgendaBoard({
   roosterItems,
   uitzonderingen,
   reistijdMinuten,
+  jaarEvents,
 }: {
   items: PlanningItem[];
   subjects: Subject[];
@@ -214,6 +236,7 @@ export function AgendaBoard({
   roosterItems: RoosterItem[];
   uitzonderingen: RoosterUitzondering[];
   reistijdMinuten: number;
+  jaarEvents: JaarEvent[];
 }) {
   const router = useRouter();
   const [formOpen, setFormOpen] = useState(false);
@@ -256,6 +279,52 @@ export function AgendaBoard({
   const vandaagOpenItems = vandaagItems.filter((i) => i.status !== "klaar");
   const vandaagMinuten = vandaagOpenItems.reduce((som, i) => som + (i.estimated_minutes ?? 0), 0);
   const vandaagZonderInschatting = vandaagOpenItems.filter((i) => !i.estimated_minutes).length;
+
+  const roosterPerDag = useMemo(() => {
+    const map = new Map<string, RoosterBlok[]>();
+    for (const dag of weekDagen) {
+      map.set(naarIsoDatum(dag), roosterBlokkenVoorDag(dag, periodes, roosterItems, uitzonderingen, reistijdMinuten));
+    }
+    return map;
+  }, [weekDagen, periodes, roosterItems, uitzonderingen, reistijdMinuten]);
+
+  const { vanUur, totUur } = useMemo(() => {
+    let minMin = STANDAARD_VAN_UUR * 60;
+    let maxMin = STANDAARD_TOT_UUR * 60;
+    for (const blokken of roosterPerDag.values()) {
+      for (const b of blokken) {
+        minMin = Math.min(minMin, b.startMinuten);
+        maxMin = Math.max(maxMin, b.startMinuten + b.duurMinuten);
+      }
+    }
+    for (const dag of weekDagen) {
+      for (const item of itemsPerDag.get(naarIsoDatum(dag)) ?? []) {
+        if (item.start_time) {
+          const start = tijdNaarMinuten(item.start_time);
+          minMin = Math.min(minMin, start);
+          maxMin = Math.max(maxMin, start + (item.estimated_minutes ?? ONBEKENDE_DUUR_MINUTEN));
+        }
+      }
+    }
+    return { vanUur: Math.floor(minMin / 60), totUur: Math.ceil(maxMin / 60) };
+  }, [roosterPerDag, weekDagen, itemsPerDag]);
+
+  const totaalHoogte = (totUur - vanUur) * UUR_HOOGTE;
+
+  function topVoorMinuut(minuut: number) {
+    return ((minuut - vanUur * 60) / 60) * UUR_HOOGTE;
+  }
+
+  const [nuMinuten, setNuMinuten] = useState<number | null>(null);
+  useEffect(() => {
+    function tick() {
+      const nu = new Date();
+      setNuMinuten(nu.getHours() * 60 + nu.getMinutes());
+    }
+    tick();
+    const interval = setInterval(tick, 60000);
+    return () => clearInterval(interval);
+  }, []);
 
   function subjectNaam(id: string | null) {
     if (!id) return null;
@@ -366,8 +435,8 @@ export function AgendaBoard({
       </div>
 
       {vandaagOpenItems.length > 0 && (
-        <Card className="flex items-center gap-3 border-blue-100 bg-blue-50/60 py-3">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-600">
+        <Card className="flex items-center gap-3 border-accent-100 bg-accent-50/60 py-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent-100 text-accent-600">
             <Icon name="target" size={18} />
           </span>
           <div className="flex-1">
@@ -410,7 +479,7 @@ export function AgendaBoard({
           {weekOffset !== 0 && (
             <button
               onClick={() => setWeekOffset(0)}
-              className="text-xs font-medium text-blue-600 hover:underline"
+              className="text-xs font-medium text-accent-600 hover:underline"
             >
               Naar deze week
             </button>
@@ -466,7 +535,7 @@ export function AgendaBoard({
                 name="title"
                 required
                 placeholder="bijv. Hoofdstuk 3 samenvatten"
-                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
               />
             </div>
 
@@ -475,7 +544,7 @@ export function AgendaBoard({
                 <label className="mb-1.5 block text-sm font-medium text-slate-700">Vak</label>
                 <select
                   name="subjectId"
-                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
                 >
                   <option value="">Geen specifiek vak</option>
                   {subjects.map((s) => (
@@ -494,7 +563,7 @@ export function AgendaBoard({
                 </label>
                 <select
                   name="testTypeId"
-                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
                 >
                   <option value="">Standaard vuistregel</option>
                   {testTypes.map((t) => (
@@ -514,7 +583,7 @@ export function AgendaBoard({
                 type="date"
                 name="dueDate"
                 required
-                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
               />
               {type === "toets" && (
                 <p className="mt-1.5 text-xs text-slate-500">
@@ -522,6 +591,17 @@ export function AgendaBoard({
                   aanpassen.
                 </p>
               )}
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                Vaste tijd (optioneel)
+              </label>
+              <TijdSelect name="startTime" startUur={6} eindUur={23} placeholder="Geen vaste tijd" />
+              <p className="mt-1.5 text-xs text-slate-500">
+                Zet dit op een tijdstip als je precies weet wanneer je dit gaat doen - dan komt het
+                op die tijd in de agenda te staan.
+              </p>
             </div>
 
             <div>
@@ -558,7 +638,7 @@ export function AgendaBoard({
               <textarea
                 name="description"
                 rows={2}
-                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
               />
             </div>
 
@@ -582,7 +662,7 @@ export function AgendaBoard({
                 name="title"
                 required
                 defaultValue={bewerkItem.title}
-                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
               />
             </div>
 
@@ -592,7 +672,7 @@ export function AgendaBoard({
                 <select
                   name="subjectId"
                   defaultValue={bewerkItem.subject_id ?? ""}
-                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
                 >
                   <option value="">Geen specifiek vak</option>
                   {subjects.map((s) => (
@@ -613,7 +693,20 @@ export function AgendaBoard({
                 name="dueDate"
                 required
                 defaultValue={bewerkItem.due_date}
-                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                Vaste tijd (optioneel)
+              </label>
+              <TijdSelect
+                name="startTime"
+                startUur={6}
+                eindUur={23}
+                placeholder="Geen vaste tijd"
+                defaultValue={bewerkItem.start_time?.slice(0, 5) ?? ""}
               />
             </div>
 
@@ -649,7 +742,7 @@ export function AgendaBoard({
                 name="description"
                 rows={2}
                 defaultValue={bewerkItem.description}
-                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
               />
             </div>
 
@@ -665,68 +758,46 @@ export function AgendaBoard({
         )}
       </Modal>
 
-      {/* Kalenderweergave: 7 dagen naast elkaar, zoals afsprakenplanning-software */}
-      <div className="hidden gap-2 md:grid md:grid-cols-7">
-        {weekDagen.map((dag) => {
-          const iso = naarIsoDatum(dag);
-          const isVandaag = iso === vandaagIso;
-          const dagItems = itemsPerDag.get(iso) ?? [];
-          const roosterBlokken = roosterBlokkenVoorDag(dag, periodes, roosterItems, uitzonderingen, reistijdMinuten);
-          return (
-            <div
-              key={iso}
-              onDragOver={(e) => {
-                e.preventDefault();
-                e.dataTransfer.dropEffect = "move";
-                if (dragOverIso !== iso) setDragOverIso(iso);
-              }}
-              onDragLeave={() => setDragOverIso((huidig) => (huidig === iso ? null : huidig))}
-              onDrop={(e) => dropOpDag(e, iso)}
-              className={clsx(
-                "flex min-h-[220px] flex-col gap-2 overflow-hidden rounded-2xl border p-3 transition-colors md:h-[calc(100vh-260px)] md:min-h-[420px]",
-                isVandaag ? "border-blue-300 bg-blue-50/50" : "border-slate-200 bg-white",
-                dragOverIso === iso && "border-blue-400 bg-blue-50 ring-2 ring-blue-200"
-              )}
-            >
-              <div className="shrink-0 text-center">
-                <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
-                  {dag.toLocaleDateString("nl-NL", { weekday: "short" })}
-                </p>
-                <p
-                  className={clsx(
-                    "text-xl font-semibold",
-                    isVandaag ? "text-blue-600" : "text-slate-800"
-                  )}
-                >
-                  {dag.getDate()}
-                </p>
-              </div>
-
-              {roosterBlokken.length > 0 && (
-                <div className="flex shrink-0 flex-col gap-1 border-b border-slate-100 pb-2">
-                  {roosterBlokken.map((b, i) => (
-                    <div
-                      key={i}
-                      style={{ minHeight: blokHoogte(b.duurMinuten) }}
-                      className={clsx(
-                        "flex items-center gap-1 rounded-lg px-1.5 py-1 text-xs leading-snug",
-                        b.isFietsen ? "text-slate-400" : "bg-slate-50 text-slate-600"
-                      )}
-                    >
-                      <Icon name={b.isFietsen ? "bike" : "school"} size={12} className="shrink-0" />
-                      <span className="line-clamp-2">
-                        {b.tijd} {b.titel}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <div className="flex flex-1 flex-col gap-2 overflow-y-auto">
-                {dagItems.length === 0 && roosterBlokken.length === 0 && (
-                  <p className="pt-2 text-center text-sm text-slate-300">-</p>
+      {/* Kalenderweergave: tijdlijn 7 dagen naast elkaar, zoals afsprakenplanning-software */}
+      <div className="hidden overflow-x-auto md:block">
+        <div
+          className="grid min-w-[760px] gap-x-2 gap-y-0"
+          style={{ gridTemplateColumns: `44px repeat(7, minmax(0, 1fr))` }}
+        >
+          {/* rij 1: lege hoek + dagkoppen (hoogte schaalt automatisch mee met de langste kop) */}
+          <div />
+          {weekDagen.map((dag) => {
+            const iso = naarIsoDatum(dag);
+            const isVandaag = iso === vandaagIso;
+            const dagItems = itemsPerDag.get(iso) ?? [];
+            const ongeplandeItems = dagItems.filter((i) => i.status === "voorstel" || !i.start_time);
+            const jaarEvent = eventsOpDatum(jaarEvents, dag)[0] ?? null;
+            const eventMeta = jaarEvent ? JAAR_EVENT_META[jaarEvent.type] : null;
+            return (
+              <div
+                key={iso}
+                className={clsx(
+                  "flex flex-col gap-1.5 rounded-t-2xl border border-b-0 p-2",
+                  eventMeta ? eventMeta.dayTintClass : isVandaag ? "bg-accent-50/50" : "bg-white",
+                  isVandaag ? "border-accent-300 ring-2 ring-inset ring-accent-300" : "border-slate-200"
                 )}
-                {dagItems.map((item) => {
+              >
+                <div className="text-center">
+                  <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+                    {dag.toLocaleDateString("nl-NL", { weekday: "short" })}
+                  </p>
+                  <p className={clsx("text-xl font-semibold", isVandaag ? "text-accent-600" : "text-slate-800")}>
+                    {dag.getDate()}
+                  </p>
+                </div>
+
+                {eventMeta && jaarEvent && (
+                  <span className={clsx("truncate rounded px-1.5 py-0.5 text-center text-[10px] font-medium", eventMeta.dayLabelClass)}>
+                    {jaarEvent.titel}
+                  </span>
+                )}
+
+                {ongeplandeItems.map((item) => {
                   const meta = PLANNING_TYPE_META[item.type];
                   const isVoorstel = item.status === "voorstel";
                   const isKlaar = item.status === "klaar";
@@ -743,50 +814,32 @@ export function AgendaBoard({
                         setDraggedId(null);
                         setDragOverIso(null);
                       }}
-                      style={{ minHeight: blokHoogte(item.estimated_minutes ?? ONBEKENDE_DUUR_MINUTEN) }}
                       className={clsx(
-                        "flex flex-col justify-between rounded-lg border px-2.5 py-2 text-sm transition-opacity",
+                        "rounded-lg border px-2 py-1.5 text-xs transition-opacity",
                         meta.badgeClass,
                         isKlaar && "opacity-50",
                         !isVoorstel && "cursor-grab active:cursor-grabbing",
                         draggedId === item.id && "opacity-30"
                       )}
                     >
-                      <div>
-                        <div className="flex items-start gap-1.5">
-                          <Icon name={meta.icon} size={14} className="mt-0.5 shrink-0" />
-                          <span
-                            className={clsx(
-                              "line-clamp-2 flex-1 font-medium leading-snug",
-                              isKlaar && "line-through"
-                            )}
-                          >
-                            {item.title}
+                      <div className="flex items-start gap-1">
+                        <Icon name={meta.icon} size={12} className="mt-0.5 shrink-0" />
+                        <span className={clsx("line-clamp-2 flex-1 font-medium leading-snug", isKlaar && "line-through")}>
+                          {item.title}
+                        </span>
+                        {subjectCode(item.subject_id) && (
+                          <span className="shrink-0 rounded bg-white/70 px-1 py-0.5 text-[9px] font-bold leading-none text-slate-600">
+                            {subjectCode(item.subject_id)}
                           </span>
-                          {subjectCode(item.subject_id) && (
-                            <span className="shrink-0 rounded bg-white/70 px-1 py-0.5 text-[9px] font-bold leading-none text-slate-600">
-                              {subjectCode(item.subject_id)}
-                            </span>
-                          )}
-                        </div>
-                        {((!subjectCode(item.subject_id) && subjectNaam(item.subject_id)) || item.estimated_minutes) && (
-                          <p className="mt-0.5 truncate pl-5 text-xs text-slate-500">
-                            {[
-                              !subjectCode(item.subject_id) ? subjectNaam(item.subject_id) : null,
-                              item.estimated_minutes ? `~${formatMinuten(item.estimated_minutes)}` : null,
-                            ]
-                              .filter(Boolean)
-                              .join(" · ")}
-                          </p>
                         )}
                       </div>
-                      <div className="mt-1.5 flex items-center gap-2.5">
+                      <div className="mt-1 flex items-center gap-2">
                         {isVoorstel ? (
                           <>
                             <button
                               disabled={pending}
                               onClick={() => accepteer(item)}
-                              className="text-xs font-medium underline underline-offset-2 disabled:opacity-50"
+                              className="text-[10px] font-medium underline underline-offset-2 disabled:opacity-50"
                             >
                               Prima zo
                             </button>
@@ -796,17 +849,13 @@ export function AgendaBoard({
                               aria-label="Verwijderen"
                               className="opacity-70 hover:opacity-100 disabled:opacity-30"
                             >
-                              <Icon name={pending ? "loader" : "trash"} size={13} className={pending ? "animate-spin" : undefined} />
+                              <Icon name={pending ? "loader" : "trash"} size={11} className={pending ? "animate-spin" : undefined} />
                             </button>
                           </>
                         ) : (
                           <>
-                            <button
-                              onClick={() => openBewerken(item)}
-                              aria-label="Bewerken"
-                              className="opacity-70 hover:opacity-100"
-                            >
-                              <Icon name="pencil-line" size={13} />
+                            <button onClick={() => openBewerken(item)} aria-label="Bewerken" className="opacity-70 hover:opacity-100">
+                              <Icon name="pencil-line" size={11} />
                             </button>
                             <button
                               disabled={pending}
@@ -814,7 +863,7 @@ export function AgendaBoard({
                               aria-label="Klaar markeren"
                               className="opacity-70 hover:opacity-100 disabled:opacity-30"
                             >
-                              <Icon name="check" size={13} />
+                              <Icon name="check" size={11} />
                             </button>
                             <button
                               disabled={pending}
@@ -822,7 +871,7 @@ export function AgendaBoard({
                               aria-label="Verwijderen"
                               className="opacity-70 hover:opacity-100 disabled:opacity-30"
                             >
-                              <Icon name={pending ? "loader" : "trash"} size={13} className={pending ? "animate-spin" : undefined} />
+                              <Icon name={pending ? "loader" : "trash"} size={11} className={pending ? "animate-spin" : undefined} />
                             </button>
                           </>
                         )}
@@ -831,22 +880,161 @@ export function AgendaBoard({
                   );
                 })}
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
+
+          {/* rij 2: uurlijst + tijdlijnen per dag, allemaal even hoog */}
+          <div className="relative" style={{ height: totaalHoogte }}>
+            {Array.from({ length: totUur - vanUur + 1 }, (_, i) => vanUur + i).map((uur) => (
+              <div
+                key={uur}
+                className="absolute right-1 -translate-y-1/2 text-[10px] text-slate-400"
+                style={{ top: (uur - vanUur) * UUR_HOOGTE }}
+              >
+                {String(uur).padStart(2, "0")}:00
+              </div>
+            ))}
+          </div>
+          {weekDagen.map((dag) => {
+            const iso = naarIsoDatum(dag);
+            const isVandaag = iso === vandaagIso;
+            const dagItems = itemsPerDag.get(iso) ?? [];
+            const tijdItems = dagItems.filter((i) => i.status !== "voorstel" && i.start_time);
+            const roosterBlokken = roosterPerDag.get(iso) ?? [];
+            const jaarEvent = eventsOpDatum(jaarEvents, dag)[0] ?? null;
+            const eventMeta = jaarEvent ? JAAR_EVENT_META[jaarEvent.type] : null;
+            return (
+              <div
+                key={iso}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "move";
+                  if (dragOverIso !== iso) setDragOverIso(iso);
+                }}
+                onDragLeave={() => setDragOverIso((huidig) => (huidig === iso ? null : huidig))}
+                onDrop={(e) => dropOpDag(e, iso)}
+                className={clsx(
+                  "relative overflow-hidden rounded-b-2xl border transition-colors",
+                  eventMeta ? eventMeta.dayTintClass : isVandaag ? "bg-accent-50/30" : "bg-white",
+                  isVandaag ? "border-accent-300 ring-2 ring-inset ring-accent-300" : "border-slate-200",
+                  dragOverIso === iso && "border-accent-400 bg-accent-50 ring-2 ring-accent-200"
+                )}
+                style={{
+                  height: totaalHoogte,
+                  backgroundImage: `repeating-linear-gradient(to bottom, rgba(100,116,139,0.16) 0px, rgba(100,116,139,0.16) 1px, transparent 1px, transparent ${UUR_HOOGTE}px)`,
+                }}
+              >
+                {roosterBlokken.map((b, i) => (
+                  <div
+                    key={`r-${i}`}
+                    title={`${b.tijd} ${b.titel}`}
+                    style={{ top: topVoorMinuut(b.startMinuten), height: hoogteVoorDuur(b.duurMinuten) }}
+                    className={clsx(
+                      "absolute inset-x-0.5 overflow-hidden rounded-md px-1.5 py-0.5 text-[10px] leading-tight",
+                      b.isFietsen ? "bg-slate-100 text-slate-400" : "bg-slate-100 text-slate-600",
+                      b.bron === "gewijzigd" && "bg-amber-100 text-amber-800 ring-1 ring-inset ring-amber-300",
+                      b.bron === "extra" && "bg-accent-100 text-accent-800 ring-1 ring-inset ring-accent-300"
+                    )}
+                  >
+                    {b.bron === "gewijzigd" && <Icon name="pencil-line" size={9} className="mr-0.5 mb-px inline" />}
+                    <span className="line-clamp-2">
+                      {!b.isFietsen && `${b.tijd.split("-")[0]} `}
+                      {b.titel}
+                    </span>
+                  </div>
+                ))}
+
+                {tijdItems.map((item) => {
+                  const meta = PLANNING_TYPE_META[item.type];
+                  const isKlaar = item.status === "klaar";
+                  const startMin = tijdNaarMinuten(item.start_time!);
+                  const duur = item.estimated_minutes ?? ONBEKENDE_DUUR_MINUTEN;
+                  return (
+                    <div
+                      key={item.id}
+                      draggable
+                      onDragStart={(e) => {
+                        setDraggedId(item.id);
+                        e.dataTransfer.setData("text/plain", item.id);
+                        e.dataTransfer.effectAllowed = "move";
+                      }}
+                      onDragEnd={() => {
+                        setDraggedId(null);
+                        setDragOverIso(null);
+                      }}
+                      onClick={() => openBewerken(item)}
+                      style={{ top: topVoorMinuut(startMin), height: hoogteVoorDuur(duur) }}
+                      className={clsx(
+                        "group absolute inset-x-0.5 cursor-pointer overflow-hidden rounded-md border px-1.5 py-0.5 text-[10px] leading-tight transition-opacity",
+                        meta.badgeClass,
+                        isKlaar && "opacity-50",
+                        "cursor-grab active:cursor-grabbing",
+                        draggedId === item.id && "opacity-30"
+                      )}
+                    >
+                      <p className={clsx("truncate font-medium", isKlaar && "line-through")}>
+                        {tijdKort(item.start_time!)} {item.title}
+                      </p>
+                      <div className="absolute right-0.5 top-0.5 hidden gap-0.5 group-hover:flex">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleStatus(item);
+                          }}
+                          className="rounded bg-white/90 p-0.5 hover:bg-white"
+                          aria-label="Klaar markeren"
+                        >
+                          <Icon name="check" size={10} />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            verwijder(item);
+                          }}
+                          className="rounded bg-white/90 p-0.5 hover:bg-white"
+                          aria-label="Verwijderen"
+                        >
+                          <Icon name="trash" size={10} />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {isVandaag && nuMinuten !== null && nuMinuten >= vanUur * 60 && nuMinuten <= totUur * 60 && (
+                  <div className="absolute inset-x-0 z-10 border-t-2 border-accent-500" style={{ top: topVoorMinuut(nuMinuten) }}>
+                    <span className="absolute -left-1 -top-1 h-2 w-2 rounded-full bg-accent-500" />
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       {/* Mobiele weergave: dagen onder elkaar */}
       <div className="flex flex-col gap-4 md:hidden">
         {weekDagen.map((dag) => {
           const iso = naarIsoDatum(dag);
-          const dagItems = itemsPerDag.get(iso) ?? [];
+          const dagItems = [...(itemsPerDag.get(iso) ?? [])].sort((a, b) => {
+            if (a.start_time && b.start_time) return a.start_time.localeCompare(b.start_time);
+            if (a.start_time) return -1;
+            if (b.start_time) return 1;
+            return 0;
+          });
           const roosterBlokken = roosterBlokkenVoorDag(dag, periodes, roosterItems, uitzonderingen, reistijdMinuten);
+          const jaarEvent = eventsOpDatum(jaarEvents, dag)[0] ?? null;
+          const eventMeta = jaarEvent ? JAAR_EVENT_META[jaarEvent.type] : null;
           return (
-            <div key={iso}>
-              <p className="mb-2 text-sm font-medium capitalize text-slate-500">
-                {formatDatumLabel(iso)}
-              </p>
+            <div key={iso} className={clsx("rounded-2xl p-2", eventMeta?.dayTintClass)}>
+              <div className="mb-2 flex items-center gap-2">
+                <p className="text-sm font-medium capitalize text-slate-500">{formatDatumLabel(iso)}</p>
+                {eventMeta && jaarEvent && (
+                  <span className={clsx("rounded px-1.5 py-0.5 text-[10px] font-medium", eventMeta.dayLabelClass)}>
+                    {jaarEvent.titel}
+                  </span>
+                )}
+              </div>
 
               {roosterBlokken.length > 0 && (
                 <div className="mb-2 flex flex-col gap-1 rounded-xl border border-slate-100 bg-slate-50/60 p-2.5">
@@ -859,6 +1047,7 @@ export function AgendaBoard({
                       )}
                     >
                       <Icon name={b.isFietsen ? "bike" : "school"} size={13} className="shrink-0" />
+                      {b.bron === "gewijzigd" && <Icon name="pencil-line" size={11} className="shrink-0 text-amber-500" />}
                       <span className="font-medium">{b.tijd}</span>
                       <span>{b.titel}</span>
                     </div>
@@ -898,6 +1087,7 @@ export function AgendaBoard({
                                 isKlaar && "line-through"
                               )}
                             >
+                              {item.start_time && <span className="text-slate-400">{tijdKort(item.start_time)} </span>}
                               {item.title}
                             </p>
                             {subjectCode(item.subject_id) && (

@@ -39,7 +39,7 @@ export function ToetsvormForm() {
               name="name"
               required
               placeholder="bijv. SO, Mondeling, Toetsweek-toets"
-              className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+              className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
             />
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -54,7 +54,7 @@ export function ToetsvormForm() {
                 max={60}
                 required
                 defaultValue={7}
-                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
               />
             </div>
             <div>
@@ -68,7 +68,7 @@ export function ToetsvormForm() {
                 max={8}
                 required
                 defaultValue={3}
-                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
               />
             </div>
           </div>

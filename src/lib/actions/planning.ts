@@ -34,6 +34,7 @@ export async function maakPlanningItem(formData: FormData) {
   const description = String(formData.get("description") || "").trim();
   const estimatedMinutesRaw = String(formData.get("estimatedMinutes") || "");
   const estimatedMinutes = estimatedMinutesRaw ? Number(estimatedMinutesRaw) : null;
+  const startTime = String(formData.get("startTime") || "") || null;
 
   if (!title || !dueDate) return { error: "Vul een titel en datum in." };
 
@@ -47,6 +48,7 @@ export async function maakPlanningItem(formData: FormData) {
       title,
       description,
       due_date: dueDate,
+      start_time: startTime,
       status: "open",
       estimated_minutes: estimatedMinutes,
       created_by: user.id,
@@ -110,6 +112,7 @@ export async function bewerkPlanningItem(id: string, formData: FormData) {
   const description = String(formData.get("description") || "").trim();
   const estimatedMinutesRaw = String(formData.get("estimatedMinutes") || "");
   const estimatedMinutes = estimatedMinutesRaw ? Number(estimatedMinutesRaw) : null;
+  const startTime = String(formData.get("startTime") || "") || null;
 
   if (!title || !dueDate) return { error: "Vul een titel en datum in." };
 
@@ -119,6 +122,7 @@ export async function bewerkPlanningItem(id: string, formData: FormData) {
       title,
       subject_id: subjectId,
       due_date: dueDate,
+      start_time: startTime,
       description,
       estimated_minutes: estimatedMinutes,
     })

@@ -45,7 +45,7 @@ export default async function VakkenPage() {
         {subjects?.map((s) => (
           <Link key={s.id} href={`/ouder/vakken/${s.id}`}>
             <Card className="flex h-full items-center gap-3 transition-shadow hover:shadow-md">
-              <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+              <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-accent-50 text-accent-600">
                 <Icon name={s.icon} size={20} />
               </span>
               <div>
