@@ -33,7 +33,7 @@ uit te breiden naar meer vakken en meer kinderen.
 - [Next.js](https://nextjs.org) (App Router) + TypeScript + Tailwind CSS
 - [Supabase](https://supabase.com) voor database, authenticatie (ouder/kind-rollen
   via Row Level Security) en bestandsopslag
-- [Gemini API](https://ai.google.dev) voor de AI-vakdocenten
+- [Claude API](https://console.anthropic.com) (Anthropic) voor de AI-vakdocenten
 - Bedoeld om te hosten op [Netlify](https://netlify.com)
 
 ## 1. Supabase-project opzetten
@@ -55,9 +55,9 @@ uit te breiden naar meer vakken en meer kinderen.
    - `anon public` key
    - `service_role` key (geheim! nooit delen of in git zetten)
 
-## 2. Gemini API key
+## 2. Claude (Anthropic) API key
 
-Maak een gratis API key aan via [Google AI Studio](https://aistudio.google.com/app/apikey).
+Maak een API key aan via de [Anthropic Console](https://console.anthropic.com/settings/keys).
 
 ## 3. Environment variables
 
@@ -71,7 +71,7 @@ cp .env.local.example .env.local
 NEXT_PUBLIC_SUPABASE_URL=...
 NEXT_PUBLIC_SUPABASE_ANON_KEY=...
 SUPABASE_SERVICE_ROLE_KEY=...
-GEMINI_API_KEY=...
+ANTHROPIC_API_KEY=...
 ```
 
 `.env*` staat in `.gitignore` - zet deze waarden nooit in git.
@@ -100,7 +100,7 @@ Open [http://localhost:3000](http://localhost:3000).
    automatisch via de officiele Next.js runtime).
 3. Zet dezelfde environment variables als hierboven in **Site settings ->
    Environment variables** (inclusief de geheime `SUPABASE_SERVICE_ROLE_KEY` en
-   `GEMINI_API_KEY` - deze worden nooit naar de browser gestuurd, alleen
+   `ANTHROPIC_API_KEY` - deze worden nooit naar de browser gestuurd, alleen
    server-side gebruikt).
 4. Deploy.
 
@@ -111,8 +111,8 @@ Dit is bedoeld als besloten gezinsapp voor eigen gebruik, niet als publieke dien
   AI-vakdocent (zie `supabase/migrations/0001_init.sql`, policy "chat: select own
   or ouder"). Wil je dat niet, pas die policy aan.
 - Chatberichten, en geuploade PDF's/foto's van lesstof, worden doorgestuurd naar
-  Google's Gemini API om verwerkt te worden - lees Google's voorwaarden voordat je
-  hier gevoelige informatie in zet.
+  Anthropic's Claude API om verwerkt te worden - lees Anthropic's voorwaarden
+  voordat je hier gevoelige informatie in zet.
 - Maak geen accounts aan met echte, unieke wachtwoorden die je kind ook elders
   gebruikt.
 

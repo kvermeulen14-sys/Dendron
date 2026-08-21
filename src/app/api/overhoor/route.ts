@@ -1,24 +1,18 @@
 import { NextResponse } from "next/server";
-import { SchemaType, type Schema } from "@google/generative-ai";
+import { z } from "zod";
+import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { createClient } from "@/lib/supabase/server";
-import { createGeminiClient, vereistGeminiKey } from "@/lib/gemini";
+import { createClaudeClient, vereistClaudeKey, CLAUDE_MODEL } from "@/lib/claude";
 
 const MAX_KENNISBANK_TEKENS = 14000;
 
-const RESPONS_SCHEMA: Schema = {
-  type: SchemaType.OBJECT,
-  properties: {
-    feedback: { type: SchemaType.STRING, description: "Korte, vriendelijke feedback op het vorige antwoord, of leeg als er nog geen antwoord was" },
-    beoordeling: {
-      type: SchemaType.STRING,
-      format: "enum",
-      enum: ["goed", "deels", "fout", "geen"],
-      description: "Beoordeling van het vorige antwoord, of 'geen' als er nog geen antwoord was",
-    },
-    vraag: { type: SchemaType.STRING, description: "De volgende overhoor-vraag" },
-  },
-  required: ["beoordeling", "vraag"],
-};
+const ResponsSchema = z.object({
+  feedback: z.string().describe("Korte, vriendelijke feedback op het vorige antwoord, of leeg als er nog geen antwoord was"),
+  beoordeling: z
+    .enum(["goed", "deels", "fout", "geen"])
+    .describe("Beoordeling van het vorige antwoord, of 'geen' als er nog geen antwoord was"),
+  vraag: z.string().describe("De volgende overhoor-vraag"),
+});
 
 const LEERFASE_INSTRUCTIE: Record<string, string> = {
   eerste:
@@ -31,7 +25,7 @@ const LEERFASE_INSTRUCTIE: Record<string, string> = {
 
 export async function POST(request: Request) {
   try {
-    vereistGeminiKey();
+    vereistClaudeKey();
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "AI niet geconfigureerd." }, { status: 500 });
   }
@@ -82,14 +76,16 @@ LESSTOF:
 ${kennisbank}`;
 
   try {
-    const genAI = createGeminiClient();
-    const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash",
-      generationConfig: { responseMimeType: "application/json", responseSchema: RESPONS_SCHEMA },
+    const client = createClaudeClient();
+    const response = await client.beta.messages.parse({
+      model: CLAUDE_MODEL,
+      max_tokens: 1024,
+      messages: [{ role: "user", content: prompt }],
+      output_format: betaZodOutputFormat(ResponsSchema),
     });
-    const result = await model.generateContent(prompt);
-    const data = JSON.parse(result.response.text());
-    return NextResponse.json(data);
+
+    if (!response.parsed_output) throw new Error("Geen bruikbaar resultaat van de AI ontvangen.");
+    return NextResponse.json(response.parsed_output);
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? `AI-verwerking mislukt: ${e.message}` : "AI-verwerking mislukt." },

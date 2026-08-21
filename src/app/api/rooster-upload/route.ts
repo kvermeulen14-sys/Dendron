@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { SchemaType, type Schema } from "@google/generative-ai";
+import { z } from "zod";
+import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { createClient } from "@/lib/supabase/server";
-import { createGeminiClient, vereistGeminiKey } from "@/lib/gemini";
+import { createClaudeClient, vereistClaudeKey, CLAUDE_MODEL } from "@/lib/claude";
 
 const MAX_BESTANDSGROOTTE = 15 * 1024 * 1024; // 15MB
 const TOEGESTANE_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
@@ -23,19 +24,16 @@ const DAG_NAAR_NUMMER: Record<string, number> = {
   zo: 7,
 };
 
-const EXTRACTIE_SCHEMA: Schema = {
-  type: SchemaType.ARRAY,
-  items: {
-    type: SchemaType.OBJECT,
-    properties: {
-      dag: { type: SchemaType.STRING, description: "Dag van de week in het Nederlands, bijv. 'maandag'" },
-      start: { type: SchemaType.STRING, description: "Begintijd in HH:MM formaat, bijv. '09:15'" },
-      eind: { type: SchemaType.STRING, description: "Eindtijd in HH:MM formaat, bijv. '10:05'" },
-      vak: { type: SchemaType.STRING, description: "Naam van het vak of lesuur, bijv. 'Wiskunde'" },
-    },
-    required: ["dag", "start", "eind", "vak"],
-  },
-};
+const ExtractieSchema = z.object({
+  lessen: z.array(
+    z.object({
+      dag: z.string().describe("Dag van de week in het Nederlands, bijv. 'maandag'"),
+      start: z.string().describe("Begintijd in HH:MM formaat, bijv. '09:15'"),
+      eind: z.string().describe("Eindtijd in HH:MM formaat, bijv. '10:05'"),
+      vak: z.string().describe("Naam van het vak of lesuur, bijv. 'Wiskunde'"),
+    })
+  ),
+});
 
 function naarDagNummer(dag: string): number {
   return DAG_NAAR_NUMMER[dag.trim().toLowerCase()] ?? 0;
@@ -43,7 +41,7 @@ function naarDagNummer(dag: string): number {
 
 export async function POST(request: Request) {
   try {
-    vereistGeminiKey();
+    vereistClaudeKey();
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "AI niet geconfigureerd." }, { status: 500 });
   }
@@ -71,25 +69,31 @@ export async function POST(request: Request) {
   const base64 = Buffer.from(bytes).toString("base64");
 
   try {
-    const genAI = createGeminiClient();
-    const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash",
-      generationConfig: { responseMimeType: "application/json", responseSchema: EXTRACTIE_SCHEMA },
-    });
+    const client = createClaudeClient();
 
     const prompt =
       "Dit is een screenshot van een schoolrooster (bijvoorbeeld uit SomToday, Zermelo of Magister). " +
       "Herken alle losse lesuren met dag van de week, begintijd, eindtijd en vaknaam. Sla pauzes, " +
       "tussenuren en lege vakken over. Geef de lijst terug gesorteerd op dag en daarna op begintijd.";
 
-    const result = await model.generateContent([
-      { inlineData: { mimeType: file.type, data: base64 } },
-      { text: prompt },
-    ]);
+    const response = await client.beta.messages.parse({
+      model: CLAUDE_MODEL,
+      max_tokens: 4096,
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "image", source: { type: "base64", media_type: file.type as "image/jpeg" | "image/png" | "image/webp", data: base64 } },
+            { type: "text", text: prompt },
+          ],
+        },
+      ],
+      output_format: betaZodOutputFormat(ExtractieSchema),
+    });
 
-    const ruweRegels: { dag: string; start: string; eind: string; vak: string }[] = JSON.parse(result.response.text());
+    if (!response.parsed_output) throw new Error("Geen bruikbaar resultaat van de AI ontvangen.");
 
-    const regels = ruweRegels.map((r) => ({
+    const regels = response.parsed_output.lessen.map((r) => ({
       dagVanWeek: naarDagNummer(r.dag),
       dagLabel: r.dag,
       startTijd: r.start,

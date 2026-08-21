@@ -1,29 +1,22 @@
 import { NextResponse } from "next/server";
-import { SchemaType, type Schema } from "@google/generative-ai";
+import { z } from "zod";
+import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { createClient } from "@/lib/supabase/server";
-import { createGeminiClient, vereistGeminiKey } from "@/lib/gemini";
+import { createClaudeClient, vereistClaudeKey, CLAUDE_MODEL } from "@/lib/claude";
 
 const MAX_BESTANDSGROOTTE = 15 * 1024 * 1024;
 const TOEGESTANE_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
 
-const EXTRACTIE_SCHEMA: Schema = {
-  type: SchemaType.ARRAY,
-  items: {
-    type: SchemaType.OBJECT,
-    properties: {
-      titel: { type: SchemaType.STRING, description: "Naam van de periode, bijv. 'Meivakantie' of 'Toetsweek 1'" },
-      type: {
-        type: SchemaType.STRING,
-        format: "enum",
-        enum: ["vakantie", "toetsweek", "anders"],
-        description: "Soort periode",
-      },
-      start: { type: SchemaType.STRING, description: "Startdatum in YYYY-MM-DD formaat" },
-      eind: { type: SchemaType.STRING, description: "Einddatum in YYYY-MM-DD formaat (gelijk aan start als het 1 dag is)" },
-    },
-    required: ["titel", "type", "start", "eind"],
-  },
-};
+const ExtractieSchema = z.object({
+  periodes: z.array(
+    z.object({
+      titel: z.string().describe("Naam van de periode, bijv. 'Meivakantie' of 'Toetsweek 1'"),
+      type: z.enum(["vakantie", "toetsweek", "anders"]).describe("Soort periode"),
+      start: z.string().describe("Startdatum in YYYY-MM-DD formaat"),
+      eind: z.string().describe("Einddatum in YYYY-MM-DD formaat (gelijk aan start als het 1 dag is)"),
+    })
+  ),
+});
 
 function bouwPrompt(vandaag: string) {
   return (
@@ -37,7 +30,7 @@ function bouwPrompt(vandaag: string) {
 
 export async function POST(request: Request) {
   try {
-    vereistGeminiKey();
+    vereistClaudeKey();
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "AI niet geconfigureerd." }, { status: 500 });
   }
@@ -67,27 +60,32 @@ export async function POST(request: Request) {
   }
 
   try {
-    const genAI = createGeminiClient();
-    const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash",
-      generationConfig: { responseMimeType: "application/json", responseSchema: EXTRACTIE_SCHEMA },
-    });
+    const client = createClaudeClient();
 
-    const parts: (
-      | { text: string }
-      | { inlineData: { mimeType: string; data: string } }
-    )[] = [{ text: bouwPrompt(vandaag) }];
+    const content: (
+      | { type: "text"; text: string }
+      | { type: "image"; source: { type: "base64"; media_type: "image/jpeg" | "image/png" | "image/webp"; data: string } }
+    )[] = [{ type: "text", text: bouwPrompt(vandaag) }];
 
     if (file instanceof File) {
       const bytes = await file.arrayBuffer();
-      parts.push({ inlineData: { mimeType: file.type, data: Buffer.from(bytes).toString("base64") } });
+      content.push({
+        type: "image",
+        source: { type: "base64", media_type: file.type as "image/jpeg" | "image/png" | "image/webp", data: Buffer.from(bytes).toString("base64") },
+      });
     } else {
-      parts.push({ text: `Bron:\n${String(tekst)}` });
+      content.push({ type: "text", text: `Bron:\n${String(tekst)}` });
     }
 
-    const result = await model.generateContent(parts);
-    const periodes = JSON.parse(result.response.text());
-    return NextResponse.json({ periodes });
+    const response = await client.beta.messages.parse({
+      model: CLAUDE_MODEL,
+      max_tokens: 4096,
+      messages: [{ role: "user", content }],
+      output_format: betaZodOutputFormat(ExtractieSchema),
+    });
+
+    if (!response.parsed_output) throw new Error("Geen bruikbaar resultaat van de AI ontvangen.");
+    return NextResponse.json({ periodes: response.parsed_output.periodes });
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? `AI-verwerking mislukt: ${e.message}` : "AI-verwerking mislukt." },

@@ -1,24 +1,22 @@
 import { NextResponse } from "next/server";
-import { SchemaType, type Schema } from "@google/generative-ai";
+import { z } from "zod";
+import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { createClient } from "@/lib/supabase/server";
-import { createGeminiClient, vereistGeminiKey } from "@/lib/gemini";
+import { createClaudeClient, vereistClaudeKey, CLAUDE_MODEL } from "@/lib/claude";
 
 const MAX_BESTANDSGROOTTE = 15 * 1024 * 1024;
 const TOEGESTANE_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
 
-const EXTRACTIE_SCHEMA: Schema = {
-  type: SchemaType.ARRAY,
-  items: {
-    type: SchemaType.OBJECT,
-    properties: {
-      titel: { type: SchemaType.STRING, description: "Korte titel van het huiswerk, bijv. 'H4 par. 2 maken'" },
-      vak: { type: SchemaType.STRING, description: "Naam van het vak, bijv. 'Wiskunde' (leeg als niet te herkennen)" },
-      datum: { type: SchemaType.STRING, description: "Datum waarop het af moet in YYYY-MM-DD formaat" },
-      beschrijving: { type: SchemaType.STRING, description: "Extra details/opdrachtomschrijving, of leeg" },
-    },
-    required: ["titel", "datum"],
-  },
-};
+const ExtractieSchema = z.object({
+  items: z.array(
+    z.object({
+      titel: z.string().describe("Korte titel van het huiswerk, bijv. 'H4 par. 2 maken'"),
+      vak: z.string().describe("Naam van het vak, bijv. 'Wiskunde' (leeg als niet te herkennen)"),
+      datum: z.string().describe("Datum waarop het af moet in YYYY-MM-DD formaat"),
+      beschrijving: z.string().describe("Extra details/opdrachtomschrijving, of leeg"),
+    })
+  ),
+});
 
 function bouwPrompt(vandaag: string) {
   return (
@@ -33,7 +31,7 @@ function bouwPrompt(vandaag: string) {
 
 export async function POST(request: Request) {
   try {
-    vereistGeminiKey();
+    vereistClaudeKey();
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "AI niet geconfigureerd." }, { status: 500 });
   }
@@ -63,27 +61,32 @@ export async function POST(request: Request) {
   }
 
   try {
-    const genAI = createGeminiClient();
-    const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash",
-      generationConfig: { responseMimeType: "application/json", responseSchema: EXTRACTIE_SCHEMA },
-    });
+    const client = createClaudeClient();
 
-    const parts: (
-      | { text: string }
-      | { inlineData: { mimeType: string; data: string } }
-    )[] = [{ text: bouwPrompt(vandaag) }];
+    const content: (
+      | { type: "text"; text: string }
+      | { type: "image"; source: { type: "base64"; media_type: "image/jpeg" | "image/png" | "image/webp"; data: string } }
+    )[] = [{ type: "text", text: bouwPrompt(vandaag) }];
 
     if (file instanceof File) {
       const bytes = await file.arrayBuffer();
-      parts.push({ inlineData: { mimeType: file.type, data: Buffer.from(bytes).toString("base64") } });
+      content.push({
+        type: "image",
+        source: { type: "base64", media_type: file.type as "image/jpeg" | "image/png" | "image/webp", data: Buffer.from(bytes).toString("base64") },
+      });
     } else {
-      parts.push({ text: `Bron:\n${String(tekst)}` });
+      content.push({ type: "text", text: `Bron:\n${String(tekst)}` });
     }
 
-    const result = await model.generateContent(parts);
-    const items = JSON.parse(result.response.text());
-    return NextResponse.json({ items });
+    const response = await client.beta.messages.parse({
+      model: CLAUDE_MODEL,
+      max_tokens: 4096,
+      messages: [{ role: "user", content }],
+      output_format: betaZodOutputFormat(ExtractieSchema),
+    });
+
+    if (!response.parsed_output) throw new Error("Geen bruikbaar resultaat van de AI ontvangen.");
+    return NextResponse.json({ items: response.parsed_output.items });
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? `AI-verwerking mislukt: ${e.message}` : "AI-verwerking mislukt." },

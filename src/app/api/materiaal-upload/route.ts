@@ -1,27 +1,23 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
-import { SchemaType, type Schema } from "@google/generative-ai";
+import { z } from "zod";
+import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { createClient } from "@/lib/supabase/server";
-import { createGeminiClient, vereistGeminiKey } from "@/lib/gemini";
-import { chunkEnEmbedMateriaal } from "@/lib/rag";
+import { createClaudeClient, vereistClaudeKey, CLAUDE_MODEL } from "@/lib/claude";
 
 const MAX_BESTANDSGROOTTE = 15 * 1024 * 1024; // 15MB
 const TOEGESTANE_TYPES = ["application/pdf", "image/jpeg", "image/jpg", "image/png", "image/webp"];
 
-const EXTRACTIE_SCHEMA: Schema = {
-  type: SchemaType.OBJECT,
-  properties: {
-    title: { type: SchemaType.STRING, description: "Korte titel voor dit materiaal, bijv. 'Hoofdstuk 4 - Breuken'" },
-    hoofdstuk: { type: SchemaType.STRING, description: "Herkend hoofdstuknummer/naam, of leeg als niet te herkennen" },
-    opdrachten: { type: SchemaType.STRING, description: "Herkende opdracht-/opgavenummers (bijv. '2.1, 2.2, 2.5'), of leeg" },
-    samenvatting: {
-      type: SchemaType.STRING,
-      description:
-        "De volledige, gestructureerde inhoud in het Nederlands, geschikt als kennisbank voor een AI-vakdocent. Bij een foto: beschrijf ook wat er te zien is (bijv. een diagram of som) zodat dit later in uitleg gebruikt kan worden.",
-    },
-  },
-  required: ["title", "samenvatting"],
-};
+const ExtractieSchema = z.object({
+  title: z.string().describe("Korte titel voor dit materiaal, bijv. 'Hoofdstuk 4 - Breuken'"),
+  hoofdstuk: z.string().describe("Herkend hoofdstuknummer/naam, of leeg als niet te herkennen"),
+  opdrachten: z.string().describe("Herkende opdracht-/opgavenummers (bijv. '2.1, 2.2, 2.5'), of leeg"),
+  samenvatting: z
+    .string()
+    .describe(
+      "De volledige, gestructureerde inhoud in het Nederlands, geschikt als kennisbank voor een AI-vakdocent. Bij een foto: beschrijf ook wat er te zien is (bijv. een diagram of som) zodat dit later in uitleg gebruikt kan worden."
+    ),
+});
 
 function veiligeBestandsnaam(naam: string) {
   return naam.replace(/[^a-zA-Z0-9_.-]/g, "_").slice(-80);
@@ -29,7 +25,7 @@ function veiligeBestandsnaam(naam: string) {
 
 export async function POST(request: Request) {
   try {
-    vereistGeminiKey();
+    vereistClaudeKey();
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "AI niet geconfigureerd." }, { status: 500 });
   }
@@ -77,23 +73,27 @@ export async function POST(request: Request) {
 
   let geextraheerd: { title: string; hoofdstuk?: string; opdrachten?: string; samenvatting: string };
   try {
-    const genAI = createGeminiClient();
-    const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash",
-      generationConfig: { responseMimeType: "application/json", responseSchema: EXTRACTIE_SCHEMA },
-    });
+    const client = createClaudeClient();
 
     const prompt =
       bronType === "pdf"
         ? "Analyseer dit lesmateriaal (PDF) voor een leerling op de Nederlandse middelbare school (Havo). Herken hoofdstuk- en opdrachtnummers waar mogelijk en zet de inhoud om in een heldere, gestructureerde samenvatting die een AI-vakdocent kan gebruiken om de leerling te helpen."
         : "Analyseer deze foto van lesmateriaal (bijv. een pagina uit een boek, aantekeningen, of een diagram) voor een leerling op de Nederlandse middelbare school (Havo). Herken hoofdstuk- en opdrachtnummers waar mogelijk en beschrijf de inhoud (inclusief eventuele afbeeldingen/diagrammen/sommen) zodat een AI-vakdocent dit later kan gebruiken om uitleg te geven.";
 
-    const result = await model.generateContent([
-      { inlineData: { mimeType: file.type, data: base64 } },
-      { text: prompt },
-    ]);
+    const bestandsBlok =
+      bronType === "pdf"
+        ? ({ type: "document", source: { type: "base64", media_type: "application/pdf", data: base64 } } as const)
+        : ({ type: "image", source: { type: "base64", media_type: file.type as "image/jpeg" | "image/png" | "image/webp", data: base64 } } as const);
 
-    geextraheerd = JSON.parse(result.response.text());
+    const response = await client.beta.messages.parse({
+      model: CLAUDE_MODEL,
+      max_tokens: 4096,
+      messages: [{ role: "user", content: [bestandsBlok, { type: "text", text: prompt }] }],
+      output_format: betaZodOutputFormat(ExtractieSchema),
+    });
+
+    if (!response.parsed_output) throw new Error("Geen bruikbaar resultaat van de AI ontvangen.");
+    geextraheerd = response.parsed_output;
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? `AI-verwerking mislukt: ${e.message}` : "AI-verwerking mislukt." },
@@ -130,15 +130,6 @@ export async function POST(request: Request) {
 
   if (insertError) {
     return NextResponse.json({ error: insertError.message }, { status: 500 });
-  }
-
-  if (nieuwMateriaal) {
-    await chunkEnEmbedMateriaal(supabase, {
-      materialId: nieuwMateriaal.id,
-      subjectId,
-      familyId: profile.family_id,
-      content: geextraheerd.samenvatting,
-    });
   }
 
   return NextResponse.json({ material: nieuwMateriaal });
