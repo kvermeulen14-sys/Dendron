@@ -92,7 +92,7 @@ export function NavShell({
       </aside>
 
       <main className="flex-1 bg-slate-50 px-4 py-6 sm:px-6 md:px-10 md:py-10">
-        <div className="mx-auto w-full max-w-5xl">{children}</div>
+        <div className="mx-auto w-full max-w-7xl">{children}</div>
       </main>
     </div>
   );

@@ -6,18 +6,13 @@ import { Icon } from "@/components/icon";
 import { Card } from "@/components/ui/card";
 import {
   JAAR_EVENT_META,
+  dagCelKlassen,
   dagenInMaand,
-  isWeekend,
   maandNaam,
   naarIsoDatum,
   schooljaarMaanden,
-  segmentenMetBanen,
-  segmentenVoorMaand,
 } from "@/lib/jaarkalender";
 import type { JaarEvent } from "@/lib/types";
-
-const DAG_HEADER_HOOGTE = 18; // px - hoogte van de rij met dagnummers
-const BAAN_HOOGTE = 17; // px - hoogte van elke balk met een periode-titel
 
 export function JaarOverzicht({ events }: { events: JaarEvent[] }) {
   const nu = useMemo(() => new Date(), []);
@@ -72,61 +67,41 @@ export function JaarOverzicht({ events }: { events: JaarEvent[] }) {
       </div>
 
       <Card className="overflow-x-auto">
-        <div className="flex min-w-[760px] flex-col gap-3">
+        <div className="flex min-w-[480px] flex-col gap-2">
           {maanden.map(({ jaar, maandIndex }) => {
             const aantalDagen = dagenInMaand(jaar, maandIndex);
-            const segmenten = segmentenMetBanen(segmentenVoorMaand(events, jaar, maandIndex));
-            const aantalBanen = Math.max(1, ...segmenten.map((s) => s.baan + 1));
             const kolommen = `repeat(${aantalDagen}, minmax(0, 1fr))`;
-            const rijHoogte = DAG_HEADER_HOOGTE + aantalBanen * BAAN_HOOGTE;
 
             return (
-              <div key={`${jaar}-${maandIndex}`} className="grid grid-cols-[64px_1fr] items-start gap-2">
-                <p className="pt-1 text-xs font-semibold text-slate-500">
+              <div key={`${jaar}-${maandIndex}`} className="grid grid-cols-[56px_1fr] items-center gap-2">
+                <p className="text-xs font-semibold text-slate-500">
                   {maandNaam(maandIndex).slice(0, 3)} &apos;{String(jaar).slice(-2)}
                 </p>
                 <div
-                  className="relative grid overflow-hidden rounded-lg border border-slate-100"
-                  style={{ gridTemplateColumns: kolommen, height: rijHoogte }}
+                  className="grid h-9 overflow-hidden rounded-lg border border-slate-100"
+                  style={{ gridTemplateColumns: kolommen }}
                 >
                   {Array.from({ length: aantalDagen }, (_, i) => {
                     const dagNr = i + 1;
                     const datum = new Date(jaar, maandIndex, dagNr);
                     const iso = naarIsoDatum(datum);
+                    const cel = dagCelKlassen(events, datum);
                     return (
                       <div
                         key={dagNr}
+                        title={cel.titel ?? undefined}
                         className={clsx(
                           "relative border-r border-slate-100 last:border-r-0",
-                          isWeekend(datum) ? "bg-slate-100" : "bg-white",
-                          iso === vandaagIso && "ring-1 ring-inset ring-blue-400"
+                          cel.bg,
+                          iso === vandaagIso && "ring-1 ring-inset ring-blue-500"
                         )}
                       >
-                        <span className="absolute left-1 top-0.5 text-[9px] leading-[11px] text-slate-400">
+                        <span className={clsx("absolute left-1 top-0.5 text-[9px] leading-[11px]", cel.text)}>
                           {dagNr}
                         </span>
                       </div>
                     );
                   })}
-
-                  {segmenten.map((seg, i) => (
-                    <div
-                      key={i}
-                      title={seg.event.titel}
-                      style={{
-                        gridColumn: `${seg.startDag} / ${seg.eindDag + 1}`,
-                        gridRow: 1,
-                        marginTop: DAG_HEADER_HOOGTE + seg.baan * BAAN_HOOGTE,
-                        height: BAAN_HOOGTE - 3,
-                      }}
-                      className={clsx(
-                        "z-10 mx-0.5 self-start truncate rounded px-1.5 text-[10px] font-medium leading-4",
-                        JAAR_EVENT_META[seg.event.type].barClass
-                      )}
-                    >
-                      {seg.event.titel}
-                    </div>
-                  ))}
                 </div>
               </div>
             );

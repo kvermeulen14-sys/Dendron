@@ -4,9 +4,10 @@ import { Card } from "@/components/ui/card";
 import { Icon } from "@/components/icon";
 import { VerwijderMateriaalKnop } from "@/components/verwijder-materiaal-knop";
 import { MateriaalForm } from "@/components/materiaal-form";
+import { MateriaalBewerkForm } from "@/components/materiaal-bewerk-form";
 import { KennisbankUploader } from "@/components/kennisbank-uploader";
 import { VakBewerkForm } from "./vak-bewerk-form";
-import type { Subject } from "@/lib/types";
+import type { Material, Subject } from "@/lib/types";
 
 const BRON_ICON: Record<string, string> = { tekst: "file", pdf: "file", foto: "image" };
 
@@ -98,7 +99,10 @@ export default async function VakDetailPage({
                   {m.content}
                 </p>
               </div>
-              <VerwijderMateriaalKnop materialId={m.id} subjectId={id} />
+              <div className="flex shrink-0 items-center gap-1">
+                <MateriaalBewerkForm material={m as Material} subjectId={id} />
+                <VerwijderMateriaalKnop materialId={m.id} subjectId={id} />
+              </div>
             </Card>
           ))}
         </div>

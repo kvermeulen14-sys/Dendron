@@ -41,6 +41,34 @@ export async function voegLesstofToe(formData: FormData) {
   return { success: true };
 }
 
+export async function bewerkLesstof(materialId: string, subjectId: string, formData: FormData) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Niet ingelogd." };
+
+  const title = String(formData.get("title") || "").trim();
+  const content = String(formData.get("content") || "").trim();
+  const hoofdstuk = String(formData.get("hoofdstuk") || "").trim();
+  const opdrachten = String(formData.get("opdrachten") || "").trim();
+
+  if (!title || !content) {
+    return { error: "Vul een titel en de inhoud van de lesstof in." };
+  }
+
+  const { error } = await supabase
+    .from("materials")
+    .update({ title, content, hoofdstuk: hoofdstuk || null, opdrachten: opdrachten || null })
+    .eq("id", materialId);
+
+  if (error) return { error: error.message };
+
+  revalidatePath(`/ouder/vakken/${subjectId}`);
+  revalidatePath(`/kind/vakken/${subjectId}`);
+  return { success: true };
+}
+
 export async function verwijderLesstof(materialId: string, subjectId: string) {
   const supabase = await createClient();
 
