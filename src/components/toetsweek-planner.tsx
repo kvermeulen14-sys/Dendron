@@ -155,7 +155,7 @@ export function ToetsweekPlanner({
             </p>
           )}
 
-          <Button disabled={bezig} onClick={plan} icon={<Icon name="rocket" size={18} />}>
+          <Button loading={bezig} onClick={plan} icon={<Icon name="rocket" size={18} />}>
             {bezig ? "Bezig..." : "Plan mijn toetsweek"}
           </Button>
         </>

@@ -6,27 +6,31 @@ import clsx from "clsx";
 import { Button } from "@/components/ui/button";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { Modal } from "@/components/ui/modal";
-import { Icon } from "@/components/icon";
-import { SUBJECT_ICON_OPTIONS } from "@/components/icon";
-import { maakVak } from "@/lib/actions/subjects";
+import { Icon, SUBJECT_ICON_OPTIONS } from "@/components/icon";
+import { bewerkVak } from "@/lib/actions/subjects";
+import type { Subject } from "@/lib/types";
 
-export function VakForm() {
+export function VakBewerkForm({ subject }: { subject: Subject }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [icon, setIcon] = useState("book-open");
+  const [icon, setIcon] = useState(subject.icon);
   const [error, setError] = useState<string | null>(null);
 
   return (
     <>
-      <Button icon={<Icon name="plus" size={18} />} onClick={() => setOpen(true)}>
-        Nieuw vak
-      </Button>
+      <button
+        onClick={() => setOpen(true)}
+        className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+        aria-label="Vak bewerken"
+      >
+        <Icon name="pencil-line" size={18} />
+      </button>
 
-      <Modal open={open} onClose={() => setOpen(false)} title="Nieuw vak">
+      <Modal open={open} onClose={() => setOpen(false)} title="Vak bewerken">
         <form
           action={async (formData) => {
             setError(null);
-            const res = await maakVak(formData);
+            const res = await bewerkVak(subject.id, formData);
             if (res?.error) {
               setError(res.error);
               return;
@@ -41,6 +45,7 @@ export function VakForm() {
             <input
               name="name"
               required
+              defaultValue={subject.name}
               placeholder="bijv. Wiskunde"
               className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
             />
@@ -75,6 +80,7 @@ export function VakForm() {
             <textarea
               name="aiInstructions"
               rows={3}
+              defaultValue={subject.ai_instructions ?? ""}
               placeholder="bijv. Blijf dicht bij de examenstof van niveau Havo 2. Geef nooit meteen het antwoord, stel eerst een tegenvraag."
               className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
             />
@@ -83,7 +89,7 @@ export function VakForm() {
           {error && <p className="text-sm text-rose-600">{error}</p>}
 
           <div className="flex gap-2">
-            <SubmitButton>Vak aanmaken</SubmitButton>
+            <SubmitButton>Wijzigingen opslaan</SubmitButton>
             <Button type="button" variant="secondary" onClick={() => setOpen(false)}>
               Annuleren
             </Button>

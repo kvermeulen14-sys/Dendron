@@ -183,7 +183,7 @@ export function OverhoorPanel({ subjectId, subjectName }: { subjectId: string; s
               className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
             />
             {error && <p className="text-sm text-rose-600">{error}</p>}
-            <Button disabled={bezig || !antwoord.trim()} onClick={() => haalVolgendeVraagOp(antwoord)}>
+            <Button loading={bezig} disabled={!antwoord.trim()} onClick={() => haalVolgendeVraagOp(antwoord)}>
               {bezig ? "Bezig..." : "Controleren & volgende vraag"}
             </Button>
           </div>

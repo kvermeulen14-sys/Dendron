@@ -152,7 +152,7 @@ export function ChatPanel({
           placeholder="Typ je vraag..."
           className="flex-1 rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100"
         />
-        <Button type="submit" disabled={sending || !input.trim()} className="shrink-0">
+        <Button type="submit" loading={sending} disabled={!input.trim()} className="shrink-0">
           Versturen
         </Button>
       </form>

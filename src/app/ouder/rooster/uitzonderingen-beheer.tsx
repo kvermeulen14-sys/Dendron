@@ -3,6 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { Card } from "@/components/ui/card";
 import { Modal } from "@/components/ui/modal";
 import { Icon } from "@/components/icon";
@@ -161,7 +162,7 @@ export function UitzonderingenBeheer({
             {error && <p className="text-sm text-rose-600">{error}</p>}
 
             <div className="flex gap-2">
-              <Button type="submit">Opslaan</Button>
+              <SubmitButton>Opslaan</SubmitButton>
               <Button type="button" variant="secondary" onClick={() => setOpen(false)}>
                 Annuleren
               </Button>
@@ -194,10 +195,10 @@ export function UitzonderingenBeheer({
                 <button
                   disabled={pending}
                   onClick={() => verwijder(u.id)}
-                  className="rounded-xl p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                  className="rounded-xl p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"
                   aria-label="Verwijderen"
                 >
-                  <Icon name="trash" size={16} />
+                  <Icon name={pending ? "loader" : "trash"} size={16} className={pending ? "animate-spin" : undefined} />
                 </button>
               </Card>
             );

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import { Icon } from "@/components/icon";
 import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { Card } from "@/components/ui/card";
 import { Modal } from "@/components/ui/modal";
 import { HuiswerkAIImport } from "@/components/huiswerk-ai-import";
@@ -392,9 +393,7 @@ export function AgendaBoard({
 
             {error && <p className="text-sm text-rose-600">{error}</p>}
 
-            <Button type="submit" className="mt-1">
-              Toevoegen
-            </Button>
+            <SubmitButton className="mt-1">Toevoegen</SubmitButton>
         </form>
       </Modal>
 
@@ -480,7 +479,7 @@ export function AgendaBoard({
                             <button
                               disabled={pending}
                               onClick={() => accepteer(item)}
-                              className="text-[10px] font-medium underline underline-offset-2"
+                              className="text-[10px] font-medium underline underline-offset-2 disabled:opacity-50"
                             >
                               Prima zo
                             </button>
@@ -488,9 +487,9 @@ export function AgendaBoard({
                               disabled={pending}
                               onClick={() => verwijder(item)}
                               aria-label="Verwijderen"
-                              className="opacity-70 hover:opacity-100"
+                              className="opacity-70 hover:opacity-100 disabled:opacity-30"
                             >
-                              <Icon name="trash" size={11} />
+                              <Icon name={pending ? "loader" : "trash"} size={11} className={pending ? "animate-spin" : undefined} />
                             </button>
                           </>
                         ) : (
@@ -499,7 +498,7 @@ export function AgendaBoard({
                               disabled={pending}
                               onClick={() => toggleStatus(item)}
                               aria-label="Klaar markeren"
-                              className="opacity-70 hover:opacity-100"
+                              className="opacity-70 hover:opacity-100 disabled:opacity-30"
                             >
                               <Icon name="check" size={11} />
                             </button>
@@ -507,9 +506,9 @@ export function AgendaBoard({
                               disabled={pending}
                               onClick={() => verwijder(item)}
                               aria-label="Verwijderen"
-                              className="opacity-70 hover:opacity-100"
+                              className="opacity-70 hover:opacity-100 disabled:opacity-30"
                             >
-                              <Icon name="trash" size={11} />
+                              <Icon name={pending ? "loader" : "trash"} size={11} className={pending ? "animate-spin" : undefined} />
                             </button>
                           </>
                         )}
@@ -594,16 +593,16 @@ export function AgendaBoard({
 
                         {isVoorstel ? (
                           <div className="flex shrink-0 gap-1.5">
-                            <Button size="md" variant="secondary" disabled={pending} onClick={() => accepteer(item)}>
+                            <Button size="md" variant="secondary" loading={pending} onClick={() => accepteer(item)}>
                               Prima zo
                             </Button>
                             <button
                               disabled={pending}
                               onClick={() => verwijder(item)}
-                              className="rounded-xl p-2.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                              className="rounded-xl p-2.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"
                               aria-label="Verwijderen"
                             >
-                              <Icon name="trash" size={16} />
+                              <Icon name={pending ? "loader" : "trash"} size={16} className={pending ? "animate-spin" : undefined} />
                             </button>
                           </div>
                         ) : (
@@ -612,7 +611,7 @@ export function AgendaBoard({
                               disabled={pending}
                               onClick={() => toggleStatus(item)}
                               className={clsx(
-                                "rounded-xl p-2.5",
+                                "rounded-xl p-2.5 disabled:opacity-50",
                                 isKlaar
                                   ? "bg-emerald-100 text-emerald-700"
                                   : "text-slate-400 hover:bg-emerald-50 hover:text-emerald-600"
@@ -624,10 +623,10 @@ export function AgendaBoard({
                             <button
                               disabled={pending}
                               onClick={() => verwijder(item)}
-                              className="rounded-xl p-2.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                              className="rounded-xl p-2.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"
                               aria-label="Verwijderen"
                             >
-                              <Icon name="trash" size={16} />
+                              <Icon name={pending ? "loader" : "trash"} size={16} className={pending ? "animate-spin" : undefined} />
                             </button>
                           </div>
                         )}

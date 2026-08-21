@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { Modal } from "@/components/ui/modal";
 import { Icon } from "@/components/icon";
 import { JAAR_EVENT_META } from "@/lib/jaarkalender";
@@ -86,7 +87,7 @@ export function JaarEventForm() {
           {error && <p className="text-sm text-rose-600">{error}</p>}
 
           <div className="flex gap-2">
-            <Button type="submit">Opslaan</Button>
+            <SubmitButton>Opslaan</SubmitButton>
             <Button type="button" variant="secondary" onClick={() => setOpen(false)}>
               Annuleren
             </Button>

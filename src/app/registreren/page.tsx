@@ -125,7 +125,7 @@ export default function RegistrerenPage() {
 
             {error && <p className="text-sm text-rose-600">{error}</p>}
 
-            <Button type="submit" size="lg" disabled={loading} className="mt-2 w-full">
+            <Button type="submit" size="lg" loading={loading} className="mt-2 w-full">
               {loading ? "Bezig..." : "Account aanmaken"}
             </Button>
           </form>

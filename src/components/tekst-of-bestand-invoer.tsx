@@ -54,7 +54,7 @@ export function TekstOfBestandInvoer({
             placeholder={placeholder}
             className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
           />
-          <Button disabled={bezig || !tekst.trim()} onClick={() => onVerstuurTekst(tekst)}>
+          <Button loading={bezig} disabled={!tekst.trim()} onClick={() => onVerstuurTekst(tekst)}>
             {bezig ? "Bezig..." : "Herkennen met AI"}
           </Button>
         </>

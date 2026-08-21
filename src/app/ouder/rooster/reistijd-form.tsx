@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { updateReistijd } from "@/lib/actions/rooster";
 
 export function ReistijdForm({ huidig }: { huidig: number }) {
@@ -32,9 +32,7 @@ export function ReistijdForm({ huidig }: { huidig: number }) {
           className="w-32 rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
         />
       </div>
-      <Button type="submit" variant="secondary">
-        Opslaan
-      </Button>
+      <SubmitButton variant="secondary">Opslaan</SubmitButton>
       {error && <p className="w-full text-sm text-rose-600">{error}</p>}
     </form>
   );

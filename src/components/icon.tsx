@@ -33,6 +33,7 @@ import {
   Target,
   PartyPopper,
   Rocket,
+  Loader2,
   type LucideProps,
 } from "lucide-react";
 
@@ -71,6 +72,7 @@ export const ICONS = {
   target: Target,
   party: PartyPopper,
   rocket: Rocket,
+  loader: Loader2,
 } as const;
 
 export type IconName = keyof typeof ICONS;

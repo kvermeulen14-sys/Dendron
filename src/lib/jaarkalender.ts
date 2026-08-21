@@ -91,5 +91,29 @@ export function segmentenVoorMaand(events: JaarEvent[], jaar: number, maandIndex
       const startDag = e.start_datum <= maandStart ? 1 : Number(e.start_datum.slice(8, 10));
       const eindDag = e.eind_datum >= maandEind ? laatsteDag : Number(e.eind_datum.slice(8, 10));
       return { event: e, startDag, eindDag };
-    });
+    })
+    .sort((a, b) => a.startDag - b.startDag || a.eindDag - b.eindDag);
+}
+
+export interface MaandSegmentMetBaan extends MaandSegment {
+  baan: number;
+}
+
+/**
+ * Wijst elk segment een "baan" (rijnummer) toe zodat overlappende periodes
+ * niet over elkaar heen getekend worden - net als losstaande balken in een
+ * maandweergave. Segmenten die elkaar niet overlappen delen dezelfde baan.
+ */
+export function segmentenMetBanen(segmenten: MaandSegment[]): MaandSegmentMetBaan[] {
+  const laatsteEindPerBaan: number[] = [];
+  return segmenten.map((seg) => {
+    let baan = laatsteEindPerBaan.findIndex((eind) => eind < seg.startDag);
+    if (baan === -1) {
+      baan = laatsteEindPerBaan.length;
+      laatsteEindPerBaan.push(seg.eindDag);
+    } else {
+      laatsteEindPerBaan[baan] = seg.eindDag;
+    }
+    return { ...seg, baan };
+  });
 }

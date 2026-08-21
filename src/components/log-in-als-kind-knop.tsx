@@ -20,7 +20,7 @@ export function LogInAlsKindKnop({ kindId, naam }: { kindId: string; naam: strin
           if (res?.error) setError(res.error);
         }}
       >
-        <Button type="submit" size="lg" variant="secondary" icon={<Icon name="log-in" size={18} />} disabled={pending} className="w-full">
+        <Button type="submit" size="lg" variant="secondary" icon={<Icon name="log-in" size={18} />} loading={pending} className="w-full">
           {pending ? "Bezig..." : `Inloggen als ${naam}`}
         </Button>
       </form>

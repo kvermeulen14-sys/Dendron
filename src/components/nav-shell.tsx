@@ -2,8 +2,10 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useState } from "react";
 import clsx from "clsx";
 import { Icon } from "@/components/icon";
+import { NavLinkStatus } from "@/components/nav-link-status";
 import { createClient } from "@/lib/supabase/client";
 
 interface NavItem {
@@ -27,8 +29,10 @@ export function NavShell({
 }) {
   const pathname = usePathname();
   const router = useRouter();
+  const [uitloggenBezig, setUitloggenBezig] = useState(false);
 
   async function uitloggen() {
+    setUitloggenBezig(true);
     const supabase = createClient();
     await supabase.auth.signOut();
     router.push("/login");
@@ -61,13 +65,13 @@ export function NavShell({
                 key={item.href}
                 href={item.href}
                 className={clsx(
-                  "flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition-colors",
+                  "flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition-colors active:scale-[0.98]",
                   active
                     ? "bg-slate-900 text-white"
-                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 active:bg-slate-200"
                 )}
               >
-                <Icon name={item.icon} size={20} />
+                <NavLinkStatus icon={item.icon} size={20} />
                 {item.label}
               </Link>
             );
@@ -78,10 +82,11 @@ export function NavShell({
           <span className="truncate text-sm font-medium text-slate-700">{userName}</span>
           <button
             onClick={uitloggen}
-            className="flex items-center gap-1.5 rounded-xl px-2.5 py-2 text-xs font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+            disabled={uitloggenBezig}
+            className="flex items-center gap-1.5 rounded-xl px-2.5 py-2 text-xs font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50"
           >
-            <Icon name="logout" size={16} />
-            Uitloggen
+            <Icon name={uitloggenBezig ? "loader" : "logout"} size={16} className={uitloggenBezig ? "animate-spin" : undefined} />
+            {uitloggenBezig ? "Bezig..." : "Uitloggen"}
           </button>
         </div>
       </aside>

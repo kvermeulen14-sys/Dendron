@@ -61,7 +61,7 @@ export function KindForm() {
           <p className="text-sm text-emerald-600">Account aangemaakt. Je kind kan nu inloggen.</p>
         )}
 
-        <Button type="submit" disabled={pending} className="mt-1">
+        <Button type="submit" loading={pending} className="mt-1">
           {pending ? "Bezig..." : "Account aanmaken"}
         </Button>
       </form>

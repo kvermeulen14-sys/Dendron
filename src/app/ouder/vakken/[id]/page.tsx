@@ -5,6 +5,8 @@ import { Icon } from "@/components/icon";
 import { VerwijderMateriaalKnop } from "@/components/verwijder-materiaal-knop";
 import { MateriaalForm } from "@/components/materiaal-form";
 import { KennisbankUploader } from "@/components/kennisbank-uploader";
+import { VakBewerkForm } from "./vak-bewerk-form";
+import type { Subject } from "@/lib/types";
 
 const BRON_ICON: Record<string, string> = { tekst: "file", pdf: "file", foto: "image" };
 
@@ -31,12 +33,13 @@ export default async function VakDetailPage({
         <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
           <Icon name={subject.icon} size={22} />
         </span>
-        <div>
+        <div className="flex-1">
           <h1 className="text-xl font-semibold text-slate-900">{subject.name}</h1>
           <p className="text-sm text-slate-500">
             Kennisbank voor de AI-vakdocent van dit vak.
           </p>
         </div>
+        <VakBewerkForm subject={subject as Subject} />
       </div>
 
       {subject.ai_instructions && (

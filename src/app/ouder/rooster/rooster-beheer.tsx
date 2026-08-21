@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { Card } from "@/components/ui/card";
 import { Modal } from "@/components/ui/modal";
 import { Icon } from "@/components/icon";
@@ -138,7 +139,7 @@ export function RoosterBeheer({
             </div>
             {periodeError && <p className="text-sm text-rose-600">{periodeError}</p>}
             <div className="flex gap-2">
-              <Button type="submit">Opslaan</Button>
+              <SubmitButton>Opslaan</SubmitButton>
               <Button type="button" variant="secondary" onClick={() => setPeriodeFormOpen(false)}>
                 Annuleren
               </Button>
@@ -174,10 +175,10 @@ export function RoosterBeheer({
                 <button
                   disabled={pending}
                   onClick={() => verwijderPeriode(p.id)}
-                  className="rounded-xl p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                  className="rounded-xl p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"
                   aria-label="Periode verwijderen"
                 >
-                  <Icon name="trash" size={14} />
+                  <Icon name={pending ? "loader" : "trash"} size={14} className={pending ? "animate-spin" : undefined} />
                 </button>
               </div>
             ))}
@@ -291,7 +292,7 @@ export function RoosterBeheer({
               {itemError && <p className="text-sm text-rose-600">{itemError}</p>}
 
               <div className="flex gap-2">
-                <Button type="submit">{bewerkItem ? "Wijzigingen opslaan" : "Toevoegen"}</Button>
+                <SubmitButton pendingText="Bezig...">{bewerkItem ? "Wijzigingen opslaan" : "Toevoegen"}</SubmitButton>
                 <Button type="button" variant="secondary" onClick={sluitItemModal}>
                   Annuleren
                 </Button>
@@ -343,10 +344,10 @@ export function RoosterBeheer({
                           <button
                             disabled={pending}
                             onClick={() => verwijderItem(item.id)}
-                            className="rounded-xl p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                            className="rounded-xl p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"
                             aria-label="Verwijderen"
                           >
-                            <Icon name="trash" size={16} />
+                            <Icon name={pending ? "loader" : "trash"} size={16} className={pending ? "animate-spin" : undefined} />
                           </button>
                         </Card>
                       ))}

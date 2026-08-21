@@ -1,6 +1,7 @@
 import { type ButtonHTMLAttributes, type ReactNode } from "react";
 import Link from "next/link";
 import clsx from "clsx";
+import { Icon } from "@/components/icon";
 
 type Variant = "primary" | "secondary" | "ghost" | "danger";
 type Size = "md" | "lg";
@@ -28,6 +29,8 @@ interface CommonProps {
   icon?: ReactNode;
   children: ReactNode;
   className?: string;
+  /** Toont een spinner en zet de knop op disabled - gebruik dit tijdens een lopende actie zodat duidelijk is dat de klik is geregistreerd (en voorkomt dubbel klikken). */
+  loading?: boolean;
 }
 
 export function Button({
@@ -36,14 +39,18 @@ export function Button({
   icon,
   children,
   className,
+  loading = false,
+  disabled,
   ...props
 }: CommonProps & ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
     <button
       className={clsx(base, variantClasses[variant], sizeClasses[size], className)}
+      disabled={disabled || loading}
+      aria-busy={loading}
       {...props}
     >
-      {icon}
+      {loading ? <Icon name="loader" size={18} className="animate-spin" /> : icon}
       {children}
     </button>
   );
