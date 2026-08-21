@@ -7,6 +7,7 @@ import { MateriaalForm } from "@/components/materiaal-form";
 import { MateriaalBewerkForm } from "@/components/materiaal-bewerk-form";
 import { KennisbankUploader } from "@/components/kennisbank-uploader";
 import { VakBewerkForm } from "./vak-bewerk-form";
+import { VerwijderVakKnop } from "./verwijder-vak-knop";
 import type { Material, Subject } from "@/lib/types";
 
 const BRON_ICON: Record<string, string> = { tekst: "file", pdf: "file", foto: "image" };
@@ -48,6 +49,7 @@ export default async function VakDetailPage({
           </p>
         </div>
         <VakBewerkForm subject={subject as Subject} />
+        <VerwijderVakKnop subjectId={id} subjectName={subject.name} />
       </div>
 
       {subject.ai_instructions && (

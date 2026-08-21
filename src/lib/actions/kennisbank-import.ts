@@ -60,8 +60,28 @@ export async function importGetalRuimteKennisbank(): Promise<
       })
       .select("id")
       .single();
-    if (vakError) return { error: vakError.message };
-    vak = nieuwVak;
+
+    if (vakError && vakError.code === "23505") {
+      // De code "WI" is al in gebruik bij een ander vak - probeer opnieuw zonder code.
+      const { data: nieuwVakZonderCode, error: tweedeVakError } = await supabase
+        .from("subjects")
+        .insert({
+          family_id: profile.family_id,
+          name: "Wiskunde",
+          code: null,
+          icon: "calculator",
+          ai_instructions: "",
+          created_by: user.id,
+        })
+        .select("id")
+        .single();
+      if (tweedeVakError) return { error: tweedeVakError.message };
+      vak = nieuwVakZonderCode;
+    } else if (vakError) {
+      return { error: vakError.message };
+    } else {
+      vak = nieuwVak;
+    }
   }
 
   const { data: bestaand } = await supabase

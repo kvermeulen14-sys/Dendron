@@ -74,15 +74,20 @@ export function SomTodayUploader({ periodes }: { periodes: RoosterPeriode[] }) {
     if (!regels || !periodeId) return;
     setError(null);
     setBezig(true);
-    const res = await maakRoosterItemsBulk(periodeId, regels);
-    setBezig(false);
-    if (res.error) {
-      setError(res.error);
-      return;
+    try {
+      const res = await maakRoosterItemsBulk(periodeId, regels);
+      if (res.error) {
+        setError(res.error);
+        return;
+      }
+      setOpen(false);
+      reset();
+      router.refresh();
+    } catch {
+      setError("Opslaan is mislukt. Probeer het nog eens.");
+    } finally {
+      setBezig(false);
     }
-    setOpen(false);
-    reset();
-    router.refresh();
   }
 
   return (

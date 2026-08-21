@@ -57,15 +57,20 @@ export function JaarkalenderAIImport() {
     if (!regels) return;
     setBezig(true);
     setError(null);
-    const res = await maakJaarEventsBulk(regels);
-    setBezig(false);
-    if (res.error) {
-      setError(res.error);
-      return;
+    try {
+      const res = await maakJaarEventsBulk(regels);
+      if (res.error) {
+        setError(res.error);
+        return;
+      }
+      setOpen(false);
+      reset();
+      router.refresh();
+    } catch {
+      setError("Opslaan is mislukt. Probeer het nog eens.");
+    } finally {
+      setBezig(false);
     }
-    setOpen(false);
-    reset();
-    router.refresh();
   }
 
   return (

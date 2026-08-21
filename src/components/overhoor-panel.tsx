@@ -35,8 +35,40 @@ export function OverhoorPanel({ subjectId, subjectName }: { subjectId: string; s
   const [score, setScore] = useState({ goed: 0, deels: 0, fout: 0 });
   const [bezig, setBezig] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Voordat het echte overhoren begint, stemt de tutor eerst af wat er
+  // overhoord moet worden en hoe (open vragen/meerkeuze, alles of een deel).
+  const [scopeModus, setScopeModus] = useState(false);
+  const [scopeInstructie, setScopeInstructie] = useState<string | null>(null);
 
-  async function haalVolgendeVraagOp(vorigAntwoord?: string) {
+  async function vraagScopeOp() {
+    setBezig(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/overhoor", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subjectId, leerfase, modus: "scope" }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Er ging iets mis.");
+      setScopeModus(true);
+      setVraag(data.vraag);
+      setAntwoord("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Er ging iets mis.");
+    } finally {
+      setBezig(false);
+    }
+  }
+
+  function beantwoordScope(instructie: string) {
+    setScopeModus(false);
+    setScopeInstructie(instructie);
+    setVraag(null);
+    haalVolgendeVraagOp(undefined, instructie, true);
+  }
+
+  async function haalVolgendeVraagOp(vorigAntwoord?: string, nieuweScopeInstructie?: string, naScope = false) {
     setBezig(true);
     setError(null);
     try {
@@ -48,8 +80,9 @@ export function OverhoorPanel({ subjectId, subjectName }: { subjectId: string; s
           spellingStrict,
           leerfase,
           gesteldeVragen,
-          vorigeVraag: vraag,
+          vorigeVraag: naScope ? null : vraag,
           vorigAntwoord,
+          scopeInstructie: nieuweScopeInstructie ?? scopeInstructie,
         }),
       });
       const data = await res.json();
@@ -60,7 +93,7 @@ export function OverhoorPanel({ subjectId, subjectName }: { subjectId: string; s
       }
       setFeedback(data.feedback || null);
       setBeoordeling(data.beoordeling ?? null);
-      if (vraag) setGesteldeVragen((prev) => [...prev, vraag]);
+      if (vraag && !naScope) setGesteldeVragen((prev) => [...prev, vraag]);
       setVraag(data.vraag);
       setAntwoord("");
     } catch (e) {
@@ -76,12 +109,14 @@ export function OverhoorPanel({ subjectId, subjectName }: { subjectId: string; s
     setFeedback(null);
     setBeoordeling(null);
     setGesteldeVragen([]);
+    setScopeInstructie(null);
     setVraag(null);
-    haalVolgendeVraagOp();
+    vraagScopeOp();
   }
 
   function stop() {
     setGestart(false);
+    setScopeModus(false);
     setVraag(null);
   }
 
@@ -170,10 +205,15 @@ export function OverhoorPanel({ subjectId, subjectName }: { subjectId: string; s
       )}
 
       {bezig && !vraag ? (
-        <p className="text-sm text-slate-400">Volgende vraag wordt bedacht...</p>
+        <p className="text-sm text-slate-400">
+          {scopeModus ? "Even voorbereiden..." : "Volgende vraag wordt bedacht..."}
+        </p>
       ) : (
         vraag && (
           <div className="flex flex-col gap-3">
+            {scopeModus && (
+              <p className="text-xs font-medium uppercase tracking-wide text-accent-600">Voordat we beginnen</p>
+            )}
             <p className="rounded-xl bg-slate-50 p-3 text-sm font-medium text-slate-800">{vraag}</p>
             <textarea
               value={antwoord}
@@ -183,8 +223,12 @@ export function OverhoorPanel({ subjectId, subjectName }: { subjectId: string; s
               className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
             />
             {error && <p className="text-sm text-rose-600">{error}</p>}
-            <Button loading={bezig} disabled={!antwoord.trim()} onClick={() => haalVolgendeVraagOp(antwoord)}>
-              {bezig ? "Bezig..." : "Controleren & volgende vraag"}
+            <Button
+              loading={bezig}
+              disabled={!antwoord.trim()}
+              onClick={() => (scopeModus ? beantwoordScope(antwoord) : haalVolgendeVraagOp(antwoord))}
+            >
+              {bezig ? "Bezig..." : scopeModus ? "Beginnen" : "Controleren & volgende vraag"}
             </Button>
           </div>
         )
