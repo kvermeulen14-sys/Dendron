@@ -42,6 +42,39 @@ LESSTOF:
 ${kennisbank || "(nog geen lesstof toegevoegd - vertel de leerling dat je nog geen specifieke lesstof hebt en help voorlopig algemeen, maar vraag of ze het onderwerp kunnen noemen.)"}`;
 }
 
+function bouwOpdrachtSysteemPrompt(
+  subjectName: string,
+  aiInstructions: string,
+  kennisbank: string,
+  modus: "alles" | "selectie" | "index"
+) {
+  const routeringsinstructie =
+    modus === "index"
+      ? "Hieronder staat alleen een INHOUDSOPGAVE (geen volledige lesstof) omdat er geen duidelijke match was met een specifiek hoofdstuk/paragraaf. Vraag naar het hoofdstuk/de paragraaf/bladzijde (of een foto) voordat je verdergaat."
+      : modus === "selectie"
+        ? "Hieronder staat een SELECTIE van de meest relevante lesstof op basis van wat de leerling tot nu toe heeft gezegd."
+        : "Hieronder staat de volledige beschikbare lesstof voor dit vak.";
+
+  return `Je helpt een leerling in de tweede klas van het Havo met het maken van een SPECIFIEKE huiswerkopgave voor het vak "${subjectName}" - dit is geen algemeen uitlegkanaal, maar gericht op 1 opgave tegelijk.
+
+Werkwijze:
+1. Als nog niet duidelijk is welke opgave het is, vraag dat EERST: welk hoofdstuk/paragraaf/bladzijde en opgavenummer, of vraag om een foto/overgetypte opgave. Ga pas inhoudelijk verder zodra dit duidelijk is.
+2. Help daarna stap voor stap: geef eerst een korte hint of een controlevraag, laat de leerling zelf de eerstvolgende stap zetten, en controleer die stap voordat je verdergaat.
+3. Geef nooit in een keer de volledige uitwerking - alleen als de leerling er na een paar hints echt niet uitkomt, of expliciet om de uitwerking vraagt.
+4. Let op notatie, tekens, eenheden en afronding; benoem hooguit een fout tegelijk, vriendelijk.
+5. Wees kort. Dit is een chatgesprek, geen collegetekst.
+
+Belangrijke regels over de lesstof hieronder:
+- Verzin nooit de letterlijke tekst van een boekopgave - de exacte opgavetekst staat niet in de lesstof, dus vraag altijd om een foto of om de opgave over te typen als je die nodig hebt.
+- Stukjes tussen "[INTERN ..." en het einde van dat blok zijn alleen voor jou (bewijsniveau, bladzijde-status, foto-adviezen) - noem dit nooit tegen de leerling. Vraag desnoods zelf om een foto van de theorie voordat je een exacte formule/definitie stellig gebruikt.
+${routeringsinstructie}
+${aiInstructions ? `\nExtra instructies van de ouder/docent: ${aiInstructions}\n` : ""}
+Antwoord altijd in het Nederlands.
+
+LESSTOF:
+${kennisbank || "(nog geen lesstof toegevoegd - vraag de leerling om de opgave over te typen of te fotograferen, en help op basis daarvan zo goed mogelijk.)"}`;
+}
+
 export async function POST(request: Request) {
   try {
     vereistGeminiKey();
@@ -55,10 +88,11 @@ export async function POST(request: Request) {
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Niet ingelogd." }, { status: 401 });
 
-  const { subjectId, message } = await request.json();
+  const { subjectId, message, gespreksmodus, opdrachtGeschiedenis } = await request.json();
   if (!subjectId || !message || typeof message !== "string") {
     return NextResponse.json({ error: "subjectId en message zijn verplicht." }, { status: 400 });
   }
+  const isOpdrachtModus = gespreksmodus === "opdracht";
 
   const { data: subject } = await supabase
     .from("subjects")
@@ -72,19 +106,30 @@ export async function POST(request: Request) {
     .select("id, title, content, hoofdstuk, image_path")
     .eq("subject_id", subjectId);
 
-  const { data: geschiedenis } = await supabase
-    .from("chat_messages")
-    .select("role, content, created_at")
-    .eq("subject_id", subjectId)
-    .eq("user_id", user.id)
-    .order("created_at", { ascending: false })
-    .limit(MAX_GESCHIEDENIS);
+  // Opdrachten-maken-modus is net als overhoren niet-persistent (aparte
+  // sessie per keer openen); de client stuurt zijn eigen berichtgeschiedenis
+  // mee (oudste eerst) in plaats van dat de server chat_messages leest/schrijft.
+  let geschiedenisChronologisch: { role: string; content: string }[];
+  if (isOpdrachtModus) {
+    geschiedenisChronologisch = (Array.isArray(opdrachtGeschiedenis) ? opdrachtGeschiedenis : []).slice(
+      -MAX_GESCHIEDENIS
+    );
+  } else {
+    const { data: dbGeschiedenis } = await supabase
+      .from("chat_messages")
+      .select("role, content, created_at")
+      .eq("subject_id", subjectId)
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(MAX_GESCHIEDENIS);
+    geschiedenisChronologisch = (dbGeschiedenis ?? []).slice().reverse();
+  }
 
   // Recente eigen berichten meenemen in de zoektekst, zodat "opgave 38" nog
   // steeds matcht op een paragraaf die een paar berichten eerder al genoemd is.
-  const recenteVragen = (geschiedenis ?? [])
+  const recenteVragen = geschiedenisChronologisch
     .filter((m) => m.role !== "model")
-    .slice(0, 4)
+    .slice(-4)
     .map((m) => m.content)
     .join(" ");
   const { modus, gekozen } = kiesRelevanteMaterialen(materials ?? [], `${message} ${recenteVragen}`);
@@ -111,15 +156,15 @@ export async function POST(request: Request) {
     if (signed?.signedUrl) afbeeldingen.push({ url: signed.signedUrl, title: m.title });
   }
 
-  const historyVoorGemini = (geschiedenis ?? [])
-    .slice()
-    .reverse()
-    .map((m) => ({
-      role: (m.role === "model" ? "model" : "user") as "user" | "model",
-      parts: [{ text: m.content }],
-    }));
+  const historyVoorGemini = geschiedenisChronologisch.map((m) => ({
+    role: (m.role === "model" ? "model" : "user") as "user" | "model",
+    parts: [{ text: m.content }],
+  }));
 
   const client = createGeminiClient();
+  const systeemPrompt = isOpdrachtModus
+    ? bouwOpdrachtSysteemPrompt(subject.name, subject.ai_instructions ?? "", kennisbank, modus)
+    : bouwSysteemPrompt(subject.name, subject.ai_instructions ?? "", kennisbank, modus);
 
   let antwoord: string;
   try {
@@ -127,7 +172,7 @@ export async function POST(request: Request) {
       model: GEMINI_MODEL,
       contents: [...historyVoorGemini, { role: "user", parts: [{ text: message }] }],
       config: {
-        systemInstruction: bouwSysteemPrompt(subject.name, subject.ai_instructions ?? "", kennisbank, modus),
+        systemInstruction: systeemPrompt,
         maxOutputTokens: 2048,
       },
     });
@@ -139,10 +184,12 @@ export async function POST(request: Request) {
     );
   }
 
-  await supabase.from("chat_messages").insert([
-    { family_id: subject.family_id, subject_id: subjectId, user_id: user.id, role: "user", content: message },
-    { family_id: subject.family_id, subject_id: subjectId, user_id: user.id, role: "model", content: antwoord },
-  ]);
+  if (!isOpdrachtModus) {
+    await supabase.from("chat_messages").insert([
+      { family_id: subject.family_id, subject_id: subjectId, user_id: user.id, role: "user", content: message },
+      { family_id: subject.family_id, subject_id: subjectId, user_id: user.id, role: "model", content: antwoord },
+    ]);
+  }
 
   return NextResponse.json({ reply: antwoord, images: afbeeldingen });
 }

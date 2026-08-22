@@ -7,29 +7,55 @@ import { Button } from "@/components/ui/button";
 import type { ChatMessage } from "@/lib/types";
 
 type WeergaveBericht = ChatMessage & { images?: { url: string; title: string }[] };
+type Modus = "algemeen" | "opdracht";
+
+const MODUS_TEKST: Record<
+  Modus,
+  { titel: string; ondertitel: string; icon: string; leeg: (naam: string) => string; placeholder: string }
+> = {
+  algemeen: {
+    titel: "Vakdocent",
+    ondertitel: "Stelt liever vragen terug dan het antwoord te geven",
+    icon: "chat",
+    leeg: (naam) => `Stel gerust een vraag over ${naam} - bijvoorbeeld over je huiswerk of iets wat je niet snapt.`,
+    placeholder: "Typ je vraag...",
+  },
+  opdracht: {
+    titel: "Opdracht maken",
+    ondertitel: "Help stap voor stap met 1 specifieke opgave",
+    icon: "pencil-line",
+    leeg: (naam) =>
+      `Welke opgave van ${naam} wil je maken? Noem het hoofdstuk/paragraaf en opgavenummer, of maak een foto van de opgave.`,
+    placeholder: "Bijv. 'H7.3 opgave 42' of typ/plak de opgave...",
+  },
+};
 
 export function ChatPanel({
   subjectId,
   subjectName,
-  initialMessages,
+  initialMessages = [],
+  modus = "algemeen",
 }: {
   subjectId: string;
   subjectName: string;
-  initialMessages: ChatMessage[];
+  initialMessages?: ChatMessage[];
+  modus?: Modus;
 }) {
   const [messages, setMessages] = useState<WeergaveBericht[]>(initialMessages);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const tekst = MODUS_TEKST[modus];
 
   async function verstuur() {
-    const tekst = input.trim();
-    if (!tekst || sending) return;
+    const bericht = input.trim();
+    if (!bericht || sending) return;
 
     setError(null);
     setInput("");
     setSending(true);
+    const huidigeMessages = messages;
     setMessages((prev) => [
       ...prev,
       {
@@ -38,7 +64,7 @@ export function ChatPanel({
         subject_id: subjectId,
         user_id: "",
         role: "user",
-        content: tekst,
+        content: bericht,
         created_at: new Date().toISOString(),
       },
     ]);
@@ -47,7 +73,14 @@ export function ChatPanel({
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subjectId, message: tekst }),
+        body: JSON.stringify({
+          subjectId,
+          message: bericht,
+          gespreksmodus: modus,
+          ...(modus === "opdracht"
+            ? { opdrachtGeschiedenis: huidigeMessages.map((m) => ({ role: m.role, content: m.content })) }
+            : {}),
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Er ging iets mis.");
@@ -77,21 +110,18 @@ export function ChatPanel({
     <div className="flex h-[70vh] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
       <div className="flex items-center gap-3 border-b border-slate-100 px-5 py-4">
         <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
-          <Icon name="chat" size={18} />
+          <Icon name={tekst.icon} size={18} />
         </span>
         <div>
-          <p className="text-sm font-semibold text-slate-900">Vakdocent {subjectName}</p>
-          <p className="text-xs text-slate-500">Stelt liever vragen terug dan het antwoord te geven</p>
+          <p className="text-sm font-semibold text-slate-900">
+            {tekst.titel} {subjectName}
+          </p>
+          <p className="text-xs text-slate-500">{tekst.ondertitel}</p>
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto px-5 py-4">
-        {messages.length === 0 && (
-          <p className="text-sm text-slate-400">
-            Stel gerust een vraag over {subjectName} - bijvoorbeeld over je huiswerk of iets wat
-            je niet snapt.
-          </p>
-        )}
+        {messages.length === 0 && <p className="text-sm text-slate-400">{tekst.leeg(subjectName)}</p>}
         <div className="flex flex-col gap-3">
           {messages.map((m) => (
             <div
@@ -149,7 +179,7 @@ export function ChatPanel({
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Typ je vraag..."
+          placeholder={tekst.placeholder}
           className="flex-1 rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100"
         />
         <Button type="submit" loading={sending} disabled={!input.trim()} className="shrink-0">
