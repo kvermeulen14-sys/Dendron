@@ -7,6 +7,31 @@ const MAX_GESCHIEDENIS = 20;
 const MAX_KENNISBANK_TEKENS = 14000;
 const MAX_AFBEELDINGEN = 3;
 
+// Deterministische visuals (grafiek/getallenlijn/tabel/diagram) die de AI in
+// zijn antwoord kan zetten als een los code-blok - zie lib/visuals.ts voor
+// de parser/validatie en components/visuals voor het renderen als SVG.
+const VISUAL_INSTRUCTIE = `Als een grafiek, getallenlijn, tabel of diagram de uitleg echt duidelijker maakt, voeg die toe als EEN los code-blok, in exact dit formaat (reken de waarden altijd eerst zelf uit, verzin niets, gebruik dit alleen als het echt helpt en maximaal 1 per antwoord):
+
+\`\`\`grafiek
+{"titel": "y = x^2 - 2", "xMin": -5, "xMax": 5, "yMin": -4, "yMax": 8, "functies": [{"label": "y = x^2 - 2", "a": 1, "b": 0, "c": -2}], "punten": [{"label": "top", "x": 0, "y": -2}]}
+\`\`\`
+(voor grafieken geldt altijd y = a*x^2 + b*x + c; gebruik a=0 voor een rechte lijn; "punten" is optioneel)
+
+\`\`\`getallenlijn
+{"titel": "wortel van 2 op de getallenlijn", "min": -3, "max": 3, "punten": [{"label": "√2", "waarde": 1.41}]}
+\`\`\`
+
+\`\`\`tabel
+{"titel": "waardetabel", "xLabel": "x", "yLabel": "y", "rijen": [{"x": -2, "y": 4}, {"x": 0, "y": 0}, {"x": 2, "y": 4}]}
+\`\`\`
+
+\`\`\`diagram
+{"titel": "cijfers per vak", "soort": "staaf", "categorieen": [{"label": "wiskunde", "waarde": 8}, {"label": "engels", "waarde": 6}]}
+\`\`\`
+("soort" is "staaf" of "cirkel")
+
+Zet dit blok NIET in plaats van je uitleg, maar erbij - je normale tekst blijft gewoon het antwoord.`;
+
 function bouwSysteemPrompt(
   subjectName: string,
   aiInstructions: string,
@@ -36,6 +61,8 @@ Belangrijke regels over de lesstof hieronder:
 - Stukjes tussen "[INTERN ..." en het einde van dat blok zijn alleen voor jou (bewijsniveau, bladzijde-status, foto-adviezen) - noem dit nooit letterlijk of impliciet tegen de leerling. Gebruik het wel om in te schatten hoe zeker je mag klinken; vraag desnoods zelf om een foto van de theorie voordat je een exacte formule/definitie stellig presenteert.
 ${routeringsinstructie}
 ${aiInstructions ? `\nExtra instructies van de ouder/docent: ${aiInstructions}\n` : ""}
+${VISUAL_INSTRUCTIE}
+
 Antwoord altijd in het Nederlands.
 
 LESSTOF:
@@ -69,6 +96,8 @@ Belangrijke regels over de lesstof hieronder:
 - Stukjes tussen "[INTERN ..." en het einde van dat blok zijn alleen voor jou (bewijsniveau, bladzijde-status, foto-adviezen) - noem dit nooit tegen de leerling. Vraag desnoods zelf om een foto van de theorie voordat je een exacte formule/definitie stellig gebruikt.
 ${routeringsinstructie}
 ${aiInstructions ? `\nExtra instructies van de ouder/docent: ${aiInstructions}\n` : ""}
+${VISUAL_INSTRUCTIE}
+
 Antwoord altijd in het Nederlands.
 
 LESSTOF:

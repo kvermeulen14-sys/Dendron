@@ -4,6 +4,8 @@ import { useRef, useState } from "react";
 import clsx from "clsx";
 import { Icon } from "@/components/icon";
 import { Button } from "@/components/ui/button";
+import { VisualWeergave } from "@/components/visuals/visual-weergave";
+import { extraheerVisuals } from "@/lib/visuals";
 import type { ChatMessage } from "@/lib/types";
 
 type WeergaveBericht = ChatMessage & { images?: { url: string; title: string }[] };
@@ -123,7 +125,9 @@ export function ChatPanel({
       <div className="flex-1 overflow-y-auto px-5 py-4">
         {messages.length === 0 && <p className="text-sm text-slate-400">{tekst.leeg(subjectName)}</p>}
         <div className="flex flex-col gap-3">
-          {messages.map((m) => (
+          {messages.map((m) => {
+            const { tekst: schoneTekst, visuals } = m.role === "model" ? extraheerVisuals(m.content) : { tekst: m.content, visuals: [] };
+            return (
             <div
               key={m.id}
               className={clsx("flex flex-col", m.role === "user" ? "items-end" : "items-start")}
@@ -136,8 +140,15 @@ export function ChatPanel({
                     : "bg-slate-100 text-slate-800"
                 )}
               >
-                {m.content}
+                {schoneTekst}
               </div>
+              {visuals.length > 0 && (
+                <div className="flex max-w-[80%] flex-col gap-2">
+                  {visuals.map((v, i) => (
+                    <VisualWeergave key={i} visual={v} />
+                  ))}
+                </div>
+              )}
               {m.images && m.images.length > 0 && (
                 <div className="mt-2 flex max-w-[80%] flex-wrap gap-2">
                   {m.images.map((img, i) => (
@@ -155,7 +166,8 @@ export function ChatPanel({
                 </div>
               )}
             </div>
-          ))}
+            );
+          })}
           {sending && (
             <div className="flex justify-start">
               <div className="rounded-2xl bg-slate-100 px-4 py-2.5 text-sm text-slate-400">
