@@ -4,6 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Icon } from "@/components/icon";
 import { KindVandaagLijst } from "@/components/kind-vandaag-lijst";
 import { WeekTerugblikVraag } from "@/components/week-terugblik-vraag";
+import { TweeMinutenOefenen } from "@/components/twee-minuten-oefenen";
 import { huidigeWeekMaandag } from "@/lib/week";
 import type { PlanningItem, Subject } from "@/lib/types";
 
@@ -28,6 +29,7 @@ export default async function KindOverzicht() {
     { data: toetsData },
     { data: subjectsData },
     { data: terugblikData },
+    { data: materialsData },
   ] = await Promise.all([
     supabase
       .from("planning_items")
@@ -62,6 +64,7 @@ export default async function KindOverzicht() {
       .eq("user_id", user!.id)
       .eq("week_start", weekMaandag)
       .maybeSingle(),
+    supabase.from("materials").select("subject_id").eq("family_id", profile!.family_id),
   ]);
 
   const vandaagItems = (vandaagData ?? []) as PlanningItem[];
@@ -70,6 +73,9 @@ export default async function KindOverzicht() {
   const subjects = (subjectsData ?? []) as Subject[];
   const eerstvolgendeToets = toetsData as PlanningItem | null;
   const heeftTerugblikDezeWeek = Boolean(terugblikData);
+
+  const subjectIdsMetLesstof = new Set((materialsData ?? []).map((m) => m.subject_id));
+  const subjectsMetLesstof = subjects.filter((s) => subjectIdsMetLesstof.has(s.id));
 
   const vandaagGedaan = vandaagItems.filter((i) => i.status === "klaar").length;
 
@@ -138,6 +144,8 @@ export default async function KindOverzicht() {
           <KindVandaagLijst items={teLaat} subjects={subjects} variant="verlopen" />
         </Card>
       )}
+
+      <TweeMinutenOefenen subjects={subjectsMetLesstof} />
 
       <Link href="/kind/vakken">
         <Card className="flex items-center gap-3 transition-shadow hover:shadow-md">

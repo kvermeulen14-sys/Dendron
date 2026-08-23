@@ -60,8 +60,9 @@ export function KindVandaagLijst({
         return (
           <li
             key={item.id}
+            onClick={() => router.push(`/kind/focus/${item.id}`)}
             className={clsx(
-              "relative flex flex-col gap-2 rounded-xl border p-3 pb-11",
+              "relative flex cursor-pointer flex-col gap-2 rounded-xl border p-3 pb-11 transition-colors hover:border-accent-200 hover:bg-accent-50/30",
               isKlaar
                 ? "border-slate-100 bg-slate-50 opacity-60"
                 : variant === "verlopen"
@@ -100,7 +101,10 @@ export function KindVandaagLijst({
             </div>
 
             <button
-              onClick={() => afvinken(item)}
+              onClick={(e) => {
+                e.stopPropagation();
+                afvinken(item);
+              }}
               disabled={bezig}
               aria-label={isKlaar ? "Weer openzetten" : "Afvinken"}
               className={clsx(

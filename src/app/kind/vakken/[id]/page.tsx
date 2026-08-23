@@ -7,10 +7,14 @@ import { Icon } from "@/components/icon";
 
 export default async function KindVakDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ modus?: string }>;
 }) {
   const { id } = await params;
+  const { modus } = await searchParams;
+  const initialModus = modus === "opdracht" || modus === "overhoren" ? modus : "chat";
   const supabase = await createClient();
   const {
     data: { user },
@@ -38,7 +42,7 @@ export default async function KindVakDetailPage({
         </div>
       </div>
 
-      <VakWerkruimte subjectId={id} subjectName={subject.name} initialMessages={messages ?? []} />
+      <VakWerkruimte subjectId={id} subjectName={subject.name} initialMessages={messages ?? []} initialModus={initialModus} />
 
       <div className="flex flex-col gap-3">
         <p className="text-sm text-slate-500">

@@ -17,12 +17,14 @@ export function VakWerkruimte({
   subjectId,
   subjectName,
   initialMessages,
+  initialModus = "chat",
 }: {
   subjectId: string;
   subjectName: string;
   initialMessages: ChatMessage[];
+  initialModus?: (typeof TABS)[number]["modus"];
 }) {
-  const [modus, setModus] = useState<(typeof TABS)[number]["modus"]>("chat");
+  const [modus, setModus] = useState<(typeof TABS)[number]["modus"]>(initialModus);
 
   return (
     <div className="flex flex-col gap-3">
