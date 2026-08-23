@@ -164,6 +164,9 @@ function roosterBlokkenVoorDag(
   const weekdag = naarIsoWeekdag(datum);
   const periode = vindPeriode(periodes, iso);
   const dagUitzonderingen = uitzonderingen.filter((u) => u.datum === iso);
+  // Een "vervallen"-uitzondering zonder gekoppeld lesuur betekent "hele dag
+  // vervalt" (gekozen via "Hele dag" i.p.v. 1 specifiek lesuur).
+  if (dagUitzonderingen.some((u) => u.type === "vervallen" && !u.origineel_item_id)) return [];
   const vervallenIds = new Set(dagUitzonderingen.filter((u) => u.type === "vervallen").map((u) => u.origineel_item_id));
   const gewijzigdMap = new Map(
     dagUitzonderingen.filter((u) => u.type === "gewijzigd").map((u) => [u.origineel_item_id, u])

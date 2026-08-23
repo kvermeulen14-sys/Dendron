@@ -212,14 +212,18 @@ export async function maakRoosterUitzondering(formData: FormData) {
 
   const datum = String(formData.get("datum") || "");
   const type = String(formData.get("type") || "") as "vervallen" | "gewijzigd" | "extra";
-  const origineelItemId = String(formData.get("origineelItemId") || "") || null;
+  const origineelItemIdRaw = String(formData.get("origineelItemId") || "") || null;
+  // "HELE_DAG" is een sentinelwaarde uit het formulier (geen echt rooster-item-id)
+  // - betekent dat het hele rooster die dag vervalt i.p.v. 1 los lesuur.
+  const heleDag = origineelItemIdRaw === "HELE_DAG";
+  const origineelItemId = heleDag ? null : origineelItemIdRaw;
   const titel = String(formData.get("titel") || "").trim() || null;
   const startTijd = String(formData.get("startTijd") || "") || null;
   const eindTijd = String(formData.get("eindTijd") || "") || null;
 
   if (!datum || !type) return { error: "Vul een datum en soort wijziging in." };
-  if (type === "vervallen" && !origineelItemId) {
-    return { error: "Kies welk lesuur vervalt." };
+  if (type === "vervallen" && !origineelItemIdRaw) {
+    return { error: "Kies welk lesuur vervalt, of 'Hele dag'." };
   }
   if (type !== "vervallen" && (!titel || !startTijd || !eindTijd)) {
     return { error: "Vul titel, begin- en eindtijd in." };
@@ -248,14 +252,16 @@ export async function bewerkRoosterUitzondering(id: string, formData: FormData) 
 
   const datum = String(formData.get("datum") || "");
   const type = String(formData.get("type") || "") as "vervallen" | "gewijzigd" | "extra";
-  const origineelItemId = String(formData.get("origineelItemId") || "") || null;
+  const origineelItemIdRaw = String(formData.get("origineelItemId") || "") || null;
+  const heleDag = origineelItemIdRaw === "HELE_DAG";
+  const origineelItemId = heleDag ? null : origineelItemIdRaw;
   const titel = String(formData.get("titel") || "").trim() || null;
   const startTijd = String(formData.get("startTijd") || "") || null;
   const eindTijd = String(formData.get("eindTijd") || "") || null;
 
   if (!datum || !type) return { error: "Vul een datum en soort wijziging in." };
-  if (type === "vervallen" && !origineelItemId) {
-    return { error: "Kies welk lesuur vervalt." };
+  if (type === "vervallen" && !origineelItemIdRaw) {
+    return { error: "Kies welk lesuur vervalt, of 'Hele dag'." };
   }
   if (type !== "vervallen" && (!titel || !startTijd || !eindTijd)) {
     return { error: "Vul titel, begin- en eindtijd in." };

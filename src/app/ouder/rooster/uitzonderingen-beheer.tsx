@@ -141,12 +141,17 @@ export function UitzonderingenBeheer({
                 <select
                   name="origineelItemId"
                   required
-                  defaultValue={bewerkUitzondering?.origineel_item_id ?? ""}
+                  defaultValue={
+                    bewerkUitzondering
+                      ? (bewerkUitzondering.origineel_item_id ?? (bewerkUitzondering.type === "vervallen" ? "HELE_DAG" : ""))
+                      : ""
+                  }
                   className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
                 >
                   <option value="">
                     {datum ? "Kies een lesuur" : "Kies eerst een datum"}
                   </option>
+                  {type === "vervallen" && <option value="HELE_DAG">Hele dag</option>}
                   {lesurenOpDatum.map((i) => (
                     <option key={i.id} value={i.id}>
                       {i.titel} ({i.start_tijd.slice(0, 5)}-{i.eind_tijd.slice(0, 5)})
@@ -218,7 +223,7 @@ export function UitzonderingenBeheer({
                 <div className="flex-1">
                   <p className="text-sm font-medium text-slate-800">
                     {DAGNAMEN[isoWeekdag(datumObj)]} {datumObj.toLocaleDateString("nl-NL", { day: "numeric", month: "short" })} -{" "}
-                    {u.type === "vervallen" ? "vervalt" : u.titel}
+                    {u.type === "vervallen" ? (u.origineel_item_id ? "vervalt" : "hele dag vervalt") : u.titel}
                   </p>
                   {u.type !== "vervallen" && u.start_tijd && (
                     <p className="text-xs text-slate-500">
