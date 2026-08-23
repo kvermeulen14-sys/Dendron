@@ -13,6 +13,14 @@ import type { Subject } from "@/lib/types";
 
 type Beoordeling = "goed" | "deels" | "fout" | "geen";
 type Fase = "kies" | "vraag" | "feedback" | "klaar";
+type LesstofFragment = { titel: string; tekst: string } | null;
+
+function normFragment(f: unknown): LesstofFragment {
+  if (!f || typeof f !== "object") return null;
+  const rec = f as Record<string, unknown>;
+  if (typeof rec.titel === "string" && typeof rec.tekst === "string") return { titel: rec.titel, tekst: rec.tekst };
+  return null;
+}
 
 const AANTAL_VRAGEN = 2;
 const LETTERS = ["a", "b", "c", "d", "e", "f"];
@@ -40,6 +48,7 @@ export function TweeMinutenOefenen({ subjects }: { subjects: Subject[] }) {
   const [antwoord, setAntwoord] = useState("");
   const [laatsteAntwoord, setLaatsteAntwoord] = useState("");
   const [feedback, setFeedback] = useState<{ tekst: string; beoordeling: Beoordeling } | null>(null);
+  const [lesstofFragment, setLesstofFragment] = useState<LesstofFragment>(null);
   const [uitleg, setUitleg] = useState<string | null>(null);
   const [uitlegBezig, setUitlegBezig] = useState(false);
   const [gesteldeVragen, setGesteldeVragen] = useState<string[]>([]);
@@ -59,6 +68,7 @@ export function TweeMinutenOefenen({ subjects }: { subjects: Subject[] }) {
     setVolgende(null);
     setAntwoord("");
     setFeedback(null);
+    setLesstofFragment(null);
     setUitleg(null);
     setGesteldeVragen([]);
     setTranscript([]);
@@ -120,6 +130,7 @@ export function TweeMinutenOefenen({ subjects }: { subjects: Subject[] }) {
 
       const beoordeling = (data.beoordeling as Beoordeling) ?? "geen";
       setFeedback({ tekst: data.feedback || "", beoordeling });
+      setLesstofFragment(normFragment(data.lesstofFragment));
       if (beoordeling === "goed" || beoordeling === "deels" || beoordeling === "fout") {
         setScore((s) => ({ ...s, [beoordeling]: s[beoordeling] + 1 }));
       }
@@ -150,6 +161,7 @@ export function TweeMinutenOefenen({ subjects }: { subjects: Subject[] }) {
     setOpties(volgende?.opties ?? null);
     setVraagNr((n) => n + 1);
     setFeedback(null);
+    setLesstofFragment(null);
     setUitleg(null);
     setFase("vraag");
   }
@@ -217,6 +229,15 @@ export function TweeMinutenOefenen({ subjects }: { subjects: Subject[] }) {
             </>
           )}
 
+          {(fase === "vraag" || fase === "feedback") && subject && (
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+              <div
+                className="h-full rounded-full bg-accent-500 transition-all"
+                style={{ width: `${(Math.min(vraagNr, AANTAL_VRAGEN) / AANTAL_VRAGEN) * 100}%` }}
+              />
+            </div>
+          )}
+
           {fase === "vraag" && subject && (
             <div className="flex flex-col gap-3">
               <p className="text-xs font-medium text-slate-500">
@@ -268,6 +289,16 @@ export function TweeMinutenOefenen({ subjects }: { subjects: Subject[] }) {
               <div className={clsx("rounded-xl border p-3 text-sm", BEOORDELING_STIJL[feedback.beoordeling])}>
                 <MarkdownTekst>{feedback.tekst}</MarkdownTekst>
               </div>
+
+              {lesstofFragment && (
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                  <p className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <Icon name="book-open" size={13} />
+                    Uit je lesstof - {lesstofFragment.titel}
+                  </p>
+                  <p className="whitespace-pre-wrap">{lesstofFragment.tekst}</p>
+                </div>
+              )}
 
               {uitleg && (
                 <div className="rounded-xl border border-accent-200 bg-accent-50/60 p-3 text-sm text-slate-700">

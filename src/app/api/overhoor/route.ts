@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createGeminiClient, vereistGeminiKey, genereerGestructureerd } from "@/lib/gemini";
-import { GROTE_KENNISBANK_DREMPEL, kiesWillekeurigeSelectie } from "@/lib/kennisbank";
+import { GROTE_KENNISBANK_DREMPEL, kiesRelevanteMaterialen, kiesWillekeurigeSelectie } from "@/lib/kennisbank";
 
 const MAX_KENNISBANK_TEKENS = 14000;
 const MAX_OVERHOOR_MATERIALEN = 6;
@@ -36,6 +36,31 @@ const OPMAAK_INSTRUCTIE = `Opmaak:
 - Je mag markdown gebruiken (**vet**, opsommingen met "-") als dat de vraag of feedback echt duidelijker maakt, maar houd het kort.
 - Gebruik NOOIT LaTeX-notatie (dus geen $...$, \\frac{}{}, \\times, \\cdot e.d.) - een leerling kent die syntax niet. Schrijf wiskunde in gewone, leesbare tekst: "2/3 × 4/5", "x²", "√2".`;
 
+const MAX_FRAGMENT_TEKENS = 500;
+
+// Toont een kort, LETTERLIJK stukje uit de eigen lesstof bij de feedback
+// (i.p.v. dat de AI de theorie parafraseert, wat kan hallucineren) - de
+// leerling kan zo de echte uitleg uit het boek erbij lezen. Puur
+// deterministisch (geen AI-call), hergebruikt dezelfde matching als de
+// vakdocent-chat.
+function kiesLesstofFragment(
+  materials: { id: string; title: string; content: string; hoofdstuk: string | null }[],
+  zoekTekst: string
+) {
+  const { modus, gekozen } = kiesRelevanteMaterialen(materials, zoekTekst);
+  if (modus !== "selectie" && modus !== "alles") return null;
+  const beste = gekozen[0];
+  if (!beste || !beste.content.trim()) return null;
+
+  let fragment = beste.content.trim();
+  if (fragment.length > MAX_FRAGMENT_TEKENS) {
+    const afgekapt = fragment.slice(0, MAX_FRAGMENT_TEKENS);
+    const laatstePunt = Math.max(afgekapt.lastIndexOf(". "), afgekapt.lastIndexOf(".\n"));
+    fragment = (laatstePunt > 100 ? afgekapt.slice(0, laatstePunt + 1) : afgekapt) + "...";
+  }
+  return { titel: beste.title, tekst: fragment };
+}
+
 const UitlegSchema = z.object({
   uitleg: z
     .string()
@@ -66,7 +91,7 @@ export async function POST(request: Request) {
 
   const { data: materials } = await supabase
     .from("materials")
-    .select("title, content, hoofdstuk")
+    .select("id, title, content, hoofdstuk")
     .eq("subject_id", subjectId);
   if (!materials || materials.length === 0) {
     return NextResponse.json(
@@ -137,7 +162,7 @@ ${
 }
 ${
   vorigeVraag && vorigAntwoord
-    ? `Beoordeel eerst dit antwoord van de leerling:\nVraag: ${vorigeVraag}\nAntwoord van de leerling: ${vorigAntwoord}\nGeef een beoordeling (goed/deels/fout). Bij 'goed' volstaat een korte felicitatie. Bij 'deels' of 'fout': geef GEEN kale foutmelding en niet alleen een hint, maar een echte, behulpzame uitleg (2-4 zinnen) die het onderliggende idee verduidelijkt - zodat de leerling begrijpt WAAROM het niet (helemaal) klopte en hoe het wel zit.\n\n`
+    ? `Beoordeel eerst dit antwoord van de leerling:\nVraag: ${vorigeVraag}\nAntwoord van de leerling: ${vorigAntwoord}\nGeef een beoordeling (goed/deels/fout). Bij 'goed': korte felicitatie MET in 1 zin WAAROM het klopt (zo blijft ook een gokje dat toevallig goed was leerzaam, en wordt goed gokken niet beloond met niets). Bij 'deels' of 'fout': geef GEEN kale foutmelding en niet alleen een hint, maar een echte, behulpzame uitleg (2-4 zinnen) die het onderliggende idee verduidelijkt - zodat de leerling begrijpt WAAROM het niet (helemaal) klopte en hoe het wel zit.\n\n`
     : "Er is nog geen vorig antwoord - laat feedback leeg en beoordeling op 'geen'.\n\n"
 }Stel daarna een NIEUWE vraag over de lesstof hieronder. Deze vragen zijn deze sessie al gesteld, stel geen vraag die daar erg op lijkt: ${
     Array.isArray(gesteldeVragen) && gesteldeVragen.length > 0 ? gesteldeVragen.join(" | ") : "(nog geen)"
@@ -154,7 +179,16 @@ ${kennisbank}`;
       [{ role: "user", parts: [{ text: prompt }] }],
       3072
     );
-    return NextResponse.json(geparsed);
+
+    // Bij een niet-volledig-goed antwoord: het echte lesstof-fragment erbij
+    // zoeken (deterministisch, geen AI-parafrase) zodat de leerling de
+    // theorie zelf kan naslaan terwijl het nog vers is.
+    let lesstofFragment: { titel: string; tekst: string } | null = null;
+    if (vorigeVraag && vorigAntwoord && (geparsed.beoordeling === "deels" || geparsed.beoordeling === "fout")) {
+      lesstofFragment = kiesLesstofFragment(materials, `${vorigeVraag} ${vorigAntwoord}`);
+    }
+
+    return NextResponse.json({ ...geparsed, lesstofFragment });
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? `AI-verwerking mislukt: ${e.message}` : "AI-verwerking mislukt." },

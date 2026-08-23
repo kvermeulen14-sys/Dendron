@@ -13,12 +13,23 @@ type Leerfase = "eerste" | "tussentijds" | "laatste";
 type Beoordeling = "goed" | "deels" | "fout" | "geen";
 type Stijl = "open" | "meerkeuze";
 type WizardStap = "hoofdstuk" | "stijl" | null;
-type SessieFase = "vraag" | "feedback";
+type SessieFase = "vraag" | "feedback" | "klaar";
+type LesstofFragment = { titel: string; tekst: string } | null;
 
 const LEERFASE_OPTIES: { value: Leerfase; label: string; uitleg: string }[] = [
   { value: "eerste", label: "Eerste keer", uitleg: "Meer hulp, rustig opbouwen" },
   { value: "tussentijds", label: "Tussentijds oefenen", uitleg: "Gemiddeld niveau" },
   { value: "laatste", label: "Vlak voor de toets", uitleg: "Pittig, zoals de toets" },
+];
+
+// Geen vaste "beste" lengte volgens onderzoek (dat hangt af van spreiding/
+// moeilijkheid/leerling) - wel is elke oefenmoment beter dan geen, en een
+// korte, afgebakende sessie is makkelijker vol te houden en te herhalen dan
+// 1 lange, open sessie. Daarom een paar concrete keuzes i.p.v. 1 "juist" getal.
+const LENGTE_OPTIES: { waarde: number | null; label: string }[] = [
+  { waarde: 5, label: "5 vragen" },
+  { waarde: 10, label: "10 vragen" },
+  { waarde: null, label: "Tot ik stop" },
 ];
 
 const BEOORDELING_STIJL: Record<Beoordeling, { label: string; icon: string; className: string }> = {
@@ -32,6 +43,13 @@ const LETTERS = ["a", "b", "c", "d", "e", "f"];
 
 function normOpties(o: unknown): string[] | null {
   return Array.isArray(o) && o.length > 0 ? (o as string[]) : null;
+}
+
+function normFragment(f: unknown): LesstofFragment {
+  if (!f || typeof f !== "object") return null;
+  const rec = f as Record<string, unknown>;
+  if (typeof rec.titel === "string" && typeof rec.tekst === "string") return { titel: rec.titel, tekst: rec.tekst };
+  return null;
 }
 
 export function OverhoorPanel({
@@ -54,7 +72,11 @@ export function OverhoorPanel({
   const [gekozenHoofdstuk, setGekozenHoofdstuk] = useState<string | null>(null);
   const [andersInvoer, setAndersInvoer] = useState("");
   const [andersModus, setAndersModus] = useState(false);
+  const [gekozenStijl, setGekozenStijl] = useState<Stijl | null>(null);
+  const [gekozenLengte, setGekozenLengte] = useState<number | null>(null);
   const [scopeInstructie, setScopeInstructie] = useState<string | null>(null);
+  const [maxVragen, setMaxVragen] = useState<number | null>(null);
+  const [vraagIndex, setVraagIndex] = useState(0);
 
   const [fase, setFase] = useState<SessieFase>("vraag");
   const [vraag, setVraag] = useState<string | null>(null);
@@ -64,6 +86,7 @@ export function OverhoorPanel({
   const [laatsteAntwoord, setLaatsteAntwoord] = useState("");
   const [feedback, setFeedback] = useState<string | null>(null);
   const [beoordeling, setBeoordeling] = useState<Beoordeling | null>(null);
+  const [lesstofFragment, setLesstofFragment] = useState<LesstofFragment>(null);
   const [gesteldeVragen, setGesteldeVragen] = useState<string[]>([]);
   const [transcript, setTranscript] = useState<OverhoorTranscriptRegel[]>([]);
   const [score, setScore] = useState({ goed: 0, deels: 0, fout: 0 });
@@ -80,12 +103,17 @@ export function OverhoorPanel({
     setScore({ goed: 0, deels: 0, fout: 0 });
     setFeedback(null);
     setBeoordeling(null);
+    setLesstofFragment(null);
     setGesteldeVragen([]);
     setTranscript([]);
     setScopeInstructie(null);
     setGekozenHoofdstuk(null);
+    setGekozenStijl(null);
+    setGekozenLengte(null);
     setAndersInvoer("");
     setAndersModus(false);
+    setMaxVragen(null);
+    setVraagIndex(0);
     setVraag(null);
     setOpties(null);
     setVolgende(null);
@@ -103,10 +131,12 @@ export function OverhoorPanel({
     kiesHoofdstuk(andersInvoer.trim());
   }
 
-  async function kiesStijl(stijl: Stijl) {
+  async function beginnen() {
+    if (!gekozenStijl) return;
     const onderwerp = gekozenHoofdstuk ? `"${gekozenHoofdstuk}"` : "alle beschikbare lesstof";
-    const instructie = `Onderwerp: ${onderwerp}. Vraagstijl: ${stijl === "meerkeuze" ? "meerkeuzevragen (3-4 opties)" : "open vragen"}.`;
+    const instructie = `Onderwerp: ${onderwerp}. Vraagstijl: ${gekozenStijl === "meerkeuze" ? "meerkeuzevragen (3-4 opties)" : "open vragen"}.`;
     setScopeInstructie(instructie);
+    setMaxVragen(gekozenLengte);
     setWizardStap(null);
 
     setBezig(true);
@@ -121,6 +151,7 @@ export function OverhoorPanel({
       if (!res.ok) throw new Error(data.error || "Er ging iets mis.");
       setVraag(data.vraag);
       setOpties(normOpties(data.opties));
+      setVraagIndex(1);
       setFase("vraag");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Er ging iets mis.");
@@ -157,6 +188,7 @@ export function OverhoorPanel({
       }
       setFeedback(data.feedback || null);
       setBeoordeling(nieuweBeoordeling);
+      setLesstofFragment(normFragment(data.lesstofFragment));
       setLaatsteAntwoord(gegevenAntwoord);
       setGesteldeVragen((prev) => [...prev, vraag]);
       setTranscript((prev) => [
@@ -174,12 +206,21 @@ export function OverhoorPanel({
   }
 
   function volgendeVraag() {
+    if (maxVragen !== null && vraagIndex >= maxVragen) {
+      if (score.goed + score.deels + score.fout > 0) {
+        void slaOverhoorResultaatOp(subjectId, leerfase, score, transcript);
+      }
+      setFase("klaar");
+      return;
+    }
     if (!volgende) return;
     setVraag(volgende.vraag);
     setOpties(volgende.opties);
     setVolgende(null);
     setFeedback(null);
     setBeoordeling(null);
+    setLesstofFragment(null);
+    setVraagIndex((n) => n + 1);
     setFase("vraag");
   }
 
@@ -309,8 +350,8 @@ export function OverhoorPanel({
               )}
             </div>
           ) : (
-            <div>
-              <div className="mb-2 flex items-center justify-between">
+            <div className="flex flex-col gap-4">
+              <div className="flex items-center justify-between">
                 <p className="text-sm font-medium text-slate-700">Hoe wil je de vragen?</p>
                 {hoofdstukken.length > 0 && (
                   <button
@@ -324,9 +365,11 @@ export function OverhoorPanel({
               </div>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <button
-                  disabled={bezig}
-                  onClick={() => kiesStijl("open")}
-                  className="flex flex-col items-start gap-1 rounded-xl border border-slate-200 px-3.5 py-3 text-left transition-colors hover:border-accent-300 hover:bg-accent-50 disabled:opacity-50"
+                  onClick={() => setGekozenStijl("open")}
+                  className={clsx(
+                    "flex flex-col items-start gap-1 rounded-xl border px-3.5 py-3 text-left transition-colors",
+                    gekozenStijl === "open" ? "border-accent-400 bg-accent-50" : "border-slate-200 hover:border-accent-300 hover:bg-accent-50"
+                  )}
                 >
                   <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-800">
                     <Icon name="pencil-line" size={16} className="text-accent-600" />
@@ -335,9 +378,13 @@ export function OverhoorPanel({
                   <span className="text-xs text-slate-500">Zelf het antwoord intypen</span>
                 </button>
                 <button
-                  disabled={bezig}
-                  onClick={() => kiesStijl("meerkeuze")}
-                  className="flex flex-col items-start gap-1 rounded-xl border border-slate-200 px-3.5 py-3 text-left transition-colors hover:border-accent-300 hover:bg-accent-50 disabled:opacity-50"
+                  onClick={() => setGekozenStijl("meerkeuze")}
+                  className={clsx(
+                    "flex flex-col items-start gap-1 rounded-xl border px-3.5 py-3 text-left transition-colors",
+                    gekozenStijl === "meerkeuze"
+                      ? "border-accent-400 bg-accent-50"
+                      : "border-slate-200 hover:border-accent-300 hover:bg-accent-50"
+                  )}
                 >
                   <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-800">
                     <Icon name="check" size={16} className="text-accent-600" />
@@ -346,18 +393,72 @@ export function OverhoorPanel({
                   <span className="text-xs text-slate-500">Zoals op sommige toetsen</span>
                 </button>
               </div>
-              {bezig && <p className="mt-2 text-xs text-slate-400">Eerste vraag wordt bedacht...</p>}
+
+              <div>
+                <p className="mb-2 text-sm font-medium text-slate-700">Hoeveel wil je oefenen?</p>
+                <div className="flex flex-wrap gap-2">
+                  {LENGTE_OPTIES.map((opt) => (
+                    <button
+                      key={opt.label}
+                      onClick={() => setGekozenLengte(opt.waarde)}
+                      className={clsx(
+                        "rounded-xl border px-3.5 py-2 text-sm font-medium transition-colors",
+                        gekozenLengte === opt.waarde
+                          ? "border-slate-900 bg-slate-900 text-white"
+                          : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                      )}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <Button loading={bezig} disabled={!gekozenStijl} onClick={beginnen} icon={<Icon name="rocket" size={18} />}>
+                Beginnen
+              </Button>
             </div>
           )}
           {error && <p className="text-sm text-rose-600">{error}</p>}
         </div>
+      ) : fase === "klaar" ? (
+        <div className="flex flex-col gap-3">
+          <p className="flex items-center gap-1.5 text-sm font-medium text-emerald-700">
+            <Icon name="party" size={16} />
+            Klaar! {score.goed} goed, {score.deels} deels, {score.fout} nog niet.
+          </p>
+          <div className="flex gap-2">
+            <Button onClick={start} icon={<Icon name="rocket" size={16} />}>
+              Nog een keer
+            </Button>
+            <Button variant="secondary" onClick={stop}>
+              Klaar voor nu
+            </Button>
+          </div>
+        </div>
       ) : (
         <>
-          <div className="flex gap-3 text-xs text-slate-500">
-            <span>{score.goed} goed</span>
-            <span>{score.deels} deels</span>
-            <span>{score.fout} nog niet</span>
+          <div className="flex items-center justify-between gap-3 text-xs text-slate-500">
+            <div className="flex gap-3">
+              <span>{score.goed} goed</span>
+              <span>{score.deels} deels</span>
+              <span>{score.fout} nog niet</span>
+            </div>
+            {maxVragen !== null && (
+              <span className="font-medium text-slate-600">
+                vraag {Math.min(vraagIndex, maxVragen)} van {maxVragen}
+              </span>
+            )}
           </div>
+
+          {maxVragen !== null && (
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+              <div
+                className="h-full rounded-full bg-accent-500 transition-all"
+                style={{ width: `${Math.min(100, (Math.min(vraagIndex, maxVragen) / maxVragen) * 100)}%` }}
+              />
+            </div>
+          )}
 
           {bezig && !vraag ? (
             <p className="text-sm text-slate-400">Volgende vraag wordt bedacht...</p>
@@ -388,8 +489,17 @@ export function OverhoorPanel({
                         </div>
                       </div>
                     )}
+                    {lesstofFragment && (
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                        <p className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          <Icon name="book-open" size={13} />
+                          Uit je lesstof - {lesstofFragment.titel}
+                        </p>
+                        <p className="whitespace-pre-wrap">{lesstofFragment.tekst}</p>
+                      </div>
+                    )}
                     <Button loading={bezig} onClick={volgendeVraag} icon={<Icon name="chevron-right" size={16} />}>
-                      Volgende vraag
+                      {maxVragen !== null && vraagIndex >= maxVragen ? "Afronden" : "Volgende vraag"}
                     </Button>
                   </>
                 ) : opties ? (
