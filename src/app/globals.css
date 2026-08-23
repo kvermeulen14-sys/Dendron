@@ -18,3 +18,13 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
 }
+
+/* Vriendelijkere, rondere titelletter voor koppen - zie layout.tsx voor de
+   font-keuze (Baloo 2). Lopende tekst blijft de neutrale --font-sans, dat
+   blijft prettiger leesbaar in lange stukken uitleg. */
+h1,
+h2,
+h3 {
+  font-family: var(--font-heading), var(--font-sans), Arial, Helvetica, sans-serif;
+  letter-spacing: -0.01em;
+}

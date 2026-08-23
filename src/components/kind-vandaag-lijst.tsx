@@ -64,7 +64,7 @@ export function KindVandaagLijst({
             className={clsx(
               "relative flex cursor-pointer flex-col gap-2 rounded-xl border p-3 pb-11 transition-colors hover:border-accent-200 hover:bg-accent-50/30",
               isKlaar
-                ? "border-slate-100 bg-slate-50 opacity-60"
+                ? "border-emerald-200 bg-emerald-50/60"
                 : variant === "verlopen"
                   ? "border-rose-100 bg-rose-50/40"
                   : "border-slate-100"
@@ -72,9 +72,12 @@ export function KindVandaagLijst({
           >
             <div className="flex items-start gap-2.5">
               <Icon
-                name={meta.icon}
+                name={isKlaar ? "check" : meta.icon}
                 size={16}
-                className={clsx("mt-0.5 shrink-0", variant === "verlopen" && !isKlaar ? "text-rose-500" : "text-slate-400")}
+                className={clsx(
+                  "mt-0.5 shrink-0",
+                  isKlaar ? "text-emerald-600" : variant === "verlopen" ? "text-rose-500" : "text-slate-400"
+                )}
               />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
