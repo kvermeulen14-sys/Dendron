@@ -165,6 +165,16 @@ export default async function KindOverzicht() {
 
       <TweeMinutenOefenen subjects={subjectsMetLesstof} />
 
+      <Link href="/kind/planningshulp">
+        <Card className="flex items-center gap-3 border-accent-100 bg-accent-50/40 transition-shadow hover:shadow-md">
+          <Icon name="brain" size={22} className="text-accent-600" />
+          <div>
+            <p className="text-sm font-semibold text-slate-900">Loop je vast met plannen?</p>
+            <p className="text-xs text-slate-500">Overleg een dilemma met je planningshulp</p>
+          </div>
+        </Card>
+      </Link>
+
       <Link href="/kind/vakken">
         <Card className="flex items-center gap-3 transition-shadow hover:shadow-md">
           <Icon name="chat" size={22} className="text-emerald-600" />

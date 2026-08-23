@@ -484,6 +484,11 @@ export function AgendaBoard({
               Rooster
             </button>
           </div>
+          {voorKind && (
+            <LinkButton href="/kind/planningshulp" variant="secondary" icon={<Icon name="brain" size={18} />}>
+              Planningshulp
+            </LinkButton>
+          )}
           <HuiswerkAIImport subjects={subjects} />
           <Button
             icon={<Icon name="plus" size={18} />}
