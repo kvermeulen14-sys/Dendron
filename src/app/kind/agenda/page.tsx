@@ -46,6 +46,7 @@ export default async function KindAgendaPage() {
       uitzonderingen={uitzonderingen ?? []}
       reistijdMinuten={family?.reistijd_minuten ?? 15}
       jaarEvents={jaarEvents ?? []}
+      voorKind
     />
   );
 }

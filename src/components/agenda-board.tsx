@@ -4,15 +4,16 @@ import { useEffect, useMemo, useState, useTransition, type DragEvent } from "rea
 import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import { Icon } from "@/components/icon";
-import { Button } from "@/components/ui/button";
+import { Button, LinkButton } from "@/components/ui/button";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { Card } from "@/components/ui/card";
 import { Modal } from "@/components/ui/modal";
 import { HuiswerkAIImport } from "@/components/huiswerk-ai-import";
 import { TijdSelect } from "@/components/ui/tijd-select";
-import { PLANNING_TYPE_META } from "@/lib/planning";
+import { PLANNING_TYPE_META, minutenNaarTijd, vindEersteVrijeSlot } from "@/lib/planning";
 import { JAAR_EVENT_META, eventsOpDatum, naarIsoDatum } from "@/lib/jaarkalender";
 import {
+  accepteerPlanningItem,
   bewerkPlanningItem,
   maakPlanningItem,
   updatePlanningStatus,
@@ -60,6 +61,15 @@ function formatMinuten(minuten: number) {
 }
 
 const TIJD_OPTIES = [15, 30, 45, 60, 90, 120];
+
+// Status altijd op dezelfde, herkenbare manier tonen (kleur + label, niet
+// alleen kleur) - zodat in 1 oogopslag duidelijk is wat af is, wat gepland
+// staat en wat nog een voorstel is, voor kind en ouder allebei.
+const STATUS_META = {
+  voorstel: { label: "Voorstel", dot: "bg-slate-400" },
+  open: { label: "Gepland", dot: "bg-accent-500" },
+  klaar: { label: "Klaar", dot: "bg-emerald-500" },
+} as const;
 
 // Tijdlijn-schaal voor de dag-per-dag agenda: elk uur krijgt een vaste
 // hoogte, zodat je in 1 oogopslag ziet hoeveel tijd iets kost en hoeveel
@@ -228,6 +238,7 @@ export function AgendaBoard({
   uitzonderingen,
   reistijdMinuten,
   jaarEvents,
+  voorKind = false,
 }: {
   items: PlanningItem[];
   subjects: Subject[];
@@ -237,6 +248,8 @@ export function AgendaBoard({
   uitzonderingen: RoosterUitzondering[];
   reistijdMinuten: number;
   jaarEvents: JaarEvent[];
+  /** Kind-omgeving: begint in de rustigere lijstweergave i.p.v. het dichte roosterraster, en toont een link naar Focusmodus. */
+  voorKind?: boolean;
 }) {
   const router = useRouter();
   const [formOpen, setFormOpen] = useState(false);
@@ -250,6 +263,8 @@ export function AgendaBoard({
   const [bewerkItem, setBewerkItem] = useState<PlanningItem | null>(null);
   const [bewerkEstimatedMinutes, setBewerkEstimatedMinutes] = useState<number | null>(null);
   const [bewerkError, setBewerkError] = useState<string | null>(null);
+  const [detailItem, setDetailItem] = useState<PlanningItem | null>(null);
+  const [weergave, setWeergave] = useState<"rooster" | "lijst">(voorKind ? "lijst" : "rooster");
 
   const vandaagIso = useMemo(() => naarIsoDatum(new Date()), []);
   const dezeWeekMaandag = useMemo(() => naarMaandagVanWeek(new Date()), []);
@@ -369,7 +384,25 @@ export function AgendaBoard({
 
   function accepteer(item: PlanningItem) {
     startTransition(async () => {
-      await updatePlanningStatus(item.id, "open");
+      // Geef het voorstel meteen een concrete tijd na school, rekening
+      // houdend met het rooster en al ingeplande taken die dag - zo landt
+      // het direct zichtbaar in de tijdlijn i.p.v. als los kaartje boven de
+      // agenda te blijven staan.
+      const bezet = [
+        ...(roosterPerDag.get(item.due_date) ?? []).map((b) => ({
+          startMinuten: b.startMinuten,
+          duurMinuten: b.duurMinuten,
+        })),
+        ...(itemsPerDag.get(item.due_date) ?? [])
+          .filter((i) => i.id !== item.id && i.status !== "voorstel" && i.start_time)
+          .map((i) => ({
+            startMinuten: tijdNaarMinuten(i.start_time!),
+            duurMinuten: i.estimated_minutes ?? ONBEKENDE_DUUR_MINUTEN,
+          })),
+      ];
+      const duur = item.estimated_minutes ?? ONBEKENDE_DUUR_MINUTEN;
+      const slot = vindEersteVrijeSlot(bezet, duur);
+      await accepteerPlanningItem(item.id, minutenNaarTijd(slot));
       router.refresh();
     });
   }
@@ -382,9 +415,14 @@ export function AgendaBoard({
   }
 
   function openBewerken(item: PlanningItem) {
+    setDetailItem(null);
     setBewerkError(null);
     setBewerkEstimatedMinutes(item.estimated_minutes);
     setBewerkItem(item);
+  }
+
+  function openDetail(item: PlanningItem) {
+    setDetailItem(item);
   }
 
   async function handleBewerkSubmit(formData: FormData) {
@@ -423,7 +461,29 @@ export function AgendaBoard({
     <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-semibold text-slate-900">Agenda</h1>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <div className="flex rounded-xl border border-slate-200 p-0.5">
+            <button
+              onClick={() => setWeergave("lijst")}
+              className={clsx(
+                "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
+                weergave === "lijst" ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-50"
+              )}
+            >
+              <Icon name="book-open" size={14} />
+              Lijst
+            </button>
+            <button
+              onClick={() => setWeergave("rooster")}
+              className={clsx(
+                "hidden items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors md:flex",
+                weergave === "rooster" ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-50"
+              )}
+            >
+              <Icon name="calendar" size={14} />
+              Rooster
+            </button>
+          </div>
           <HuiswerkAIImport subjects={subjects} />
           <Button
             icon={<Icon name="plus" size={18} />}
@@ -455,6 +515,19 @@ export function AgendaBoard({
           </div>
         </Card>
       )}
+
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
+        {(Object.entries(STATUS_META) as [PlanningItem["status"], (typeof STATUS_META)[keyof typeof STATUS_META]][]).map(
+          ([status, meta]) => (
+            <span key={status} className="flex items-center gap-1.5">
+              <span className={clsx("h-2 w-2 rounded-full", meta.dot)} />
+              {meta.label}
+            </span>
+          )
+        )}
+        <span className="text-slate-300">|</span>
+        <span>Tik op een taak voor details</span>
+      </div>
 
       <Card className="flex items-center justify-between gap-2 py-3">
         <button
@@ -761,8 +834,135 @@ export function AgendaBoard({
         )}
       </Modal>
 
+      <Modal open={detailItem !== null} onClose={() => setDetailItem(null)} title="Details">
+        {detailItem &&
+          (() => {
+            const meta = PLANNING_TYPE_META[detailItem.type];
+            const statusMeta = STATUS_META[detailItem.status];
+            const isVoorstel = detailItem.status === "voorstel";
+            const isKlaar = detailItem.status === "klaar";
+            return (
+              <div className="flex flex-col gap-4">
+                <div className="flex items-start gap-3">
+                  <span
+                    className={clsx(
+                      "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border",
+                      meta.badgeClass
+                    )}
+                  >
+                    <Icon name={meta.icon} size={20} />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className={clsx("text-base font-semibold text-slate-900", isKlaar && "line-through")}>
+                      {detailItem.title}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {meta.label}
+                      {subjectNaam(detailItem.subject_id) && ` - ${subjectNaam(detailItem.subject_id)}`}
+                    </p>
+                  </div>
+                  <span className="flex shrink-0 items-center gap-1.5 rounded-full border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600">
+                    <span className={clsx("h-1.5 w-1.5 rounded-full", statusMeta.dot)} />
+                    {statusMeta.label}
+                  </span>
+                </div>
+
+                {detailItem.description && (
+                  <p className="whitespace-pre-wrap rounded-xl bg-slate-50 p-3 text-sm text-slate-700">
+                    {detailItem.description}
+                  </p>
+                )}
+
+                <div className="flex flex-wrap gap-x-5 gap-y-1.5 text-sm text-slate-600">
+                  <span className="flex items-center gap-1.5">
+                    <Icon name="calendar" size={14} className="text-slate-400" />
+                    {formatDatumLabel(detailItem.due_date)}
+                  </span>
+                  {detailItem.start_time && (
+                    <span className="flex items-center gap-1.5">
+                      <Icon name="history" size={14} className="text-slate-400" />
+                      {tijdKort(detailItem.start_time)} uur
+                    </span>
+                  )}
+                  {detailItem.estimated_minutes && (
+                    <span className="flex items-center gap-1.5">
+                      <Icon name="target" size={14} className="text-slate-400" />
+                      ~{formatMinuten(detailItem.estimated_minutes)}
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-3">
+                  {isVoorstel ? (
+                    <>
+                      <Button
+                        loading={pending}
+                        onClick={() => {
+                          accepteer(detailItem);
+                          setDetailItem(null);
+                        }}
+                        icon={<Icon name="check" size={16} />}
+                      >
+                        Prima zo, plan in
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        disabled={pending}
+                        onClick={() => {
+                          verwijder(detailItem);
+                          setDetailItem(null);
+                        }}
+                        icon={<Icon name="trash" size={16} />}
+                      >
+                        Verwijderen
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Button
+                        variant={isKlaar ? "secondary" : "primary"}
+                        loading={pending}
+                        onClick={() => {
+                          toggleStatus(detailItem);
+                          setDetailItem(null);
+                        }}
+                        icon={<Icon name="check" size={16} />}
+                      >
+                        {isKlaar ? "Weer openzetten" : "Klaar melden"}
+                      </Button>
+                      {voorKind && (
+                        <LinkButton
+                          href={`/kind/focus/${detailItem.id}`}
+                          variant="secondary"
+                          icon={<Icon name="target" size={16} />}
+                        >
+                          Focus starten
+                        </LinkButton>
+                      )}
+                      <Button variant="secondary" onClick={() => openBewerken(detailItem)} icon={<Icon name="pencil-line" size={16} />}>
+                        Bewerken
+                      </Button>
+                      <Button
+                        variant="danger"
+                        disabled={pending}
+                        onClick={() => {
+                          verwijder(detailItem);
+                          setDetailItem(null);
+                        }}
+                        icon={<Icon name="trash" size={16} />}
+                      >
+                        Verwijderen
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+      </Modal>
+
       {/* Kalenderweergave: tijdlijn 7 dagen naast elkaar, zoals afsprakenplanning-software */}
-      <div className="hidden overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm md:block">
+      <div className={clsx("overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm", weergave === "rooster" ? "hidden md:block" : "hidden")}>
         <div className="overflow-x-auto">
         <div className="max-h-[calc(100vh-280px)] min-h-[280px] overflow-y-auto">
         <div
@@ -820,16 +1020,24 @@ export function AgendaBoard({
                         setDraggedId(null);
                         setDragOverIso(null);
                       }}
+                      onClick={() => openDetail(item)}
                       className={clsx(
-                        "rounded-lg border px-2 py-1.5 text-xs transition-opacity",
-                        meta.badgeClass,
-                        isKlaar && "opacity-50",
+                        "cursor-pointer rounded-lg border px-2 py-1.5 text-xs transition-opacity",
+                        isKlaar
+                          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                          : isVoorstel
+                            ? clsx(meta.badgeClass, "border-dashed")
+                            : meta.badgeClass,
                         !isVoorstel && "cursor-grab active:cursor-grabbing",
                         draggedId === item.id && "opacity-30"
                       )}
                     >
                       <div className="flex items-start gap-1">
-                        <Icon name={meta.icon} size={12} className="mt-0.5 shrink-0" />
+                        {isKlaar ? (
+                          <Icon name="check" size={12} className="mt-0.5 shrink-0 text-emerald-600" />
+                        ) : (
+                          <Icon name={meta.icon} size={12} className="mt-0.5 shrink-0" />
+                        )}
                         <span className={clsx("line-clamp-2 flex-1 font-medium leading-snug", isKlaar && "line-through")}>
                           {item.title}
                         </span>
@@ -839,19 +1047,26 @@ export function AgendaBoard({
                           </span>
                         )}
                       </div>
+                      {isVoorstel && <p className="mt-0.5 text-[10px] italic opacity-70">voorstel, nog niet bevestigd</p>}
                       <div className="mt-1 flex items-center gap-2">
                         {isVoorstel ? (
                           <>
                             <button
                               disabled={pending}
-                              onClick={() => accepteer(item)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                accepteer(item);
+                              }}
                               className="text-[10px] font-medium underline underline-offset-2 disabled:opacity-50"
                             >
                               Prima zo
                             </button>
                             <button
                               disabled={pending}
-                              onClick={() => verwijder(item)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                verwijder(item);
+                              }}
                               aria-label="Verwijderen"
                               className="opacity-70 hover:opacity-100 disabled:opacity-30"
                             >
@@ -859,27 +1074,17 @@ export function AgendaBoard({
                             </button>
                           </>
                         ) : (
-                          <>
-                            <button onClick={() => openBewerken(item)} aria-label="Bewerken" className="opacity-70 hover:opacity-100">
-                              <Icon name="pencil-line" size={11} />
-                            </button>
-                            <button
-                              disabled={pending}
-                              onClick={() => toggleStatus(item)}
-                              aria-label="Klaar markeren"
-                              className="opacity-70 hover:opacity-100 disabled:opacity-30"
-                            >
-                              <Icon name="check" size={11} />
-                            </button>
-                            <button
-                              disabled={pending}
-                              onClick={() => verwijder(item)}
-                              aria-label="Verwijderen"
-                              className="opacity-70 hover:opacity-100 disabled:opacity-30"
-                            >
-                              <Icon name={pending ? "loader" : "trash"} size={11} className={pending ? "animate-spin" : undefined} />
-                            </button>
-                          </>
+                          <button
+                            disabled={pending}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleStatus(item);
+                            }}
+                            aria-label={isKlaar ? "Weer openzetten" : "Klaar markeren"}
+                            className="opacity-70 hover:opacity-100 disabled:opacity-30"
+                          >
+                            <Icon name="check" size={11} />
+                          </button>
                         )}
                       </div>
                     </div>
@@ -981,17 +1186,17 @@ export function AgendaBoard({
                         setDraggedId(null);
                         setDragOverIso(null);
                       }}
-                      onClick={() => openBewerken(item)}
+                      onClick={() => openDetail(item)}
                       style={{ top: topVoorMinuut(startMin), height: hoogteVoorDuur(duur) }}
                       className={clsx(
                         "group absolute inset-x-1 cursor-pointer overflow-hidden rounded-md border px-1.5 py-0.5 text-xs leading-tight shadow-sm transition-opacity",
-                        meta.badgeClass,
-                        isKlaar && "opacity-50",
+                        isKlaar ? "border-emerald-200 bg-emerald-50 text-emerald-700" : meta.badgeClass,
                         "cursor-grab active:cursor-grabbing",
                         draggedId === item.id && "opacity-30"
                       )}
                     >
-                      <p className={clsx("truncate font-medium", isKlaar && "line-through")}>
+                      <p className={clsx("flex items-center gap-1 truncate font-medium", isKlaar && "line-through")}>
+                        {isKlaar && <Icon name="check" size={10} className="shrink-0 text-emerald-600" />}
                         {tijdKort(item.start_time!)} {item.title}
                       </p>
                       <div className="absolute right-0.5 top-0.5 hidden gap-0.5 group-hover:flex">
@@ -1001,7 +1206,7 @@ export function AgendaBoard({
                             toggleStatus(item);
                           }}
                           className="rounded bg-white/90 p-0.5 hover:bg-white"
-                          aria-label="Klaar markeren"
+                          aria-label={isKlaar ? "Weer openzetten" : "Klaar markeren"}
                         >
                           <Icon name="check" size={10} />
                         </button>
@@ -1033,8 +1238,8 @@ export function AgendaBoard({
         </div>
       </div>
 
-      {/* Mobiele weergave: dagen onder elkaar */}
-      <div className="flex flex-col gap-4 md:hidden">
+      {/* Lijstweergave: dagen onder elkaar - altijd op mobiel, en op elk formaat als 'Lijst' gekozen is */}
+      <div className={clsx("flex flex-col gap-4", weergave === "rooster" && "md:hidden")}>
         {weekDagen.map((dag) => {
           const iso = naarIsoDatum(dag);
           const dagItems = [...(itemsPerDag.get(iso) ?? [])].sort((a, b) => {
@@ -1096,15 +1301,21 @@ export function AgendaBoard({
                     return (
                       <Card
                         key={item.id}
-                        className={clsx("flex items-center gap-3 py-3", isKlaar && "opacity-60")}
+                        onClick={() => openDetail(item)}
+                        className={clsx(
+                          "flex cursor-pointer items-center gap-3 py-3 transition-colors hover:border-accent-200",
+                          isKlaar
+                            ? "border-emerald-200 bg-emerald-50/60"
+                            : isVoorstel && "border-dashed"
+                        )}
                       >
                         <span
                           className={clsx(
                             "flex h-9 w-9 shrink-0 items-center justify-center rounded-full border",
-                            meta.badgeClass
+                            isKlaar ? "border-emerald-200 bg-emerald-100 text-emerald-600" : meta.badgeClass
                           )}
                         >
-                          <Icon name={meta.icon} size={16} />
+                          <Icon name={isKlaar ? "check" : meta.icon} size={16} />
                         </span>
 
                         <div className="min-w-0 flex-1">
@@ -1136,21 +1347,30 @@ export function AgendaBoard({
                               <span>Verplaats:</span>
                               <button
                                 disabled={pending}
-                                onClick={() => verplaats(item, isoPlusDagen(item.due_date, -1))}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  verplaats(item, isoPlusDagen(item.due_date, -1));
+                                }}
                                 className="rounded px-1.5 py-0.5 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50"
                               >
                                 -1 dag
                               </button>
                               <button
                                 disabled={pending}
-                                onClick={() => verplaats(item, isoPlusDagen(item.due_date, 1))}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  verplaats(item, isoPlusDagen(item.due_date, 1));
+                                }}
                                 className="rounded px-1.5 py-0.5 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50"
                               >
                                 +1 dag
                               </button>
                               <button
                                 disabled={pending}
-                                onClick={() => verplaats(item, isoPlusDagen(item.due_date, 7))}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  verplaats(item, isoPlusDagen(item.due_date, 7));
+                                }}
                                 className="rounded px-1.5 py-0.5 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50"
                               >
                                 +1 week
@@ -1161,12 +1381,23 @@ export function AgendaBoard({
 
                         {isVoorstel ? (
                           <div className="flex shrink-0 gap-1.5">
-                            <Button size="md" variant="secondary" loading={pending} onClick={() => accepteer(item)}>
+                            <Button
+                              size="md"
+                              variant="secondary"
+                              loading={pending}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                accepteer(item);
+                              }}
+                            >
                               Prima zo
                             </Button>
                             <button
                               disabled={pending}
-                              onClick={() => verwijder(item)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                verwijder(item);
+                              }}
                               className="rounded-xl p-2.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"
                               aria-label="Verwijderen"
                             >
@@ -1174,36 +1405,22 @@ export function AgendaBoard({
                             </button>
                           </div>
                         ) : (
-                          <div className="flex shrink-0 items-center gap-1.5">
-                            <button
-                              onClick={() => openBewerken(item)}
-                              className="rounded-xl p-2.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                              aria-label="Bewerken"
-                            >
-                              <Icon name="pencil-line" size={16} />
-                            </button>
-                            <button
-                              disabled={pending}
-                              onClick={() => toggleStatus(item)}
-                              className={clsx(
-                                "rounded-xl p-2.5 disabled:opacity-50",
-                                isKlaar
-                                  ? "bg-emerald-100 text-emerald-700"
-                                  : "text-slate-400 hover:bg-emerald-50 hover:text-emerald-600"
-                              )}
-                              aria-label="Klaar markeren"
-                            >
-                              <Icon name="check" size={16} />
-                            </button>
-                            <button
-                              disabled={pending}
-                              onClick={() => verwijder(item)}
-                              className="rounded-xl p-2.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"
-                              aria-label="Verwijderen"
-                            >
-                              <Icon name={pending ? "loader" : "trash"} size={16} className={pending ? "animate-spin" : undefined} />
-                            </button>
-                          </div>
+                          <button
+                            disabled={pending}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleStatus(item);
+                            }}
+                            className={clsx(
+                              "shrink-0 rounded-xl p-2.5 disabled:opacity-50",
+                              isKlaar
+                                ? "bg-emerald-100 text-emerald-700"
+                                : "text-slate-400 hover:bg-emerald-50 hover:text-emerald-600"
+                            )}
+                            aria-label={isKlaar ? "Weer openzetten" : "Klaar markeren"}
+                          >
+                            <Icon name="check" size={18} />
+                          </button>
                         )}
                       </Card>
                     );

@@ -51,6 +51,36 @@ export function classificeerWerkdruk(minuten: number): WerkdrukNiveau {
   return "overvol";
 }
 
+// Zoekt het eerste vrije tijdslot van `duurMinuten` na school, zodat een
+// geaccepteerd leermoment/voorstel meteen een concrete plek in de dagplanning
+// krijgt in plaats van als los, ongepland kaartje te blijven "zweven" - dat
+// laatste is precies waar het voor een kind met planningsmoeite onduidelijk
+// wordt ("waar staat dit nu eigenlijk?").
+export function vindEersteVrijeSlot(
+  bezetteBlokken: { startMinuten: number; duurMinuten: number }[],
+  duurMinuten: number,
+  opties?: { vanafMinuten?: number; totMinuten?: number }
+): number {
+  const vanaf = opties?.vanafMinuten ?? 15 * 60 + 30;
+  const tot = opties?.totMinuten ?? 20 * 60;
+  const sorted = [...bezetteBlokken].sort((a, b) => a.startMinuten - b.startMinuten);
+  let kandidaat = vanaf;
+  for (const blok of sorted) {
+    const blokEind = blok.startMinuten + blok.duurMinuten;
+    if (blok.startMinuten >= kandidaat + duurMinuten) break;
+    if (blokEind > kandidaat) kandidaat = blokEind;
+  }
+  return Math.min(kandidaat, tot);
+}
+
+export function minutenNaarTijd(minuten: number) {
+  const h = Math.floor(minuten / 60)
+    .toString()
+    .padStart(2, "0");
+  const m = (minuten % 60).toString().padStart(2, "0");
+  return `${h}:${m}`;
+}
+
 function addDays(date: Date, days: number) {
   const d = new Date(date);
   d.setDate(d.getDate() + days);

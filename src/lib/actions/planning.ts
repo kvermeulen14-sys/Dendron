@@ -140,6 +140,15 @@ export async function updatePlanningStatus(id: string, status: "open" | "klaar" 
   revalidateAgendas();
 }
 
+// Accepteert een voorstel (bv. een automatisch voorgesteld leermoment) en
+// geeft het meteen een concrete tijd in de dagplanning, zodat het niet als
+// los kaartje boven de agenda blijft "zweven" - zie vindEersteVrijeSlot.
+export async function accepteerPlanningItem(id: string, startTime: string | null) {
+  const supabase = await createClient();
+  await supabase.from("planning_items").update({ status: "open", start_time: startTime }).eq("id", id);
+  revalidateAgendas();
+}
+
 export async function verwijderPlanningItem(id: string) {
   const supabase = await createClient();
   await supabase.from("planning_items").delete().eq("id", id);
