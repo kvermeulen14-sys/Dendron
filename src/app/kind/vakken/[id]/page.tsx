@@ -3,7 +3,10 @@ import { createClient } from "@/lib/supabase/server";
 import { VakWerkruimte } from "@/components/vak-werkruimte";
 import { MateriaalForm } from "@/components/materiaal-form";
 import { KennisbankUploader } from "@/components/kennisbank-uploader";
+import { OverhoorResultaten } from "@/components/overhoor-resultaten";
 import { Icon } from "@/components/icon";
+import { Card } from "@/components/ui/card";
+import type { OverhoorSessie } from "@/lib/types";
 
 export default async function KindVakDetailPage({
   params,
@@ -30,6 +33,13 @@ export default async function KindVakDetailPage({
     .eq("user_id", user!.id)
     .order("created_at", { ascending: true });
 
+  const { data: overhoorSessies } = await supabase
+    .from("overhoor_sessies")
+    .select("*")
+    .eq("subject_id", id)
+    .order("created_at", { ascending: false })
+    .limit(10);
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center gap-3">
@@ -41,6 +51,13 @@ export default async function KindVakDetailPage({
           <p className="text-sm text-slate-500">Chat met je vakdocent, of laat je overhoren.</p>
         </div>
       </div>
+
+      {(overhoorSessies?.length ?? 0) > 0 && (
+        <Card>
+          <h2 className="mb-3 text-base font-semibold text-slate-900">Mijn voortgang</h2>
+          <OverhoorResultaten sessies={(overhoorSessies ?? []) as OverhoorSessie[]} />
+        </Card>
+      )}
 
       <VakWerkruimte subjectId={id} subjectName={subject.name} initialMessages={messages ?? []} initialModus={initialModus} />
 

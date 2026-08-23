@@ -2,7 +2,9 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/card";
 import { Icon } from "@/components/icon";
+import { WerkdrukWeek } from "@/components/werkdruk-week";
 import { PLANNING_TYPE_META } from "@/lib/planning";
+import { huidigeWeekMaandag } from "@/lib/week";
 import type { Stemming } from "@/lib/types";
 
 const STEMMING_META: Record<Stemming, { icon: string; klasse: string; label: string }> = {
@@ -64,6 +66,11 @@ export default async function OuderOverzicht() {
         <Stat label="Toetsen gepland" value={toetsen.length} tone="amber" icon="pencil-line" />
         <Stat label="Afgerond" value={klaarDezeMaand} tone="emerald" icon="check" />
       </div>
+
+      <Card>
+        <h2 className="mb-3 text-base font-semibold text-slate-900">Werkdruk deze week</h2>
+        <WerkdrukWeek items={alle} weekMaandagIso={huidigeWeekMaandag()} vandaagIso={vandaag} />
+      </Card>
 
       <Card>
         <h2 className="mb-3 text-base font-semibold text-slate-900">Hoe ging het de laatste weken?</h2>

@@ -137,6 +137,20 @@ export interface ChatMessage {
   created_at: string;
 }
 
+export type Leerfase = "eerste" | "tussentijds" | "laatste";
+
+export interface OverhoorSessie {
+  id: string;
+  family_id: string;
+  user_id: string;
+  subject_id: string;
+  leerfase: Leerfase;
+  aantal_goed: number;
+  aantal_deels: number;
+  aantal_fout: number;
+  created_at: string;
+}
+
 export type Stemming = "goed" | "neutraal" | "moeilijk";
 
 export interface WeekTerugblik {

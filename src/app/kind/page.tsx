@@ -5,6 +5,7 @@ import { Icon } from "@/components/icon";
 import { KindVandaagLijst } from "@/components/kind-vandaag-lijst";
 import { WeekTerugblikVraag } from "@/components/week-terugblik-vraag";
 import { TweeMinutenOefenen } from "@/components/twee-minuten-oefenen";
+import { WerkdrukWeek } from "@/components/werkdruk-week";
 import { huidigeWeekMaandag } from "@/lib/week";
 import type { PlanningItem, Subject } from "@/lib/types";
 
@@ -21,6 +22,10 @@ export default async function KindOverzicht() {
 
   const vandaag = new Date().toISOString().slice(0, 10);
   const weekMaandag = huidigeWeekMaandag();
+  const weekMaandagDatum = new Date(weekMaandag + "T00:00:00");
+  const weekZondagDatum = new Date(weekMaandagDatum);
+  weekZondagDatum.setDate(weekZondagDatum.getDate() + 6);
+  const weekZondag = `${weekZondagDatum.getFullYear()}-${String(weekZondagDatum.getMonth() + 1).padStart(2, "0")}-${String(weekZondagDatum.getDate()).padStart(2, "0")}`;
 
   const [
     { data: vandaagData },
@@ -30,6 +35,7 @@ export default async function KindOverzicht() {
     { data: subjectsData },
     { data: terugblikData },
     { data: materialsData },
+    { data: weekData },
   ] = await Promise.all([
     supabase
       .from("planning_items")
@@ -65,6 +71,12 @@ export default async function KindOverzicht() {
       .eq("week_start", weekMaandag)
       .maybeSingle(),
     supabase.from("materials").select("subject_id").eq("family_id", profile!.family_id),
+    supabase
+      .from("planning_items")
+      .select("*")
+      .eq("family_id", profile!.family_id)
+      .gte("due_date", weekMaandag)
+      .lte("due_date", weekZondag),
   ]);
 
   const vandaagItems = (vandaagData ?? []) as PlanningItem[];
@@ -76,6 +88,7 @@ export default async function KindOverzicht() {
 
   const subjectIdsMetLesstof = new Set((materialsData ?? []).map((m) => m.subject_id));
   const subjectsMetLesstof = subjects.filter((s) => subjectIdsMetLesstof.has(s.id));
+  const weekItems = (weekData ?? []) as PlanningItem[];
 
   const vandaagGedaan = vandaagItems.filter((i) => i.status === "klaar").length;
 
@@ -144,6 +157,11 @@ export default async function KindOverzicht() {
           <KindVandaagLijst items={teLaat} subjects={subjects} variant="verlopen" />
         </Card>
       )}
+
+      <Card>
+        <h2 className="mb-3 text-base font-semibold text-slate-900">Deze week</h2>
+        <WerkdrukWeek items={weekItems} weekMaandagIso={weekMaandag} vandaagIso={vandaag} />
+      </Card>
 
       <TweeMinutenOefenen subjects={subjectsMetLesstof} />
 

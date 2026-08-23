@@ -6,9 +6,10 @@ import { VerwijderMateriaalKnop } from "@/components/verwijder-materiaal-knop";
 import { MateriaalForm } from "@/components/materiaal-form";
 import { MateriaalBewerkForm } from "@/components/materiaal-bewerk-form";
 import { KennisbankUploader } from "@/components/kennisbank-uploader";
+import { OverhoorResultaten } from "@/components/overhoor-resultaten";
 import { VakBewerkForm } from "./vak-bewerk-form";
 import { VerwijderVakKnop } from "./verwijder-vak-knop";
-import type { Material, Subject } from "@/lib/types";
+import type { Material, OverhoorSessie, Subject } from "@/lib/types";
 
 const BRON_ICON: Record<string, string> = { tekst: "file", pdf: "file", foto: "image" };
 
@@ -28,6 +29,13 @@ export default async function VakDetailPage({
     .select("*")
     .eq("subject_id", id)
     .order("created_at", { ascending: false });
+
+  const { data: overhoorSessies } = await supabase
+    .from("overhoor_sessies")
+    .select("*")
+    .eq("subject_id", id)
+    .order("created_at", { ascending: false })
+    .limit(10);
 
   return (
     <div className="flex flex-col gap-6">
@@ -60,6 +68,11 @@ export default async function VakDetailPage({
           <p className="mt-1.5 text-sm text-slate-700">{subject.ai_instructions}</p>
         </Card>
       )}
+
+      <Card>
+        <h2 className="mb-3 text-base font-semibold text-slate-900">Overhoor-resultaten</h2>
+        <OverhoorResultaten sessies={(overhoorSessies ?? []) as OverhoorSessie[]} />
+      </Card>
 
       <div>
         <h2 className="mb-3 text-base font-semibold text-slate-900">Lesstof toevoegen</h2>

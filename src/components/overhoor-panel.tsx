@@ -5,6 +5,7 @@ import clsx from "clsx";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Icon } from "@/components/icon";
+import { slaOverhoorResultaatOp } from "@/lib/actions/overhoor";
 
 type Leerfase = "eerste" | "tussentijds" | "laatste";
 type Beoordeling = "goed" | "deels" | "fout" | "geen";
@@ -115,6 +116,9 @@ export function OverhoorPanel({ subjectId, subjectName }: { subjectId: string; s
   }
 
   function stop() {
+    if (score.goed + score.deels + score.fout > 0) {
+      void slaOverhoorResultaatOp(subjectId, leerfase, score);
+    }
     setGestart(false);
     setScopeModus(false);
     setVraag(null);

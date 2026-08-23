@@ -5,6 +5,7 @@ import clsx from "clsx";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/icon";
+import { slaOverhoorResultaatOp } from "@/lib/actions/overhoor";
 import type { Subject } from "@/lib/types";
 
 type Beoordeling = "goed" | "deels" | "fout" | "geen";
@@ -27,6 +28,7 @@ export function TweeMinutenOefenen({ subjects }: { subjects: Subject[] }) {
   const [antwoord, setAntwoord] = useState("");
   const [feedback, setFeedback] = useState<{ tekst: string; beoordeling: Beoordeling } | null>(null);
   const [gesteldeVragen, setGesteldeVragen] = useState<string[]>([]);
+  const [score, setScore] = useState({ goed: 0, deels: 0, fout: 0 });
   const [bezig, setBezig] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -40,6 +42,7 @@ export function TweeMinutenOefenen({ subjects }: { subjects: Subject[] }) {
     setAntwoord("");
     setFeedback(null);
     setGesteldeVragen([]);
+    setScore({ goed: 0, deels: 0, fout: 0 });
     setError(null);
   }
 
@@ -87,12 +90,20 @@ export function TweeMinutenOefenen({ subjects }: { subjects: Subject[] }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Kon niet controleren.");
 
-      setFeedback({ tekst: data.feedback || "", beoordeling: (data.beoordeling as Beoordeling) ?? "geen" });
+      const beoordeling = (data.beoordeling as Beoordeling) ?? "geen";
+      setFeedback({ tekst: data.feedback || "", beoordeling });
       setGesteldeVragen((prev) => [...prev, vraag]);
       setAntwoord("");
 
+      const nieuweScore =
+        beoordeling === "goed" || beoordeling === "deels" || beoordeling === "fout"
+          ? { ...score, [beoordeling]: score[beoordeling] + 1 }
+          : score;
+      setScore(nieuweScore);
+
       if (vraagNr >= AANTAL_VRAGEN) {
         setFase("klaar");
+        void slaOverhoorResultaatOp(subject.id, "tussentijds", nieuweScore);
       } else {
         setVraag(data.vraag);
         setVraagNr((n) => n + 1);

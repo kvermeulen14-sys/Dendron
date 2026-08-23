@@ -30,6 +30,27 @@ export const PLANNING_TYPE_META: Record<
   },
 };
 
+// Werkdruk-classificatie: helpt kind en ouder in 1 oogopslag zien welke
+// dagen vol raken, zodat overbelasting op tijd verplaatst kan worden in
+// plaats van er pas achteraf achter te komen (voorkomt "verrassingsstress").
+export type WerkdrukNiveau = "vrij" | "rustig" | "prima" | "druk" | "overvol";
+
+export const WERKDRUK_META: Record<WerkdrukNiveau, { label: string; badgeClass: string; barClass: string }> = {
+  vrij: { label: "Vrij", badgeClass: "bg-slate-50 text-slate-400 border-slate-200", barClass: "bg-slate-200" },
+  rustig: { label: "Rustig", badgeClass: "bg-emerald-50 text-emerald-700 border-emerald-200", barClass: "bg-emerald-400" },
+  prima: { label: "Prima te doen", badgeClass: "bg-accent-50 text-accent-700 border-accent-200", barClass: "bg-accent-400" },
+  druk: { label: "Druk", badgeClass: "bg-amber-50 text-amber-700 border-amber-200", barClass: "bg-amber-400" },
+  overvol: { label: "Overvol", badgeClass: "bg-rose-50 text-rose-700 border-rose-200", barClass: "bg-rose-500" },
+};
+
+export function classificeerWerkdruk(minuten: number): WerkdrukNiveau {
+  if (minuten <= 0) return "vrij";
+  if (minuten <= 60) return "rustig";
+  if (minuten <= 120) return "prima";
+  if (minuten <= 180) return "druk";
+  return "overvol";
+}
+
 function addDays(date: Date, days: number) {
   const d = new Date(date);
   d.setDate(d.getDate() + days);
