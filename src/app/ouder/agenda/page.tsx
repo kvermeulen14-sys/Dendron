@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { AgendaBoard } from "@/components/agenda-board";
+import { STANDAARD_AVOND_GRENS } from "@/lib/capaciteit";
 
 export default async function OuderAgendaPage() {
   const supabase = await createClient();
@@ -32,7 +33,7 @@ export default async function OuderAgendaPage() {
     supabase.from("rooster_periodes").select("*").eq("family_id", profile!.family_id),
     supabase.from("rooster_items").select("*").eq("family_id", profile!.family_id),
     supabase.from("rooster_uitzonderingen").select("*").eq("family_id", profile!.family_id),
-    supabase.from("families").select("reistijd_minuten").eq("id", profile!.family_id).single(),
+    supabase.from("families").select("*").eq("id", profile!.family_id).single(),
     supabase.from("jaar_events").select("*").eq("family_id", profile!.family_id),
   ]);
 
@@ -45,6 +46,7 @@ export default async function OuderAgendaPage() {
       roosterItems={roosterItems ?? []}
       uitzonderingen={uitzonderingen ?? []}
       reistijdMinuten={family?.reistijd_minuten ?? 15}
+      avondGrens={family?.avond_grens ?? STANDAARD_AVOND_GRENS}
       jaarEvents={jaarEvents ?? []}
     />
   );

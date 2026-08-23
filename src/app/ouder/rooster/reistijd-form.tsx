@@ -3,9 +3,10 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { SubmitButton } from "@/components/ui/submit-button";
+import { TijdSelect } from "@/components/ui/tijd-select";
 import { updateReistijd } from "@/lib/actions/rooster";
 
-export function ReistijdForm({ huidig }: { huidig: number }) {
+export function ReistijdForm({ huidig, avondGrens }: { huidig: number; avondGrens: string }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
 
@@ -32,7 +33,19 @@ export function ReistijdForm({ huidig }: { huidig: number }) {
           className="w-32 rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
         />
       </div>
+      <div>
+        <label className="mb-1.5 block text-sm font-medium text-slate-700">
+          Tot hoe laat plannen we &apos;s avonds?
+        </label>
+        <TijdSelect name="avondGrens" required defaultValue={avondGrens.slice(0, 5)} placeholder="Kies een tijd" />
+      </div>
       <SubmitButton variant="secondary">Opslaan</SubmitButton>
+      <p className="w-full text-xs text-slate-500">
+        Hiermee rekent de agenda per dag uit hoeveel tijd er echt is: vanaf het moment dat je thuis
+        bent (einde rooster + fietstijd + een half uur pauze) tot deze tijd, min een uur voor eten en
+        min alles wat als prive in de agenda staat. Zo zie je meteen wanneer er meer gepland staat
+        dan er past.
+      </p>
       {error && <p className="w-full text-sm text-rose-600">{error}</p>}
     </form>
   );

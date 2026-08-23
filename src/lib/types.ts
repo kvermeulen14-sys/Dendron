@@ -19,6 +19,8 @@ export interface Family {
   id: string;
   name: string;
   reistijd_minuten: number;
+  /** Tot hoe laat er 's avonds gepland mag worden, bv. "20:30". */
+  avond_grens: string;
   created_at: string;
 }
 

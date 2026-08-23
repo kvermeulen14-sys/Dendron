@@ -290,7 +290,7 @@ export async function verwijderRoosterUitzondering(id: string) {
   revalidateRooster();
 }
 
-// -- Reistijd (fietstijd) --------------------------------------------------
+// -- Dagindeling: fietstijd + avondgrens -----------------------------------
 
 export async function updateReistijd(formData: FormData) {
   const ctx = await vereistOuder();
@@ -302,9 +302,16 @@ export async function updateReistijd(formData: FormData) {
     return { error: "Vul een reistijd tussen 0 en 120 minuten in." };
   }
 
+  // De avondgrens bepaalt samen met het rooster en de fietstijd hoeveel tijd er
+  // per dag beschikbaar is - daarop rekent de agenda uit of een dag nog past.
+  const avondGrens = String(formData.get("avondGrens") || "").slice(0, 5);
+  if (!/^\d{2}:\d{2}$/.test(avondGrens)) {
+    return { error: "Kies tot hoe laat er 's avonds gepland mag worden." };
+  }
+
   const { error } = await supabase
     .from("families")
-    .update({ reistijd_minuten: reistijd })
+    .update({ reistijd_minuten: reistijd, avond_grens: avondGrens })
     .eq("id", profile.family_id);
 
   if (error) return { error: error.message };

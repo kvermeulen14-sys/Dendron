@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { STANDAARD_AVOND_GRENS } from "@/lib/capaciteit";
 import { Card } from "@/components/ui/card";
 import type { RoosterItem, RoosterPeriode, RoosterUitzondering, Subject } from "@/lib/types";
 import { ReistijdForm } from "./reistijd-form";
@@ -30,7 +31,7 @@ export default async function RoosterPage() {
         .eq("family_id", profile!.family_id)
         .order("datum", { ascending: true }),
       supabase.from("subjects").select("*").eq("family_id", profile!.family_id),
-      supabase.from("families").select("reistijd_minuten").eq("id", profile!.family_id).single(),
+      supabase.from("families").select("*").eq("id", profile!.family_id).single(),
     ]);
 
   return (
@@ -44,7 +45,10 @@ export default async function RoosterPage() {
       </div>
 
       <Card>
-        <ReistijdForm huidig={family?.reistijd_minuten ?? 15} />
+        <ReistijdForm
+          huidig={family?.reistijd_minuten ?? 15}
+          avondGrens={family?.avond_grens ?? STANDAARD_AVOND_GRENS}
+        />
       </Card>
 
       <RoosterBeheer

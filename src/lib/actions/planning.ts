@@ -212,6 +212,32 @@ export async function verplaatsPlanningItem(id: string, nieuweDatum: string) {
   revalidateAgendas();
 }
 
+// Slepen binnen de weektijdlijn: de plek waar je loslaat bepaalt zowel de dag
+// als het tijdstip. Directe manipulatie kost minder denkwerk dan een formulier
+// openen, een tijd kiezen en opslaan - en dat is precies het verschil tussen
+// "ik schuif het even" en "laat maar zitten".
+export async function verplaatsPlanningItemNaarTijd(
+  id: string,
+  nieuweDatum: string,
+  nieuweStartTijd: string
+) {
+  const supabase = await createClient();
+  await supabase
+    .from("planning_items")
+    .update({ due_date: nieuweDatum, start_time: nieuweStartTijd })
+    .eq("id", id);
+  revalidateAgendas();
+}
+
+// De onderrand van een kaartje slepen past de tijdsinschatting aan. Die voedt
+// meteen de capaciteitsmeter, dus langer maken laat direct zien of het nog past.
+export async function updatePlanningDuur(id: string, minuten: number) {
+  const supabase = await createClient();
+  const veilig = Math.max(15, Math.min(8 * 60, Math.round(minuten)));
+  await supabase.from("planning_items").update({ estimated_minutes: veilig }).eq("id", id);
+  revalidateAgendas();
+}
+
 export async function maakHuiswerkItemsBulk(
   items: { titel: string; datum: string; subjectId?: string | null; beschrijving?: string }[]
 ): Promise<{ error: string; aantal?: undefined } | { error?: undefined; aantal: number }> {
