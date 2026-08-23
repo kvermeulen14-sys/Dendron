@@ -1,4 +1,5 @@
 import {
+  GripVertical,
   BookOpen,
   PencilLine,
   AlertCircle,
@@ -79,6 +80,7 @@ export const ICONS = {
   "thumbs-up": ThumbsUp,
   "thumbs-down": ThumbsDown,
   meh: Meh,
+  grip: GripVertical,
 } as const;
 
 export type IconName = keyof typeof ICONS;

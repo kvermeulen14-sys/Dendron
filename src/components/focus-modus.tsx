@@ -8,7 +8,8 @@ import { Card } from "@/components/ui/card";
 import { Button, LinkButton } from "@/components/ui/button";
 import { Icon } from "@/components/icon";
 import { PLANNING_TYPE_META } from "@/lib/planning";
-import { updatePlanningStatus } from "@/lib/actions/planning";
+import { updatePlanningStatus, updatePlanningWerkelijkeDuur } from "@/lib/actions/planning";
+import { DuurTerugblik } from "@/components/duur-terugblik";
 import { kiesKlaarLabel, kiesVierTekst } from "@/lib/motiverend";
 import { useKlaarBevestiging } from "@/lib/use-klaar-bevestiging";
 import type { PlanningItem, Subject } from "@/lib/types";
@@ -30,11 +31,15 @@ export function FocusModus({ item, subject }: { item: PlanningItem; subject: Sub
   const [fase, setFase] = useState<"werk" | "pauze">("werk");
   const [secondenOver, setSecondenOver] = useState(WERK_MINUTEN * 60);
   const [lopend, setLopend] = useState(false);
+  // Meegeteld terwijl de focustimer loopt, zodat de vraag "hoe lang deed je
+  // erover?" straks al een gemeten voorstel kan tonen in plaats van een gok.
+  const [gewerkteSeconden, setGewerkteSeconden] = useState(0);
   const klaarBevestiging = useKlaarBevestiging();
 
   useEffect(() => {
     if (!lopend) return;
     const interval = setInterval(() => {
+      if (fase === "werk") setGewerkteSeconden((g) => g + 1);
       setSecondenOver((s) => {
         if (s > 1) return s - 1;
         // fase wisselt automatisch, timer blijft doorlopen
@@ -56,14 +61,29 @@ export function FocusModus({ item, subject }: { item: PlanningItem; subject: Sub
     setSecondenOver((nieuweFase === "werk" ? WERK_MINUTEN : PAUZE_MINUTEN) * 60);
   }
 
-  async function afronden() {
-    await klaarBevestiging.bevestig(async () => {
-      await updatePlanningStatus(item.id, "klaar");
-    });
+  const gemetenMinuten = gewerkteSeconden >= 60 ? Math.round(gewerkteSeconden / 60) : null;
+
+  function naarDashboard() {
     setTimeout(() => {
       router.push("/kind");
       router.refresh();
     }, 1600);
+  }
+
+  async function afronden() {
+    await klaarBevestiging.bevestig(
+      async () => {
+        await updatePlanningStatus(item.id, "klaar");
+      },
+      { vraagDuur: true }
+    );
+  }
+
+  async function rondDuurAf(minuten: number | null) {
+    await klaarBevestiging.meldDuur(
+      minuten === null ? undefined : async () => updatePlanningWerkelijkeDuur(item.id, minuten)
+    );
+    naarDashboard();
   }
 
   const totaalSeconden = (fase === "werk" ? WERK_MINUTEN : PAUZE_MINUTEN) * 60;
@@ -159,6 +179,14 @@ export function FocusModus({ item, subject }: { item: PlanningItem; subject: Sub
             Ja, {kiesKlaarLabel(item.id).toLowerCase()}
           </Button>
         </div>
+      ) : klaarBevestiging.fase === "duur" ? (
+        <DuurTerugblik
+          geschatteMinuten={item.estimated_minutes}
+          voorstelMinuten={gemetenMinuten}
+          bezig={klaarBevestiging.bezig}
+          onKies={(minuten) => rondDuurAf(minuten)}
+          onOverslaan={() => rondDuurAf(null)}
+        />
       ) : klaarBevestiging.fase === "vieren" ? (
         <div className="flex items-center justify-center gap-2 rounded-2xl bg-emerald-50 py-4 text-base font-semibold text-emerald-700">
           <Icon name="party" size={20} />

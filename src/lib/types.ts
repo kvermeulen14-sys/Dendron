@@ -125,6 +125,8 @@ export interface PlanningItem {
   start_time: string | null;
   status: PlanningStatus;
   estimated_minutes: number | null;
+  /** Hoe lang het volgens de leerling echt duurde; null als de vraag is overgeslagen. */
+  actual_minutes: number | null;
   created_by: string;
   created_at: string;
 }

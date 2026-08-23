@@ -4,9 +4,10 @@ import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import { Icon } from "@/components/icon";
 import { PLANNING_TYPE_META } from "@/lib/planning";
-import { updatePlanningStatus } from "@/lib/actions/planning";
+import { updatePlanningStatus, updatePlanningWerkelijkeDuur } from "@/lib/actions/planning";
 import { kiesKlaarLabel, kiesVierTekst } from "@/lib/motiverend";
 import { useKlaarBevestiging } from "@/lib/use-klaar-bevestiging";
+import { DuurTerugblik } from "@/components/duur-terugblik";
 import type { PlanningItem, Subject } from "@/lib/types";
 
 function formatMinuten(minuten: number) {
@@ -71,7 +72,7 @@ function KindVandaagItem({
   const router = useRouter();
   const meta = PLANNING_TYPE_META[item.type];
   const isKlaar = item.status === "klaar";
-  const { fase, bezig, vraagBevestiging, annuleer, bevestig } = useKlaarBevestiging();
+  const { fase, bezig, vraagBevestiging, annuleer, bevestig, meldDuur } = useKlaarBevestiging();
 
   async function heropen() {
     await updatePlanningStatus(item.id, "open");
@@ -79,17 +80,28 @@ function KindVandaagItem({
   }
 
   async function markeerKlaar() {
-    await bevestig(async () => {
-      await updatePlanningStatus(item.id, "klaar");
-      router.refresh();
-    });
+    await bevestig(
+      async () => {
+        await updatePlanningStatus(item.id, "klaar");
+        router.refresh();
+      },
+      // Alleen vragen als er iets is om tegen af te zetten - zonder schatting
+      // valt er ook niets bij te stellen.
+      { vraagDuur: Boolean(item.estimated_minutes) }
+    );
+  }
+
+  async function rondDuurAf(minuten: number | null) {
+    await meldDuur(minuten === null ? undefined : async () => updatePlanningWerkelijkeDuur(item.id, minuten));
+    router.refresh();
   }
 
   return (
     <li
       onClick={() => fase === "rust" && router.push(`/kind/focus/${item.id}`)}
       className={clsx(
-        "relative flex cursor-pointer flex-col gap-2 rounded-xl border p-3 pb-11 transition-colors hover:border-accent-200 hover:bg-accent-50/30",
+        "relative flex cursor-pointer flex-col gap-2 rounded-xl border p-3 transition-colors hover:border-accent-200 hover:bg-accent-50/30",
+        fase === "duur" ? "pb-3" : "pb-11",
         isKlaar
           ? "border-emerald-200 bg-emerald-50/60"
           : variant === "verlopen"
@@ -146,6 +158,15 @@ function KindVandaagItem({
             <Icon name="check" size={14} />
             Ja, {kiesKlaarLabel(item.id).toLowerCase()}
           </button>
+        </div>
+      ) : fase === "duur" ? (
+        <div onClick={(e) => e.stopPropagation()} className="mt-1">
+          <DuurTerugblik
+            geschatteMinuten={item.estimated_minutes}
+            bezig={bezig}
+            onKies={(minuten) => rondDuurAf(minuten)}
+            onOverslaan={() => rondDuurAf(null)}
+          />
         </div>
       ) : fase === "vieren" ? (
         <div className="absolute bottom-2 right-2 flex items-center gap-1.5 rounded-full bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white">

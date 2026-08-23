@@ -15,8 +15,11 @@ import clsx from "clsx";
 import { Icon } from "@/components/icon";
 import { Button, LinkButton } from "@/components/ui/button";
 import { PlanningshulpKnop } from "@/components/planningshulp-knop";
+import { NuEnStraks } from "@/components/nu-en-straks";
 import { kiesKlaarLabel, kiesVierTekst } from "@/lib/motiverend";
 import { useKlaarBevestiging } from "@/lib/use-klaar-bevestiging";
+import { DuurTerugblik } from "@/components/duur-terugblik";
+import { berekenKalibratie, schattingAdvies } from "@/lib/kalibratie";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { Card } from "@/components/ui/card";
 import { Modal } from "@/components/ui/modal";
@@ -30,6 +33,7 @@ import {
   maakPlanningItem,
   updatePlanningDuur,
   updatePlanningStatus,
+  updatePlanningWerkelijkeDuur,
   verplaatsPlanningItem,
   verplaatsPlanningItemNaarTijd,
   verwijderPlanningItem,
@@ -331,6 +335,7 @@ export function AgendaBoard({
   const [formOpen, setFormOpen] = useState(false);
   const [type, setType] = useState<PlanningType>("huiswerk");
   const [estimatedMinutes, setEstimatedMinutes] = useState<number | null>(null);
+  const [subjectId, setSubjectId] = useState("");
   const [herhaling, setHerhaling] = useState<HerhalingType>("geen");
   const [herhaalTot, setHerhaalTot] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -346,6 +351,8 @@ export function AgendaBoard({
   // Waar het kaartje zou landen als je nu loslaat - als kwartier-lijn zichtbaar.
   const [dropMinuut, setDropMinuut] = useState<number | null>(null);
   const [resizeDuur, setResizeDuur] = useState<{ id: string; duur: number } | null>(null);
+  const [lijstSleep, setLijstSleep] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [lijstDoelIso, setLijstDoelIso] = useState<string | null>(null);
   const resizeRef = useRef<{ id: string; startY: number; startDuur: number; huidig: number } | null>(null);
   const weekendVoorkeur = useSyncExternalStore(
     abonneerWeekendVoorkeur,
@@ -355,6 +362,13 @@ export function AgendaBoard({
   const klaarBevestiging = useKlaarBevestiging();
 
   const avondGrensMinuten = useMemo(() => tijdNaarMinuten(avondGrens), [avondGrens]);
+
+  // Wat eerdere taken leerden over hoe lang dit soort werk echt duurt.
+  const kalibratie = useMemo(() => berekenKalibratie(items), [items]);
+  const advies = useMemo(
+    () => schattingAdvies(kalibratie, type, subjectId || null, estimatedMinutes),
+    [kalibratie, type, subjectId, estimatedMinutes]
+  );
 
   const vandaagIso = useMemo(() => naarIsoDatum(new Date()), []);
   const dezeWeekMaandag = useMemo(() => naarMaandagVanWeek(new Date()), []);
@@ -385,21 +399,67 @@ export function AgendaBoard({
   const vandaagMinuten = vandaagOpenItems.reduce((som, i) => som + (i.estimated_minutes ?? 0), 0);
 
   // Vandaag apart, want die valt buiten de getoonde week zodra je vooruitbladert.
+  const vandaagRoosterBlokken = useMemo(
+    () =>
+      roosterBlokkenVoorDag(
+        new Date(vandaagIso + "T00:00:00"),
+        periodes,
+        roosterItems,
+        uitzonderingen,
+        reistijdMinuten,
+        jaarEvents
+      ),
+    [vandaagIso, periodes, roosterItems, uitzonderingen, reistijdMinuten, jaarEvents]
+  );
+
   const vandaagCapaciteit = useMemo(
     () =>
       berekenDagCapaciteit({
-        roosterBlokken: roosterBlokkenVoorDag(
-          new Date(vandaagIso + "T00:00:00"),
-          periodes,
-          roosterItems,
-          uitzonderingen,
-          reistijdMinuten,
-          jaarEvents
-        ),
+        roosterBlokken: vandaagRoosterBlokken,
         items: items.filter((i) => i.due_date === vandaagIso),
         avondGrensMinuten,
       }),
-    [items, vandaagIso, periodes, roosterItems, uitzonderingen, reistijdMinuten, jaarEvents, avondGrensMinuten]
+    [items, vandaagIso, vandaagRoosterBlokken, avondGrensMinuten]
+  );
+
+  // Leren in delen werkt alleen als je ook ziet dat je ermee bezig bent: op het
+  // toetskaartje staat daarom hoeveel van de gespreide leermomenten al af zijn.
+  const leermomentVoortgang = useMemo(() => {
+    const map = new Map<string, { totaal: number; klaar: number }>();
+    for (const item of items) {
+      if (item.type !== "leermoment" || !item.parent_item_id) continue;
+      const huidig = map.get(item.parent_item_id) ?? { totaal: 0, klaar: 0 };
+      huidig.totaal += 1;
+      if (item.status === "klaar") huidig.klaar += 1;
+      map.set(item.parent_item_id, huidig);
+    }
+    return map;
+  }, [items]);
+
+  function dagenTot(iso: string) {
+    return Math.round(
+      (new Date(iso + "T00:00:00").getTime() - new Date(vandaagIso + "T00:00:00").getTime()) / 86400000
+    );
+  }
+
+  function toetsAftelling(iso: string) {
+    const dagen = dagenTot(iso);
+    if (dagen < 0) return "geweest";
+    if (dagen === 0) return "vandaag";
+    if (dagen === 1) return "morgen";
+    return `nog ${dagen} dagen`;
+  }
+
+  // Onaf werk verdwijnt niet stilletjes in het verleden: het blijft in beeld
+  // tot er een keuze over gemaakt is. Zolang het nergens veilig staat, blijft
+  // het in je hoofd rondzingen - en dat is precies wat een agenda moet
+  // overnemen.
+  const openstaandVerleden = useMemo(
+    () =>
+      items
+        .filter((i) => i.status === "open" && i.due_date < vandaagIso)
+        .sort((a, b) => a.due_date.localeCompare(b.due_date)),
+    [items, vandaagIso]
   );
 
   const roosterPerDag = useMemo(() => {
@@ -594,6 +654,41 @@ export function AgendaBoard({
     });
   }
 
+  /**
+   * Een goed moment voor een taak die nog geen tijd heeft: het eerste gat na
+   * school waar hij helemaal in past. Een taak met een tijdstip erop wordt veel
+   * vaker echt gedaan dan een taak die alleen "vandaag" heet.
+   */
+  function stelTijdVoor(iso: string, item: PlanningItem) {
+    const cap = capaciteitPerDag.get(iso);
+    const duur = item.estimated_minutes ?? ONBEKENDE_DUUR_MINUTEN;
+    const bezet = [
+      ...(roosterPerDag.get(iso) ?? []).map((b) => ({
+        startMinuten: b.startMinuten,
+        duurMinuten: b.duurMinuten,
+      })),
+      ...(itemsPerDag.get(iso) ?? [])
+        .filter((i) => i.id !== item.id && i.status !== "voorstel" && i.start_time)
+        .map((i) => ({
+          startMinuten: tijdNaarMinuten(i.start_time!),
+          duurMinuten: i.estimated_minutes ?? ONBEKENDE_DUUR_MINUTEN,
+        })),
+    ];
+    const slot = vindEersteVrijeSlot(
+      bezet,
+      duur,
+      cap ? { vanafMinuten: cap.startMinuten, totMinuten: Math.max(cap.startMinuten, cap.eindMinuten - duur) } : undefined
+    );
+    return minutenNaarTijd(Math.round(slot / SNAP_MINUTEN) * SNAP_MINUTEN);
+  }
+
+  function planOpVoorgesteldeTijd(item: PlanningItem, iso: string, tijd: string) {
+    startTransition(async () => {
+      await verplaatsPlanningItemNaarTijd(item.id, iso, tijd);
+      router.refresh();
+    });
+  }
+
   function dropOpDag(e: DragEvent, iso: string) {
     e.preventDefault();
     setDragOverIso(null);
@@ -636,6 +731,36 @@ export function AgendaBoard({
       await verplaatsPlanningItemNaarTijd(item.id, iso, nieuweTijd);
       router.refresh();
     });
+  }
+
+  // Slepen in de lijstweergave (mobiel). HTML5-drag doet op touch niets, dus
+  // dit loopt via pointer events, met een eigen greepje: dat is duidelijker dan
+  // ingedrukt houden en het houdt gewoon scrollen intact.
+  function startLijstSlepen(e: ReactPointerEvent<HTMLElement>, item: PlanningItem) {
+    e.preventDefault();
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setLijstSleep({ id: item.id, x: e.clientX, y: e.clientY });
+    setLijstDoelIso(null);
+  }
+
+  function lijstSlepen(e: ReactPointerEvent<HTMLElement>) {
+    if (!lijstSleep) return;
+    setLijstSleep({ ...lijstSleep, x: e.clientX, y: e.clientY });
+    const onder = document.elementFromPoint(e.clientX, e.clientY);
+    const dag = onder?.closest<HTMLElement>("[data-dag-iso]");
+    setLijstDoelIso(dag?.dataset.dagIso ?? null);
+  }
+
+  function eindigLijstSlepen(e: ReactPointerEvent<HTMLElement>) {
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+    const sleep = lijstSleep;
+    const doel = lijstDoelIso;
+    setLijstSleep(null);
+    setLijstDoelIso(null);
+    if (!sleep || !doel) return;
+    const item = items.find((i) => i.id === sleep.id);
+    if (item) verplaats(item, doel);
   }
 
   function startDuurSlepen(e: ReactPointerEvent<HTMLElement>, item: PlanningItem) {
@@ -707,6 +832,7 @@ export function AgendaBoard({
             icon={<Icon name="plus" size={18} />}
             onClick={() => {
               setEstimatedMinutes(null);
+              setSubjectId("");
               setHerhaling("geen");
               setHerhaalTot("");
               setFormOpen(true);
@@ -716,6 +842,10 @@ export function AgendaBoard({
           </Button>
         </div>
       </div>
+
+      {voorKind && (
+        <NuEnStraks items={vandaagItems} roosterBlokken={vandaagRoosterBlokken} voorKind={voorKind} />
+      )}
 
       {vandaagOpenItems.length > 0 && (
         <Card
@@ -749,6 +879,83 @@ export function AgendaBoard({
                   : `Dit past binnen de ${formatMinuten(vandaagCapaciteit.beschikbaarMinuten)} die je vandaag hebt.`}
             </p>
           </div>
+        </Card>
+      )}
+
+      {openstaandVerleden.length > 0 && (
+        <Card className="flex flex-col gap-2.5 border-amber-200 bg-amber-50/60 py-3">
+          <div className="flex items-start gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-600">
+              <Icon name="alert-circle" size={17} />
+            </span>
+            <div>
+              <p className="text-sm font-semibold text-slate-900">
+                Nog niet af: {openstaandVerleden.length}{" "}
+                {openstaandVerleden.length === 1 ? "ding" : "dingen"}
+              </p>
+              <p className="text-xs text-slate-500">
+                Dit blijft hier staan tot je er iets mee doet - zet het op vandaag, of op een dag
+                waarop het wel past.
+              </p>
+            </div>
+          </div>
+          <ul className="flex flex-col gap-1.5">
+            {openstaandVerleden.map((item) => {
+              const meta = PLANNING_TYPE_META[item.type];
+              const code = subjectCode(item.subject_id);
+              return (
+                <li
+                  key={item.id}
+                  className="flex items-center gap-2 rounded-xl border border-amber-100 bg-white py-1.5 pl-0 pr-1.5"
+                >
+                  <span className={clsx("ml-1.5 h-7 w-1 shrink-0 rounded-full", KAART_STIJL[item.type].rail)} />
+                  <span
+                    className={clsx(
+                      "flex h-5 w-5 shrink-0 items-center justify-center rounded",
+                      KAART_STIJL[item.type].ico
+                    )}
+                  >
+                    <Icon name={meta.icon} size={11} />
+                  </span>
+                  <button onClick={() => openDetail(item)} className="min-w-0 flex-1 text-left">
+                    <span className="block truncate text-sm font-medium text-slate-800">{item.title}</span>
+                    <span className="block truncate text-[11px] text-slate-400">
+                      stond op{" "}
+                      {new Date(item.due_date + "T00:00:00").toLocaleDateString("nl-NL", {
+                        weekday: "short",
+                        day: "numeric",
+                        month: "short",
+                      })}
+                      {code && <span className="ml-1 font-semibold text-slate-500">{code}</span>}
+                    </span>
+                  </button>
+                  <button
+                    disabled={pending}
+                    onClick={() => verplaats(item, vandaagIso)}
+                    className="shrink-0 rounded-lg bg-slate-900 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+                  >
+                    Vandaag
+                  </button>
+                  <button
+                    disabled={pending}
+                    onClick={() => verplaats(item, isoPlusDagen(vandaagIso, 1))}
+                    className="shrink-0 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    Morgen
+                  </button>
+                  <button
+                    disabled={pending}
+                    onClick={() => toggleStatus(item)}
+                    aria-label="Klaar markeren"
+                    title="Klaar markeren"
+                    className="shrink-0 rounded-lg p-1.5 text-slate-400 hover:bg-emerald-50 hover:text-emerald-600 disabled:opacity-50"
+                  >
+                    <Icon name="check" size={15} />
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
         </Card>
       )}
 
@@ -819,6 +1026,51 @@ export function AgendaBoard({
         </button>
       </Card>
 
+      {/* Weekoverzicht: welke dag te vol wordt, voordat de week begint - en
+          ook zichtbaar in de lijstweergave en op mobiel. */}
+      <div className="flex gap-1.5">
+        {weekDagen.map((dag) => {
+          const iso = naarIsoDatum(dag);
+          const cap = capaciteitPerDag.get(iso);
+          const capMeta = cap ? CAPACITEIT_META[cap.niveau] : null;
+          const isVandaag = iso === vandaagIso;
+          return (
+            <div
+              key={iso}
+              title={
+                cap
+                  ? `${dag.toLocaleDateString("nl-NL", { weekday: "long", day: "numeric", month: "long" })} - ${capaciteitTekst(cap)}`
+                  : undefined
+              }
+              className={clsx(
+                "flex flex-1 flex-col items-center gap-1 rounded-xl border px-1 py-1.5",
+                isVandaag ? "border-accent-300 bg-accent-50/60" : "border-slate-100 bg-white"
+              )}
+            >
+              <span
+                className={clsx(
+                  "text-[10px] font-semibold uppercase tracking-wide",
+                  isVandaag ? "text-accent-700" : "text-slate-400"
+                )}
+              >
+                {dag.toLocaleDateString("nl-NL", { weekday: "short" }).slice(0, 2)}
+              </span>
+              <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                {cap && capMeta && (
+                  <span
+                    className={clsx("h-full", capMeta.barClass)}
+                    style={{ width: `${Math.min(100, Math.round(cap.percentage * 100))}%` }}
+                  />
+                )}
+              </div>
+              {cap?.niveau === "over" && (
+                <span className="text-[9px] font-bold uppercase text-rose-600">vol</span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
       <Modal open={formOpen} onClose={() => setFormOpen(false)} title="Nieuw item">
         <form action={handleSubmit} className="flex flex-col gap-4">
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -856,6 +1108,8 @@ export function AgendaBoard({
                 <label className="mb-1.5 block text-sm font-medium text-slate-700">Vak</label>
                 <select
                   name="subjectId"
+                  value={subjectId}
+                  onChange={(e) => setSubjectId(e.target.value)}
                   className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
                 >
                   <option value="">Geen specifiek vak</option>
@@ -976,9 +1230,22 @@ export function AgendaBoard({
                   </button>
                 ))}
               </div>
-              <p className="mt-1.5 text-xs text-slate-500">
-                Helpt om in te schatten wat er op een dag realistisch in past.
-              </p>
+              {advies ? (
+                <button
+                  type="button"
+                  onClick={() => setEstimatedMinutes(advies.voorstelMinuten)}
+                  className="mt-1.5 flex w-full items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-2.5 py-2 text-left text-xs text-amber-800 hover:bg-amber-100"
+                >
+                  <Icon name="alert-circle" size={14} className="mt-px shrink-0" />
+                  <span>
+                    {advies.tekst} <span className="font-semibold underline">Neem {advies.voorstelMinuten} min over</span>
+                  </span>
+                </button>
+              ) : (
+                <p className="mt-1.5 text-xs text-slate-500">
+                  Helpt om in te schatten wat er op een dag realistisch in past.
+                </p>
+              )}
               <input type="hidden" name="estimatedMinutes" value={estimatedMinutes ?? ""} />
             </div>
 
@@ -1163,9 +1430,50 @@ export function AgendaBoard({
                     <span className="flex items-center gap-1.5">
                       <Icon name="target" size={14} className="text-slate-400" />
                       ~{formatMinuten(detailItem.estimated_minutes)}
+                      {detailItem.actual_minutes && (
+                        <span className="text-slate-400">
+                          (werd {formatMinuten(detailItem.actual_minutes)})
+                        </span>
+                      )}
                     </span>
                   )}
                 </div>
+
+                {/* Aftellen naar de toets, en hoeveel van het gespreide leren
+                    al gedaan is - leren in delen werkt alleen als je die
+                    voortgang ook ziet. */}
+                {detailItem.type === "toets" &&
+                  (() => {
+                    const voortgang = leermomentVoortgang.get(detailItem.id);
+                    const dagen = dagenTot(detailItem.due_date);
+                    return (
+                      <div className="flex flex-col gap-2 rounded-xl border border-toets-200 bg-toets-50 p-3">
+                        <p className="text-sm font-semibold text-toets-700">
+                          Toets {toetsAftelling(detailItem.due_date)}
+                          {dagen > 1 && <span className="font-normal text-slate-500"> - nog even tijd om te leren</span>}
+                        </p>
+                        {voortgang ? (
+                          <>
+                            <div className="flex h-1.5 overflow-hidden rounded-full bg-white">
+                              <span
+                                className="h-full bg-leermoment-500"
+                                style={{ width: `${(voortgang.klaar / voortgang.totaal) * 100}%` }}
+                              />
+                            </div>
+                            <p className="text-xs text-slate-600">
+                              {voortgang.klaar} van {voortgang.totaal} leermomenten af
+                              {voortgang.klaar < voortgang.totaal &&
+                                " - de rest staat verspreid in je agenda, dat leert beter dan alles op de avond ervoor."}
+                            </p>
+                          </>
+                        ) : (
+                          <p className="text-xs text-slate-500">
+                            Er staan nog geen leermomenten voor deze toets.
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                 <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-3">
                   {isVoorstel ? (
@@ -1202,16 +1510,37 @@ export function AgendaBoard({
                         size="md"
                         loading={klaarBevestiging.bezig}
                         onClick={async () => {
-                          await klaarBevestiging.bevestig(async () => {
-                            await updatePlanningStatus(detailItem.id, "klaar");
-                            router.refresh();
-                          });
-                          setTimeout(() => sluitDetail(), 1600);
+                          await klaarBevestiging.bevestig(
+                            async () => {
+                              await updatePlanningStatus(detailItem.id, "klaar");
+                              router.refresh();
+                            },
+                            { vraagDuur: Boolean(detailItem.estimated_minutes) }
+                          );
+                          if (!detailItem.estimated_minutes) setTimeout(() => sluitDetail(), 1600);
                         }}
                         icon={<Icon name="check" size={16} />}
                       >
                         Ja, {kiesKlaarLabel(detailItem.id).toLowerCase()}
                       </Button>
+                    </div>
+                  ) : klaarBevestiging.fase === "duur" ? (
+                    <div className="w-full">
+                      <DuurTerugblik
+                        geschatteMinuten={detailItem.estimated_minutes}
+                        bezig={klaarBevestiging.bezig}
+                        onKies={async (minuten) => {
+                          await klaarBevestiging.meldDuur(async () => {
+                            await updatePlanningWerkelijkeDuur(detailItem.id, minuten);
+                            router.refresh();
+                          });
+                          setTimeout(() => sluitDetail(), 1600);
+                        }}
+                        onOverslaan={async () => {
+                          await klaarBevestiging.meldDuur();
+                          setTimeout(() => sluitDetail(), 1600);
+                        }}
+                      />
                     </div>
                   ) : klaarBevestiging.fase === "vieren" ? (
                     <div className="flex w-full items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2.5 text-sm font-semibold text-emerald-700">
@@ -1461,17 +1790,34 @@ export function AgendaBoard({
                             </button>
                           </>
                         ) : (
-                          <button
-                            disabled={pending}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              toggleStatus(item);
-                            }}
-                            aria-label={isKlaar ? "Weer openzetten" : "Klaar markeren"}
-                            className="text-slate-400 hover:text-slate-700 disabled:opacity-30"
-                          >
-                            <Icon name="check" size={11} />
-                          </button>
+                          <>
+                            {/* Een taak met een tijdstip wordt veel vaker echt
+                                gedaan dan een taak die alleen "vandaag" heet -
+                                dus bieden we er meteen een aan. */}
+                            {!item.start_time && !isKlaar && (
+                              <button
+                                disabled={pending}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  planOpVoorgesteldeTijd(item, iso, stelTijdVoor(iso, item));
+                                }}
+                                className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 hover:bg-slate-200 disabled:opacity-50"
+                              >
+                                Plan om {stelTijdVoor(iso, item)}
+                              </button>
+                            )}
+                            <button
+                              disabled={pending}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleStatus(item);
+                              }}
+                              aria-label={isKlaar ? "Weer openzetten" : "Klaar markeren"}
+                              className="text-slate-400 hover:text-slate-700 disabled:opacity-30"
+                            >
+                              <Icon name="check" size={11} />
+                            </button>
+                          </>
                         )}
                       </div>
                       </div>
@@ -1653,7 +1999,12 @@ export function AgendaBoard({
                         </span>
                         {hoogte >= METAREGEL_VANAF_PX && (
                           <span className="mt-0.5 block truncate text-[10px] text-slate-400 tabular-nums">
-                            {tijdKort(item.start_time!)} &middot; {formatMinuten(duur)}
+                            {tijdKort(item.start_time!)} &middot;{" "}
+                            {item.type === "toets" ? (
+                              <span className="font-semibold text-toets-700">{toetsAftelling(item.due_date)}</span>
+                            ) : (
+                              formatMinuten(duur)
+                            )}
                             {code && <span className="ml-1 font-semibold text-slate-500">{code}</span>}
                           </span>
                         )}
@@ -1750,7 +2101,15 @@ export function AgendaBoard({
           const jaarEvent = eventsOpDatum(jaarEvents, dag)[0] ?? null;
           const eventMeta = jaarEvent ? JAAR_EVENT_META[jaarEvent.type] : null;
           return (
-            <div key={iso} className={clsx("rounded-2xl p-2", eventMeta?.dayTintClass)}>
+            <div
+              key={iso}
+              data-dag-iso={iso}
+              className={clsx(
+                "rounded-2xl p-2 transition-colors",
+                eventMeta?.dayTintClass,
+                lijstDoelIso === iso && "bg-accent-50 ring-2 ring-accent-400"
+              )}
+            >
               <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
                 <p className="text-sm font-medium capitalize text-slate-500">{formatDatumLabel(iso)}</p>
                 {eventMeta && jaarEvent && (
@@ -1818,6 +2177,24 @@ export function AgendaBoard({
                             : isVoorstel && "border-dashed"
                         )}
                       >
+                        {!isVoorstel && (
+                          <span
+                            onPointerDown={(e) => startLijstSlepen(e, item)}
+                            onPointerMove={lijstSlepen}
+                            onPointerUp={eindigLijstSlepen}
+                            onPointerCancel={eindigLijstSlepen}
+                            onClick={(e) => e.stopPropagation()}
+                            title="Sleep naar een andere dag"
+                            aria-label="Sleep naar een andere dag"
+                            className={clsx(
+                              "-ml-1 flex shrink-0 cursor-grab touch-none items-center self-stretch px-1 text-slate-300 hover:text-slate-500 active:cursor-grabbing",
+                              lijstSleep?.id === item.id && "text-accent-500"
+                            )}
+                          >
+                            <Icon name="grip" size={16} />
+                          </span>
+                        )}
+
                         <span
                           className={clsx(
                             "flex h-9 w-9 shrink-0 items-center justify-center rounded-full border",
@@ -1851,6 +2228,21 @@ export function AgendaBoard({
                             {item.estimated_minutes && ` - ~${formatMinuten(item.estimated_minutes)}`}
                             {isVoorstel && " - voorstel, nog niet bevestigd"}
                           </p>
+                          {item.type === "toets" &&
+                            (() => {
+                              const voortgang = leermomentVoortgang.get(item.id);
+                              return (
+                                <p className="truncate text-xs font-medium text-toets-700">
+                                  {toetsAftelling(item.due_date)}
+                                  {voortgang && (
+                                    <span className="font-normal text-slate-500">
+                                      {" "}
+                                      - {voortgang.klaar} van {voortgang.totaal} leermomenten af
+                                    </span>
+                                  )}
+                                </p>
+                              );
+                            })()}
                           {!isVoorstel && (
                             <div className="mt-1 flex items-center gap-2 text-[11px] font-medium text-slate-400">
                               <span>Verplaats:</span>
@@ -1884,6 +2276,18 @@ export function AgendaBoard({
                               >
                                 +1 week
                               </button>
+                              {!item.start_time && !isKlaar && (
+                                <button
+                                  disabled={pending}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    planOpVoorgesteldeTijd(item, iso, stelTijdVoor(iso, item));
+                                  }}
+                                  className="rounded bg-slate-100 px-1.5 py-0.5 font-semibold text-slate-600 hover:bg-slate-200 disabled:opacity-50"
+                                >
+                                  Plan om {stelTijdVoor(iso, item)}
+                                </button>
+                              )}
                             </div>
                           )}
                         </div>
@@ -1940,6 +2344,22 @@ export function AgendaBoard({
           );
         })}
       </div>
+
+      {/* Wat je vasthoudt tijdens het slepen in de lijstweergave. */}
+      {lijstSleep &&
+        (() => {
+          const item = items.find((i) => i.id === lijstSleep.id);
+          if (!item) return null;
+          return (
+            <div
+              className="pointer-events-none fixed z-50 flex max-w-[60vw] items-center gap-1.5 rounded-xl border border-accent-300 bg-white px-2.5 py-1.5 shadow-lg"
+              style={{ left: lijstSleep.x + 12, top: lijstSleep.y - 16 }}
+            >
+              <span className={clsx("h-4 w-1 shrink-0 rounded-full", KAART_STIJL[item.type].rail)} />
+              <span className="truncate text-xs font-semibold text-slate-700">{item.title}</span>
+            </div>
+          );
+        })()}
     </div>
   );
 }

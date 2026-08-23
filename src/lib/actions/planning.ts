@@ -185,6 +185,15 @@ export async function bewerkPlanningItem(id: string, formData: FormData) {
   return { success: true };
 }
 
+// Hoe lang het echt duurde. Los van het afvinken zelf, zodat het overslaan van
+// de vraag nooit het afvinken zelf in de weg zit.
+export async function updatePlanningWerkelijkeDuur(id: string, minuten: number) {
+  const supabase = await createClient();
+  const veilig = Math.max(1, Math.min(12 * 60, Math.round(minuten)));
+  await supabase.from("planning_items").update({ actual_minutes: veilig }).eq("id", id);
+  revalidateAgendas();
+}
+
 export async function updatePlanningStatus(id: string, status: "open" | "klaar" | "voorstel") {
   const supabase = await createClient();
   await supabase.from("planning_items").update({ status }).eq("id", id);
