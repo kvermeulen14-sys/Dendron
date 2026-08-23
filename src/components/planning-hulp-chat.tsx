@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import { Icon } from "@/components/icon";
 import { Button } from "@/components/ui/button";
+import { ChatInvoer } from "@/components/ui/chat-invoer";
 import { MarkdownTekst } from "@/components/markdown-tekst";
 import { updatePlanningStatus, verplaatsPlanningItem } from "@/lib/actions/planning";
 import type { PlanningItem } from "@/lib/types";
@@ -196,14 +197,9 @@ export function PlanningHulpChat({ items }: { items: PlanningItem[] }) {
           e.preventDefault();
           verstuur();
         }}
-        className="flex items-center gap-2 border-t border-slate-100 p-3"
+        className="flex items-end gap-2 border-t border-slate-100 p-3"
       >
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Typ je vraag of dilemma..."
-          className="flex-1 rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
-        />
+        <ChatInvoer value={input} onChange={setInput} onVerstuur={verstuur} placeholder="Typ je vraag of dilemma..." />
         <Button type="submit" loading={sending} disabled={!input.trim()} className="shrink-0">
           Versturen
         </Button>

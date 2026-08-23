@@ -219,12 +219,11 @@ export async function POST(request: Request) {
     );
   }
 
-  if (!isOpdrachtModus) {
-    await supabase.from("chat_messages").insert([
-      { family_id: subject.family_id, subject_id: subjectId, user_id: user.id, role: "user", content: message },
-      { family_id: subject.family_id, subject_id: subjectId, user_id: user.id, role: "model", content: antwoord },
-    ]);
-  }
+  const berichtenTabel = isOpdrachtModus ? "opdracht_berichten" : "chat_messages";
+  await supabase.from(berichtenTabel).insert([
+    { family_id: subject.family_id, subject_id: subjectId, user_id: user.id, role: "user", content: message },
+    { family_id: subject.family_id, subject_id: subjectId, user_id: user.id, role: "model", content: antwoord },
+  ]);
 
   return NextResponse.json({ reply: antwoord, images: afbeeldingen });
 }

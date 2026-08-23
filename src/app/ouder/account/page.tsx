@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/card";
 import { Icon } from "@/components/icon";
+import { ChatgeschiedenisOpschonenKnop } from "@/components/chatgeschiedenis-opschonen-knop";
 import { KindForm } from "./kind-form";
 
 export default async function KindAccountPage() {
@@ -51,6 +52,17 @@ export default async function KindAccountPage() {
       )}
 
       <KindForm />
+
+      <Card className="flex flex-col gap-2">
+        <h2 className="text-base font-semibold text-slate-900">Chatgeschiedenis</h2>
+        <p className="text-sm text-slate-500">
+          De inhoud van alle chats (vakdocent, opdracht maken, planningshulp en overhoor-gesprekken) blijft bewaard
+          zolang de huidige roosterperiode loopt. Is een periode voorbij, dan mag je die geschiedenis opschonen.
+        </p>
+        <div className="mt-1">
+          <ChatgeschiedenisOpschonenKnop />
+        </div>
+      </Card>
     </div>
   );
 }

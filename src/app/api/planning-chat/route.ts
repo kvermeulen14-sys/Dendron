@@ -131,6 +131,11 @@ Nieuw bericht van de leerling: ${message}`;
       geparsed.voorstel = { actie: "geen", planningItemId: null, nieuweDatum: null };
     }
 
+    await supabase.from("planningshulp_berichten").insert([
+      { family_id: profile.family_id, user_id: user.id, role: "user", content: message },
+      { family_id: profile.family_id, user_id: user.id, role: "model", content: geparsed.antwoord },
+    ]);
+
     return NextResponse.json(geparsed);
   } catch (e) {
     return NextResponse.json(

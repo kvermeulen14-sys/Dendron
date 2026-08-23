@@ -4,16 +4,24 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import type { Leerfase } from "@/lib/types";
 
+export interface OverhoorTranscriptRegel {
+  vraag: string;
+  antwoord: string;
+  feedback: string;
+  beoordeling: "goed" | "deels" | "fout" | "geen";
+}
+
 /**
- * Slaat het resultaat van 1 afgeronde overhoor-/oefensessie op (geteld per
- * beoordeling, geen losse vragen) - zo bouwt het kind per vak een
- * voortgangsgeschiedenis op en krijgt de ouder inzicht, zonder dat losse
- * vragen/antwoorden bewaard hoeven te worden.
+ * Slaat het resultaat van 1 afgeronde overhoor-/oefensessie op: de score
+ * per beoordeling (voor de langetermijn-voortgang, blijft altijd staan) en
+ * het transcript van de sessie zelf (de inhoud - wordt bewaard tot de
+ * huidige roosterperiode voorbij is, zie wisOudeChatgeschiedenis).
  */
 export async function slaOverhoorResultaatOp(
   subjectId: string,
   leerfase: Leerfase,
-  score: { goed: number; deels: number; fout: number }
+  score: { goed: number; deels: number; fout: number },
+  transcript: OverhoorTranscriptRegel[] = []
 ) {
   const totaal = score.goed + score.deels + score.fout;
   if (totaal === 0) return;
@@ -39,6 +47,7 @@ export async function slaOverhoorResultaatOp(
     aantal_goed: score.goed,
     aantal_deels: score.deels,
     aantal_fout: score.fout,
+    transcript,
   });
 
   revalidatePath(`/kind/vakken/${subjectId}`);

@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Icon } from "@/components/icon";
 import { MarkdownTekst } from "@/components/markdown-tekst";
-import { slaOverhoorResultaatOp } from "@/lib/actions/overhoor";
+import { slaOverhoorResultaatOp, type OverhoorTranscriptRegel } from "@/lib/actions/overhoor";
 
 type Leerfase = "eerste" | "tussentijds" | "laatste";
 type Beoordeling = "goed" | "deels" | "fout" | "geen";
@@ -51,6 +51,7 @@ export function OverhoorPanel({
   const [feedback, setFeedback] = useState<string | null>(null);
   const [beoordeling, setBeoordeling] = useState<Beoordeling | null>(null);
   const [gesteldeVragen, setGesteldeVragen] = useState<string[]>([]);
+  const [transcript, setTranscript] = useState<OverhoorTranscriptRegel[]>([]);
   const [score, setScore] = useState({ goed: 0, deels: 0, fout: 0 });
   const [bezig, setBezig] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -61,6 +62,7 @@ export function OverhoorPanel({
     setFeedback(null);
     setBeoordeling(null);
     setGesteldeVragen([]);
+    setTranscript([]);
     setScopeInstructie(null);
     setGekozenHoofdstuk(null);
     setVraag(null);
@@ -106,7 +108,15 @@ export function OverhoorPanel({
       }
       setFeedback(data.feedback || null);
       setBeoordeling(data.beoordeling ?? null);
-      if (vraag && !naWizard) setGesteldeVragen((prev) => [...prev, vraag]);
+      if (vraag && !naWizard) {
+        setGesteldeVragen((prev) => [...prev, vraag]);
+        if (vorigAntwoord) {
+          setTranscript((prev) => [
+            ...prev,
+            { vraag, antwoord: vorigAntwoord, feedback: data.feedback || "", beoordeling: data.beoordeling ?? "geen" },
+          ]);
+        }
+      }
       setVraag(data.vraag);
       setOpties(Array.isArray(data.opties) && data.opties.length > 0 ? data.opties : null);
       setAntwoord("");
@@ -119,7 +129,7 @@ export function OverhoorPanel({
 
   function stop() {
     if (score.goed + score.deels + score.fout > 0) {
-      void slaOverhoorResultaatOp(subjectId, leerfase, score);
+      void slaOverhoorResultaatOp(subjectId, leerfase, score, transcript);
     }
     setGestart(false);
     setWizardStap(null);

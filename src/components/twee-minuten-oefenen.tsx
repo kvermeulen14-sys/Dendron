@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { Icon } from "@/components/icon";
 import { MarkdownTekst } from "@/components/markdown-tekst";
-import { slaOverhoorResultaatOp } from "@/lib/actions/overhoor";
+import { slaOverhoorResultaatOp, type OverhoorTranscriptRegel } from "@/lib/actions/overhoor";
 import type { Subject } from "@/lib/types";
 
 type Beoordeling = "goed" | "deels" | "fout" | "geen";
@@ -42,6 +42,7 @@ export function TweeMinutenOefenen({ subjects }: { subjects: Subject[] }) {
   const [uitleg, setUitleg] = useState<string | null>(null);
   const [uitlegBezig, setUitlegBezig] = useState(false);
   const [gesteldeVragen, setGesteldeVragen] = useState<string[]>([]);
+  const [transcript, setTranscript] = useState<OverhoorTranscriptRegel[]>([]);
   const [score, setScore] = useState({ goed: 0, deels: 0, fout: 0 });
   const [bezig, setBezig] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -59,6 +60,7 @@ export function TweeMinutenOefenen({ subjects }: { subjects: Subject[] }) {
     setFeedback(null);
     setUitleg(null);
     setGesteldeVragen([]);
+    setTranscript([]);
     setScore({ goed: 0, deels: 0, fout: 0 });
     setError(null);
   }
@@ -121,6 +123,10 @@ export function TweeMinutenOefenen({ subjects }: { subjects: Subject[] }) {
         setScore((s) => ({ ...s, [beoordeling]: s[beoordeling] + 1 }));
       }
       setGesteldeVragen((prev) => [...prev, vraag]);
+      setTranscript((prev) => [
+        ...prev,
+        { vraag, antwoord: antwoordTeControleren, feedback: data.feedback || "", beoordeling },
+      ]);
       setLaatsteAntwoord(antwoordTeControleren);
       setVolgende({ vraag: data.vraag, opties: Array.isArray(data.opties) && data.opties.length > 0 ? data.opties : null });
       setAntwoord("");
@@ -136,7 +142,7 @@ export function TweeMinutenOefenen({ subjects }: { subjects: Subject[] }) {
   function volgendeVraag() {
     if (vraagNr >= AANTAL_VRAGEN) {
       setFase("klaar");
-      void slaOverhoorResultaatOp(subject!.id, "tussentijds", score);
+      void slaOverhoorResultaatOp(subject!.id, "tussentijds", score, transcript);
       return;
     }
     setVraag(volgende?.vraag ?? null);

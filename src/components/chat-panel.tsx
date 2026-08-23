@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import clsx from "clsx";
 import { Icon } from "@/components/icon";
 import { Button } from "@/components/ui/button";
+import { ChatInvoer } from "@/components/ui/chat-invoer";
 import { MarkdownTekst } from "@/components/markdown-tekst";
 import { VisualWeergave } from "@/components/visuals/visual-weergave";
 import { extraheerVisuals } from "@/lib/visuals";
@@ -187,13 +188,14 @@ export function ChatPanel({
           e.preventDefault();
           verstuur();
         }}
-        className="flex items-center gap-2 border-t border-slate-100 p-3"
+        className="flex items-end gap-2 border-t border-slate-100 p-3"
       >
-        <input
+        <ChatInvoer
           value={input}
-          onChange={(e) => setInput(e.target.value)}
+          onChange={setInput}
+          onVerstuur={verstuur}
           placeholder={tekst.placeholder}
-          className="flex-1 rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+          focusClassName="focus:border-emerald-500 focus:ring-emerald-100"
         />
         <Button type="submit" loading={sending} disabled={!input.trim()} className="shrink-0">
           Versturen
