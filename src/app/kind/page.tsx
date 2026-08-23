@@ -6,6 +6,7 @@ import { KindVandaagLijst } from "@/components/kind-vandaag-lijst";
 import { WeekTerugblikVraag } from "@/components/week-terugblik-vraag";
 import { TweeMinutenOefenen } from "@/components/twee-minuten-oefenen";
 import { WerkdrukWeek } from "@/components/werkdruk-week";
+import { PlanningshulpKnop } from "@/components/planningshulp-knop";
 import { huidigeWeekMaandag } from "@/lib/week";
 import type { PlanningItem, Subject } from "@/lib/types";
 
@@ -36,6 +37,7 @@ export default async function KindOverzicht() {
     { data: terugblikData },
     { data: materialsData },
     { data: weekData },
+    { data: openItemsData },
   ] = await Promise.all([
     supabase
       .from("planning_items")
@@ -77,6 +79,7 @@ export default async function KindOverzicht() {
       .eq("family_id", profile!.family_id)
       .gte("due_date", weekMaandag)
       .lte("due_date", weekZondag),
+    supabase.from("planning_items").select("*").eq("family_id", profile!.family_id).neq("status", "klaar"),
   ]);
 
   const vandaagItems = (vandaagData ?? []) as PlanningItem[];
@@ -89,6 +92,7 @@ export default async function KindOverzicht() {
   const subjectIdsMetLesstof = new Set((materialsData ?? []).map((m) => m.subject_id));
   const subjectsMetLesstof = subjects.filter((s) => subjectIdsMetLesstof.has(s.id));
   const weekItems = (weekData ?? []) as PlanningItem[];
+  const openItems = (openItemsData ?? []) as PlanningItem[];
 
   const vandaagGedaan = vandaagItems.filter((i) => i.status === "klaar").length;
 
@@ -165,15 +169,7 @@ export default async function KindOverzicht() {
 
       <TweeMinutenOefenen subjects={subjectsMetLesstof} />
 
-      <Link href="/kind/planningshulp">
-        <Card className="flex items-center gap-3 border-accent-100 bg-accent-50/40 transition-shadow hover:shadow-md">
-          <Icon name="brain" size={22} className="text-accent-600" />
-          <div>
-            <p className="text-sm font-semibold text-slate-900">Loop je vast met plannen?</p>
-            <p className="text-xs text-slate-500">Overleg een dilemma met je planningshulp</p>
-          </div>
-        </Card>
-      </Link>
+      <PlanningshulpKnop items={openItems} />
 
       <Link href="/kind/vakken">
         <Card className="flex items-center gap-3 transition-shadow hover:shadow-md">

@@ -5,6 +5,9 @@ import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import { Icon } from "@/components/icon";
 import { Button, LinkButton } from "@/components/ui/button";
+import { PlanningshulpKnop } from "@/components/planningshulp-knop";
+import { kiesKlaarLabel, kiesVierTekst } from "@/lib/motiverend";
+import { useKlaarBevestiging } from "@/lib/use-klaar-bevestiging";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { Card } from "@/components/ui/card";
 import { Modal } from "@/components/ui/modal";
@@ -264,7 +267,8 @@ export function AgendaBoard({
   const [bewerkEstimatedMinutes, setBewerkEstimatedMinutes] = useState<number | null>(null);
   const [bewerkError, setBewerkError] = useState<string | null>(null);
   const [detailItem, setDetailItem] = useState<PlanningItem | null>(null);
-  const [weergave, setWeergave] = useState<"rooster" | "lijst">(voorKind ? "lijst" : "rooster");
+  const [weergave, setWeergave] = useState<"rooster" | "lijst">("rooster");
+  const klaarBevestiging = useKlaarBevestiging();
 
   const vandaagIso = useMemo(() => naarIsoDatum(new Date()), []);
   const dezeWeekMaandag = useMemo(() => naarMaandagVanWeek(new Date()), []);
@@ -422,7 +426,13 @@ export function AgendaBoard({
   }
 
   function openDetail(item: PlanningItem) {
+    klaarBevestiging.reset();
     setDetailItem(item);
+  }
+
+  function sluitDetail() {
+    klaarBevestiging.reset();
+    setDetailItem(null);
   }
 
   async function handleBewerkSubmit(formData: FormData) {
@@ -484,11 +494,7 @@ export function AgendaBoard({
               Rooster
             </button>
           </div>
-          {voorKind && (
-            <LinkButton href="/kind/planningshulp" variant="secondary" icon={<Icon name="brain" size={18} />}>
-              Planningshulp
-            </LinkButton>
-          )}
+          {voorKind && <PlanningshulpKnop items={items} variant="knop" />}
           <HuiswerkAIImport subjects={subjects} />
           <Button
             icon={<Icon name="plus" size={18} />}
@@ -839,7 +845,7 @@ export function AgendaBoard({
         )}
       </Modal>
 
-      <Modal open={detailItem !== null} onClose={() => setDetailItem(null)} title="Details">
+      <Modal open={detailItem !== null} onClose={sluitDetail} title="Details">
         {detailItem &&
           (() => {
             const meta = PLANNING_TYPE_META[detailItem.type];
@@ -904,7 +910,7 @@ export function AgendaBoard({
                         loading={pending}
                         onClick={() => {
                           accepteer(detailItem);
-                          setDetailItem(null);
+                          sluitDetail();
                         }}
                         icon={<Icon name="check" size={16} />}
                       >
@@ -915,25 +921,55 @@ export function AgendaBoard({
                         disabled={pending}
                         onClick={() => {
                           verwijder(detailItem);
-                          setDetailItem(null);
+                          sluitDetail();
                         }}
                         icon={<Icon name="trash" size={16} />}
                       >
                         Verwijderen
                       </Button>
                     </>
+                  ) : klaarBevestiging.fase === "bevestigen" ? (
+                    <div className="flex w-full items-center gap-2 rounded-xl bg-slate-50 p-2.5">
+                      <span className="flex-1 text-sm font-medium text-slate-600">Zeker weten?</span>
+                      <Button variant="secondary" size="md" onClick={klaarBevestiging.annuleer}>
+                        Toch niet
+                      </Button>
+                      <Button
+                        size="md"
+                        loading={klaarBevestiging.bezig}
+                        onClick={async () => {
+                          await klaarBevestiging.bevestig(async () => {
+                            await updatePlanningStatus(detailItem.id, "klaar");
+                            router.refresh();
+                          });
+                          setTimeout(() => sluitDetail(), 1600);
+                        }}
+                        icon={<Icon name="check" size={16} />}
+                      >
+                        Ja, {kiesKlaarLabel(detailItem.id).toLowerCase()}
+                      </Button>
+                    </div>
+                  ) : klaarBevestiging.fase === "vieren" ? (
+                    <div className="flex w-full items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2.5 text-sm font-semibold text-emerald-700">
+                      <Icon name="party" size={16} />
+                      {kiesVierTekst(detailItem.id)}
+                    </div>
                   ) : (
                     <>
                       <Button
                         variant={isKlaar ? "secondary" : "primary"}
                         loading={pending}
                         onClick={() => {
-                          toggleStatus(detailItem);
-                          setDetailItem(null);
+                          if (isKlaar) {
+                            toggleStatus(detailItem);
+                            sluitDetail();
+                          } else {
+                            klaarBevestiging.vraagBevestiging();
+                          }
                         }}
                         icon={<Icon name="check" size={16} />}
                       >
-                        {isKlaar ? "Weer openzetten" : "Klaar melden"}
+                        {isKlaar ? "Weer openzetten" : kiesKlaarLabel(detailItem.id)}
                       </Button>
                       {voorKind && (
                         <LinkButton
@@ -952,7 +988,7 @@ export function AgendaBoard({
                         disabled={pending}
                         onClick={() => {
                           verwijder(detailItem);
-                          setDetailItem(null);
+                          sluitDetail();
                         }}
                         icon={<Icon name="trash" size={16} />}
                       >

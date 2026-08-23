@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import clsx from "clsx";
 import { Icon } from "@/components/icon";
 import { Button } from "@/components/ui/button";
+import { MarkdownTekst } from "@/components/markdown-tekst";
 import { VisualWeergave } from "@/components/visuals/visual-weergave";
 import { extraheerVisuals } from "@/lib/visuals";
 import type { ChatMessage } from "@/lib/types";
@@ -134,13 +135,13 @@ export function ChatPanel({
             >
               <div
                 className={clsx(
-                  "max-w-[80%] whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-sm",
+                  "max-w-[80%] rounded-2xl px-4 py-2.5",
                   m.role === "user"
-                    ? "bg-emerald-600 text-white"
+                    ? "whitespace-pre-wrap text-sm bg-emerald-600 text-white"
                     : "bg-slate-100 text-slate-800"
                 )}
               >
-                {schoneTekst}
+                {m.role === "model" ? <MarkdownTekst>{schoneTekst}</MarkdownTekst> : schoneTekst}
               </div>
               {visuals.length > 0 && (
                 <div className="flex max-w-[80%] flex-col gap-2">

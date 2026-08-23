@@ -18,11 +18,13 @@ export function VakWerkruimte({
   subjectName,
   initialMessages,
   initialModus = "chat",
+  hoofdstukken = [],
 }: {
   subjectId: string;
   subjectName: string;
   initialMessages: ChatMessage[];
   initialModus?: (typeof TABS)[number]["modus"];
+  hoofdstukken?: string[];
 }) {
   const [modus, setModus] = useState<(typeof TABS)[number]["modus"]>(initialModus);
 
@@ -50,7 +52,7 @@ export function VakWerkruimte({
         <ChatPanel subjectId={subjectId} subjectName={subjectName} initialMessages={initialMessages} modus="algemeen" />
       )}
       {modus === "opdracht" && <ChatPanel subjectId={subjectId} subjectName={subjectName} modus="opdracht" />}
-      {modus === "overhoren" && <OverhoorPanel subjectId={subjectId} subjectName={subjectName} />}
+      {modus === "overhoren" && <OverhoorPanel subjectId={subjectId} subjectName={subjectName} hoofdstukken={hoofdstukken} />}
     </div>
   );
 }

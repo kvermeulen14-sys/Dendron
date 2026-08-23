@@ -40,6 +40,13 @@ export default async function KindVakDetailPage({
     .order("created_at", { ascending: false })
     .limit(10);
 
+  const { data: materialsHoofdstukken } = await supabase
+    .from("materials")
+    .select("hoofdstuk")
+    .eq("subject_id", id)
+    .not("hoofdstuk", "is", null);
+  const hoofdstukken = Array.from(new Set((materialsHoofdstukken ?? []).map((m) => m.hoofdstuk).filter(Boolean))) as string[];
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center gap-3">
@@ -59,7 +66,13 @@ export default async function KindVakDetailPage({
         </Card>
       )}
 
-      <VakWerkruimte subjectId={id} subjectName={subject.name} initialMessages={messages ?? []} initialModus={initialModus} />
+      <VakWerkruimte
+        subjectId={id}
+        subjectName={subject.name}
+        initialMessages={messages ?? []}
+        initialModus={initialModus}
+        hoofdstukken={hoofdstukken}
+      />
 
       <div className="flex flex-col gap-3">
         <p className="text-sm text-slate-500">

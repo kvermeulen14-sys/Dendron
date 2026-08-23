@@ -32,6 +32,10 @@ const VISUAL_INSTRUCTIE = `Als een grafiek, getallenlijn, tabel of diagram de ui
 
 Zet dit blok NIET in plaats van je uitleg, maar erbij - je normale tekst blijft gewoon het antwoord.`;
 
+const OPMAAK_INSTRUCTIE = `Opmaak:
+- Je mag markdown gebruiken (**vet**, opsommingen met "-", genummerde stappen) om je antwoord makkelijker leesbaar te maken - gebruik dit om structuur te geven, niet overdreven.
+- Gebruik NOOIT LaTeX-notatie (dus geen $...$, \\frac{}{}, \\times, \\cdot e.d.) - een leerling kent die syntax niet en ziet dan alleen rare tekens. Schrijf wiskunde in gewone, leesbare tekst: "2/3 × 4/5", "x²", "√2", "3 x + 5 = 11". Gebruik het grafiek/getallenlijn/tabel-blok hierboven als iets echt visueel moet.`;
+
 function bouwSysteemPrompt(
   subjectName: string,
   aiInstructions: string,
@@ -62,6 +66,7 @@ Belangrijke regels over de lesstof hieronder:
 ${routeringsinstructie}
 ${aiInstructions ? `\nExtra instructies van de ouder/docent: ${aiInstructions}\n` : ""}
 ${VISUAL_INSTRUCTIE}
+${OPMAAK_INSTRUCTIE}
 
 Antwoord altijd in het Nederlands.
 
@@ -97,6 +102,7 @@ Belangrijke regels over de lesstof hieronder:
 ${routeringsinstructie}
 ${aiInstructions ? `\nExtra instructies van de ouder/docent: ${aiInstructions}\n` : ""}
 ${VISUAL_INSTRUCTIE}
+${OPMAAK_INSTRUCTIE}
 
 Antwoord altijd in het Nederlands.
 

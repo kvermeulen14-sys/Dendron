@@ -9,6 +9,8 @@ import { Button, LinkButton } from "@/components/ui/button";
 import { Icon } from "@/components/icon";
 import { PLANNING_TYPE_META } from "@/lib/planning";
 import { updatePlanningStatus } from "@/lib/actions/planning";
+import { kiesKlaarLabel, kiesVierTekst } from "@/lib/motiverend";
+import { useKlaarBevestiging } from "@/lib/use-klaar-bevestiging";
 import type { PlanningItem, Subject } from "@/lib/types";
 
 const WERK_MINUTEN = 25;
@@ -28,7 +30,7 @@ export function FocusModus({ item, subject }: { item: PlanningItem; subject: Sub
   const [fase, setFase] = useState<"werk" | "pauze">("werk");
   const [secondenOver, setSecondenOver] = useState(WERK_MINUTEN * 60);
   const [lopend, setLopend] = useState(false);
-  const [bezig, setBezig] = useState(false);
+  const klaarBevestiging = useKlaarBevestiging();
 
   useEffect(() => {
     if (!lopend) return;
@@ -55,10 +57,13 @@ export function FocusModus({ item, subject }: { item: PlanningItem; subject: Sub
   }
 
   async function afronden() {
-    setBezig(true);
-    await updatePlanningStatus(item.id, "klaar");
-    router.push("/kind");
-    router.refresh();
+    await klaarBevestiging.bevestig(async () => {
+      await updatePlanningStatus(item.id, "klaar");
+    });
+    setTimeout(() => {
+      router.push("/kind");
+      router.refresh();
+    }, 1600);
   }
 
   const totaalSeconden = (fase === "werk" ? WERK_MINUTEN : PAUZE_MINUTEN) * 60;
@@ -144,14 +149,30 @@ export function FocusModus({ item, subject }: { item: PlanningItem; subject: Sub
         </div>
       )}
 
-      <Button
-        loading={bezig}
-        disabled={item.status === "klaar"}
-        onClick={afronden}
-        icon={<Icon name="check" size={18} />}
-      >
-        {item.status === "klaar" ? "Al afgevinkt" : "Klaar - afvinken"}
-      </Button>
+      {klaarBevestiging.fase === "bevestigen" ? (
+        <div className="flex items-center gap-2 rounded-2xl bg-slate-50 p-2.5">
+          <span className="flex-1 pl-1 text-sm font-medium text-slate-600">Zeker weten?</span>
+          <Button variant="secondary" onClick={klaarBevestiging.annuleer}>
+            Toch niet
+          </Button>
+          <Button loading={klaarBevestiging.bezig} onClick={afronden} icon={<Icon name="check" size={18} />}>
+            Ja, {kiesKlaarLabel(item.id).toLowerCase()}
+          </Button>
+        </div>
+      ) : klaarBevestiging.fase === "vieren" ? (
+        <div className="flex items-center justify-center gap-2 rounded-2xl bg-emerald-50 py-4 text-base font-semibold text-emerald-700">
+          <Icon name="party" size={20} />
+          {kiesVierTekst(item.id)}
+        </div>
+      ) : (
+        <Button
+          disabled={item.status === "klaar"}
+          onClick={klaarBevestiging.vraagBevestiging}
+          icon={<Icon name="check" size={18} />}
+        >
+          {item.status === "klaar" ? "Al afgevinkt" : kiesKlaarLabel(item.id)}
+        </Button>
+      )}
     </div>
   );
 }

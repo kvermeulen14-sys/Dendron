@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import { Icon } from "@/components/icon";
 import { Button } from "@/components/ui/button";
+import { MarkdownTekst } from "@/components/markdown-tekst";
 import { updatePlanningStatus, verplaatsPlanningItem } from "@/lib/actions/planning";
 import type { PlanningItem } from "@/lib/types";
 
@@ -131,11 +132,13 @@ export function PlanningHulpChat({ items }: { items: PlanningItem[] }) {
               <div key={m.id} className={clsx("flex flex-col", m.role === "user" ? "items-end" : "items-start")}>
                 <div
                   className={clsx(
-                    "max-w-[85%] whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-sm",
-                    m.role === "user" ? "bg-accent-600 text-white" : "bg-slate-100 text-slate-800"
+                    "max-w-[85%] rounded-2xl px-4 py-2.5",
+                    m.role === "user"
+                      ? "whitespace-pre-wrap text-sm bg-accent-600 text-white"
+                      : "bg-slate-100 text-slate-800"
                   )}
                 >
-                  {m.content}
+                  {m.role === "model" ? <MarkdownTekst>{m.content}</MarkdownTekst> : m.content}
                 </div>
 
                 {m.voorstel && item && (
