@@ -12,6 +12,33 @@ function revalidateAgendas() {
   revalidatePath("/kind");
 }
 
+function naarLokaleIso(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+type HerhalingType = "geen" | "dagelijks" | "wekelijks" | "maandelijks";
+const MAX_HERHALINGEN = 200;
+
+// Geen achtergrond-cron beschikbaar in deze omgeving, dus een herhalend item
+// wordt meteen bij het aanmaken helemaal "uitgeschreven" tot en met de
+// stopdatum (met een bovengrens tegen een per-ongeluk oneindige reeks) -
+// elke losse taak kan daarna gewoon apart afgevinkt/verplaatst worden.
+function genereerHerhaaldeData(startDatum: string, herhaling: HerhalingType, totDatum: string): string[] {
+  const stop = new Date(totDatum + "T00:00:00");
+  const data: string[] = [];
+  let huidig = new Date(startDatum + "T00:00:00");
+  for (let i = 0; i < MAX_HERHALINGEN; i++) {
+    const volgende = new Date(huidig);
+    if (herhaling === "dagelijks") volgende.setDate(volgende.getDate() + 1);
+    else if (herhaling === "wekelijks") volgende.setDate(volgende.getDate() + 7);
+    else volgende.setMonth(volgende.getMonth() + 1);
+    if (volgende > stop) break;
+    data.push(naarLokaleIso(volgende));
+    huidig = volgende;
+  }
+  return data;
+}
+
 export async function maakPlanningItem(formData: FormData) {
   const supabase = await createClient();
   const {
@@ -35,8 +62,11 @@ export async function maakPlanningItem(formData: FormData) {
   const estimatedMinutesRaw = String(formData.get("estimatedMinutes") || "");
   const estimatedMinutes = estimatedMinutesRaw ? Number(estimatedMinutesRaw) : null;
   const startTime = String(formData.get("startTime") || "") || null;
+  const herhaling = String(formData.get("herhaling") || "geen") as HerhalingType;
+  const herhaalTot = String(formData.get("herhaalTot") || "") || null;
 
   if (!title || !dueDate) return { error: "Vul een titel en datum in." };
+  if (herhaling !== "geen" && !herhaalTot) return { error: "Kies tot wanneer het item moet herhalen." };
 
   const { data: nieuwItem, error } = await supabase
     .from("planning_items")
@@ -57,6 +87,27 @@ export async function maakPlanningItem(formData: FormData) {
     .single();
 
   if (error) return { error: error.message };
+
+  if (herhaling !== "geen" && herhaalTot) {
+    const herhaaldeData = genereerHerhaaldeData(dueDate, herhaling, herhaalTot);
+    if (herhaaldeData.length > 0) {
+      await supabase.from("planning_items").insert(
+        herhaaldeData.map((datum) => ({
+          family_id: profile.family_id,
+          subject_id: subjectId,
+          test_type_id: type === "toets" ? testTypeId : null,
+          type,
+          title,
+          description,
+          due_date: datum,
+          start_time: startTime,
+          status: "open",
+          estimated_minutes: estimatedMinutes,
+          created_by: user.id,
+        }))
+      );
+    }
+  }
 
   // Bij een toets: meteen gespreide leermomenten voorstellen, zodat leren
   // in delen gebeurt in plaats van pas op het laatste moment. Met een

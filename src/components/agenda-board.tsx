@@ -65,6 +65,14 @@ function formatMinuten(minuten: number) {
 
 const TIJD_OPTIES = [15, 30, 45, 60, 90, 120];
 
+type HerhalingType = "geen" | "dagelijks" | "wekelijks" | "maandelijks";
+const HERHALING_OPTIES: { value: HerhalingType; label: string }[] = [
+  { value: "geen", label: "Niet herhalen" },
+  { value: "dagelijks", label: "Elke dag" },
+  { value: "wekelijks", label: "Elke week" },
+  { value: "maandelijks", label: "Elke maand" },
+];
+
 // Status altijd op dezelfde, herkenbare manier tonen (kleur + label, niet
 // alleen kleur) - zodat in 1 oogopslag duidelijk is wat af is, wat gepland
 // staat en wat nog een voorstel is, voor kind en ouder allebei.
@@ -261,6 +269,8 @@ export function AgendaBoard({
   const [formOpen, setFormOpen] = useState(false);
   const [type, setType] = useState<PlanningType>("huiswerk");
   const [estimatedMinutes, setEstimatedMinutes] = useState<number | null>(null);
+  const [herhaling, setHerhaling] = useState<HerhalingType>("geen");
+  const [herhaalTot, setHerhaalTot] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [weekOffset, setWeekOffset] = useState(0);
@@ -503,6 +513,8 @@ export function AgendaBoard({
             icon={<Icon name="plus" size={18} />}
             onClick={() => {
               setEstimatedMinutes(null);
+              setHerhaling("geen");
+              setHerhaalTot("");
               setFormOpen(true);
             }}
           >
@@ -681,6 +693,45 @@ export function AgendaBoard({
                   aanpassen.
                 </p>
               )}
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">Herhalen</label>
+              <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+                {HERHALING_OPTIES.map((opt) => (
+                  <button
+                    type="button"
+                    key={opt.value}
+                    onClick={() => setHerhaling(opt.value)}
+                    className={clsx(
+                      "rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors",
+                      herhaling === opt.value
+                        ? "border-slate-900 bg-slate-900 text-white"
+                        : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                    )}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              {herhaling !== "geen" && (
+                <div className="mt-2">
+                  <label className="mb-1.5 block text-xs font-medium text-slate-500">Herhalen tot en met</label>
+                  <input
+                    type="date"
+                    required
+                    value={herhaalTot}
+                    onChange={(e) => setHerhaalTot(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
+                  />
+                  <p className="mt-1.5 text-xs text-slate-500">
+                    Er worden meteen losse taken aangemaakt tot en met deze datum, zodat je ze
+                    stuk voor stuk kunt afvinken of verplaatsen.
+                  </p>
+                </div>
+              )}
+              <input type="hidden" name="herhaling" value={herhaling} />
+              <input type="hidden" name="herhaalTot" value={herhaalTot} />
             </div>
 
             <div>
