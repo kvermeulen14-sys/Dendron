@@ -6,8 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Icon } from "@/components/icon";
 import { MarkdownTekst } from "@/components/markdown-tekst";
+import { VisualWeergave } from "@/components/visuals/visual-weergave";
 import { slaOverhoorResultaatOp, type OverhoorTranscriptRegel } from "@/lib/actions/overhoor";
 import { eenRegel } from "@/lib/tekst";
+import { extraheerVisuals, type VisualSpec } from "@/lib/visuals";
 
 type Leerfase = "eerste" | "tussentijds" | "laatste";
 type Beoordeling = "goed" | "deels" | "fout" | "geen";
@@ -80,11 +82,14 @@ export function OverhoorPanel({
 
   const [fase, setFase] = useState<SessieFase>("vraag");
   const [vraag, setVraag] = useState<string | null>(null);
+  const [vraagVisuals, setVraagVisuals] = useState<VisualSpec[]>([]);
   const [opties, setOpties] = useState<string[] | null>(null);
-  const [volgende, setVolgende] = useState<{ vraag: string; opties: string[] | null } | null>(null);
+  const [juisteOptie, setJuisteOptie] = useState<string | null>(null);
+  const [volgende, setVolgende] = useState<{ vraag: string; visuals: VisualSpec[]; opties: string[] | null } | null>(null);
   const [antwoord, setAntwoord] = useState("");
   const [laatsteAntwoord, setLaatsteAntwoord] = useState("");
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [feedbackVisuals, setFeedbackVisuals] = useState<VisualSpec[]>([]);
   const [beoordeling, setBeoordeling] = useState<Beoordeling | null>(null);
   const [lesstofFragment, setLesstofFragment] = useState<LesstofFragment>(null);
   const [gesteldeVragen, setGesteldeVragen] = useState<string[]>([]);
@@ -102,6 +107,7 @@ export function OverhoorPanel({
     meldSessieStatus(true);
     setScore({ goed: 0, deels: 0, fout: 0 });
     setFeedback(null);
+    setFeedbackVisuals([]);
     setBeoordeling(null);
     setLesstofFragment(null);
     setGesteldeVragen([]);
@@ -115,7 +121,9 @@ export function OverhoorPanel({
     setMaxVragen(null);
     setVraagIndex(0);
     setVraag(null);
+    setVraagVisuals([]);
     setOpties(null);
+    setJuisteOptie(null);
     setVolgende(null);
     setFase("vraag");
     setWizardStap(hoofdstukken.length > 0 ? "hoofdstuk" : "stijl");
@@ -149,7 +157,9 @@ export function OverhoorPanel({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Er ging iets mis.");
-      setVraag(data.vraag);
+      const { tekst: vraagTekst, visuals } = extraheerVisuals(data.vraag ?? "");
+      setVraag(vraagTekst);
+      setVraagVisuals(visuals);
       setOpties(normOpties(data.opties));
       setVraagIndex(1);
       setFase("vraag");
@@ -186,8 +196,11 @@ export function OverhoorPanel({
       if (nieuweBeoordeling !== "geen") {
         setScore((s) => ({ ...s, [nieuweBeoordeling]: s[nieuweBeoordeling] + 1 }));
       }
-      setFeedback(data.feedback || null);
+      const { tekst: feedbackTekst, visuals: fVisuals } = extraheerVisuals(data.feedback || "");
+      setFeedback(feedbackTekst || null);
+      setFeedbackVisuals(fVisuals);
       setBeoordeling(nieuweBeoordeling);
+      setJuisteOptie(typeof data.juisteOptie === "string" ? data.juisteOptie : null);
       setLesstofFragment(normFragment(data.lesstofFragment));
       setLaatsteAntwoord(gegevenAntwoord);
       setGesteldeVragen((prev) => [...prev, vraag]);
@@ -195,7 +208,8 @@ export function OverhoorPanel({
         ...prev,
         { vraag, antwoord: gegevenAntwoord, feedback: data.feedback || "", beoordeling: nieuweBeoordeling },
       ]);
-      setVolgende({ vraag: data.vraag, opties: normOpties(data.opties) });
+      const { tekst: volgendeVraagTekst, visuals: volgendeVisuals } = extraheerVisuals(data.vraag ?? "");
+      setVolgende({ vraag: volgendeVraagTekst, visuals: volgendeVisuals, opties: normOpties(data.opties) });
       setAntwoord("");
       setFase("feedback");
     } catch (e) {
@@ -215,9 +229,12 @@ export function OverhoorPanel({
     }
     if (!volgende) return;
     setVraag(volgende.vraag);
+    setVraagVisuals(volgende.visuals);
     setOpties(volgende.opties);
+    setJuisteOptie(null);
     setVolgende(null);
     setFeedback(null);
+    setFeedbackVisuals([]);
     setBeoordeling(null);
     setLesstofFragment(null);
     setVraagIndex((n) => n + 1);
@@ -467,14 +484,53 @@ export function OverhoorPanel({
               <div className="flex flex-col gap-3">
                 <div className="rounded-xl bg-slate-50 p-3 font-medium text-slate-800">
                   <MarkdownTekst>{eenRegel(vraag)}</MarkdownTekst>
+                  {vraagVisuals.map((v, i) => (
+                    <VisualWeergave key={i} visual={v} />
+                  ))}
                 </div>
 
                 {fase === "feedback" ? (
                   <>
-                    <p className="rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-600">
-                      <span className="font-medium text-slate-400">Jouw antwoord: </span>
-                      {laatsteAntwoord}
-                    </p>
+                    {opties ? (
+                      <div className="flex flex-col gap-2">
+                        {opties.map((optie, i) => {
+                          const isJuist = juisteOptie !== null && optie === juisteOptie;
+                          const isGekozenFout = !isJuist && optie === laatsteAntwoord;
+                          return (
+                            <div
+                              key={i}
+                              className={clsx(
+                                "flex items-start gap-2.5 rounded-xl border px-3.5 py-2.5 text-left text-sm",
+                                isJuist
+                                  ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+                                  : isGekozenFout
+                                    ? "border-rose-300 bg-rose-50 text-rose-700"
+                                    : "border-slate-200 bg-slate-50 text-slate-400"
+                              )}
+                            >
+                              <span
+                                className={clsx(
+                                  "flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-bold",
+                                  isJuist
+                                    ? "bg-emerald-200 text-emerald-800"
+                                    : isGekozenFout
+                                      ? "bg-rose-200 text-rose-700"
+                                      : "bg-slate-200 text-slate-500"
+                                )}
+                              >
+                                {isJuist ? <Icon name="check" size={12} /> : isGekozenFout ? <Icon name="close" size={12} /> : LETTERS[i] ?? i + 1}
+                              </span>
+                              {optie}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <p className="rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-600">
+                        <span className="font-medium text-slate-400">Jouw antwoord: </span>
+                        {laatsteAntwoord}
+                      </p>
+                    )}
                     {beoordeling && beoordeling !== "geen" && (
                       <div
                         className={clsx(
@@ -486,6 +542,9 @@ export function OverhoorPanel({
                         <div className="min-w-0 flex-1">
                           <p className="font-medium">{BEOORDELING_STIJL[beoordeling].label}</p>
                           {feedback && <MarkdownTekst className="mt-0.5">{feedback}</MarkdownTekst>}
+                          {feedbackVisuals.map((v, i) => (
+                            <VisualWeergave key={i} visual={v} />
+                          ))}
                         </div>
                       </div>
                     )}

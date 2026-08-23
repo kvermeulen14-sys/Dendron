@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createGeminiClient, vereistGeminiKey, genereerGestructureerd } from "@/lib/gemini";
-import { GROTE_KENNISBANK_DREMPEL, kiesRelevanteMaterialen, kiesWillekeurigeSelectie } from "@/lib/kennisbank";
+import { GROTE_KENNISBANK_DREMPEL, kiesBesteMateriaal, kiesWillekeurigeSelectie } from "@/lib/kennisbank";
 
 const MAX_KENNISBANK_TEKENS = 14000;
 const MAX_OVERHOOR_MATERIALEN = 6;
@@ -21,6 +21,12 @@ const ResponsSchema = z.object({
     .describe(
       "Alleen bij een meerkeuzevraag: de losse antwoordopties, zonder letter-ervoor (de app voegt zelf a/b/c/d toe). Null bij een open vraag."
     ),
+  juisteOptie: z
+    .string()
+    .nullable()
+    .describe(
+      "Alleen bij een meerkeuzevraag: de letterlijke tekst van de juiste optie uit de 'opties' van de NET beoordeelde vraag (dus niet de nieuwe vraag hierboven) - hiermee kan de app die groen markeren. Null als er nog geen antwoord was, bij een open vraag, of als de vorige vraag geen meerkeuzevraag was."
+    ),
 });
 
 const LEERFASE_INSTRUCTIE: Record<string, string> = {
@@ -34,7 +40,14 @@ const LEERFASE_INSTRUCTIE: Record<string, string> = {
 
 const OPMAAK_INSTRUCTIE = `Opmaak:
 - Je mag markdown gebruiken (**vet**, opsommingen met "-") als dat de vraag of feedback echt duidelijker maakt, maar houd het kort.
-- Gebruik NOOIT LaTeX-notatie (dus geen $...$, \\frac{}{}, \\times, \\cdot e.d.) - een leerling kent die syntax niet. Schrijf wiskunde in gewone, leesbare tekst: "2/3 × 4/5", "x²", "√2".`;
+- Gebruik NOOIT LaTeX-notatie (dus geen $...$, \\frac{}{}, \\times, \\cdot e.d.).
+- Gebruik ook NOOIT een caret (^) voor machten of een underscore (_) voor een index/subscript - dat zijn programmeertekens, geen wiskundenotatie, en een leerling leest dat niet als een macht. Gebruik ALTIJD de echte Unicode-tekens: ² ³ ⁴ ⁵ ⁶ ⁷ ⁸ ⁹ (dus "x²" en "(2x²)³", nooit "x^2" of "(2x^2)^3"). Voor een index/subscript: schrijf het in woorden i.p.v. een underscore (bv. "V nieuw" i.p.v. "V_nieuw").
+- Schrijf een breuk NOOIT als platte tekst zoals "2/3" (een leerling ziet dan geen teller/noemer) - gebruik in plaats daarvan dit blok, EEN per breuk-uitdrukking:
+
+\`\`\`breuk
+{"titel": "2/3 keer 4/5", "operator": "×", "breuken": [{"teller": 2, "noemer": 3}, {"teller": 4, "noemer": 5}], "uitkomst": {"teller": 8, "noemer": 15}}
+\`\`\`
+("operator" is "×", "+", "-" of "÷"; "uitkomst" is optioneel, laat weg als je die nog niet geeft; zet dit blok in de vraag- of feedbacktekst zelf op de plek waar de breuk zou staan)`;
 
 const MAX_FRAGMENT_TEKENS = 500;
 
@@ -47,9 +60,7 @@ function kiesLesstofFragment(
   materials: { id: string; title: string; content: string; hoofdstuk: string | null }[],
   zoekTekst: string
 ) {
-  const { modus, gekozen } = kiesRelevanteMaterialen(materials, zoekTekst);
-  if (modus !== "selectie" && modus !== "alles") return null;
-  const beste = gekozen[0];
+  const beste = kiesBesteMateriaal(materials, zoekTekst);
   if (!beste || !beste.content.trim()) return null;
 
   let fragment = beste.content.trim();
@@ -162,7 +173,7 @@ ${
 }
 ${
   vorigeVraag && vorigAntwoord
-    ? `Beoordeel eerst dit antwoord van de leerling:\nVraag: ${vorigeVraag}\nAntwoord van de leerling: ${vorigAntwoord}\nGeef een beoordeling (goed/deels/fout). Bij 'goed': korte felicitatie MET in 1 zin WAAROM het klopt (zo blijft ook een gokje dat toevallig goed was leerzaam, en wordt goed gokken niet beloond met niets). Bij 'deels' of 'fout': geef GEEN kale foutmelding en niet alleen een hint, maar een echte, behulpzame uitleg (2-4 zinnen) die het onderliggende idee verduidelijkt - zodat de leerling begrijpt WAAROM het niet (helemaal) klopte en hoe het wel zit.\n\n`
+    ? `Beoordeel eerst dit antwoord van de leerling:\nVraag: ${vorigeVraag}\nAntwoord van de leerling: ${vorigAntwoord}\nGeef een beoordeling (goed/deels/fout). Bij 'goed': korte felicitatie MET in 1 zin WAAROM het klopt (zo blijft ook een gokje dat toevallig goed was leerzaam, en wordt goed gokken niet beloond met niets). Bij 'deels' of 'fout': geef GEEN kale foutmelding en niet alleen een hint, maar een echte, behulpzame uitleg (2-4 zinnen) die het onderliggende idee verduidelijkt - zodat de leerling begrijpt WAAROM het niet (helemaal) klopte en hoe het wel zit. BELANGRIJK: een antwoord dat geen echte inhoudelijke poging is (bijvoorbeeld enkel "?", "weet niet", "geen idee", of duidelijk willekeurige tekst) is ALTIJD 'fout' - beoordeel zo'n antwoord nooit als 'goed' of 'deels', ook al lijkt het toevallig ergens op te passen.\n\n`
     : "Er is nog geen vorig antwoord - laat feedback leeg en beoordeling op 'geen'.\n\n"
 }Stel daarna een NIEUWE vraag over de lesstof hieronder. Deze vragen zijn deze sessie al gesteld, stel geen vraag die daar erg op lijkt: ${
     Array.isArray(gesteldeVragen) && gesteldeVragen.length > 0 ? gesteldeVragen.join(" | ") : "(nog geen)"

@@ -7,8 +7,10 @@ import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { Icon } from "@/components/icon";
 import { MarkdownTekst } from "@/components/markdown-tekst";
+import { VisualWeergave } from "@/components/visuals/visual-weergave";
 import { slaOverhoorResultaatOp, type OverhoorTranscriptRegel } from "@/lib/actions/overhoor";
 import { eenRegel } from "@/lib/tekst";
+import { extraheerVisuals, type VisualSpec } from "@/lib/visuals";
 import type { Subject } from "@/lib/types";
 
 type Beoordeling = "goed" | "deels" | "fout" | "geen";
@@ -43,11 +45,14 @@ export function TweeMinutenOefenen({ subjects }: { subjects: Subject[] }) {
   const [subject, setSubject] = useState<Subject | null>(null);
   const [vraagNr, setVraagNr] = useState(0);
   const [vraag, setVraag] = useState<string | null>(null);
+  const [vraagVisuals, setVraagVisuals] = useState<VisualSpec[]>([]);
   const [opties, setOpties] = useState<string[] | null>(null);
-  const [volgende, setVolgende] = useState<{ vraag: string; opties: string[] | null } | null>(null);
+  const [juisteOptie, setJuisteOptie] = useState<string | null>(null);
+  const [volgende, setVolgende] = useState<{ vraag: string; visuals: VisualSpec[]; opties: string[] | null } | null>(null);
   const [antwoord, setAntwoord] = useState("");
   const [laatsteAntwoord, setLaatsteAntwoord] = useState("");
   const [feedback, setFeedback] = useState<{ tekst: string; beoordeling: Beoordeling } | null>(null);
+  const [feedbackVisuals, setFeedbackVisuals] = useState<VisualSpec[]>([]);
   const [lesstofFragment, setLesstofFragment] = useState<LesstofFragment>(null);
   const [uitleg, setUitleg] = useState<string | null>(null);
   const [uitlegBezig, setUitlegBezig] = useState(false);
@@ -64,10 +69,13 @@ export function TweeMinutenOefenen({ subjects }: { subjects: Subject[] }) {
     setSubject(null);
     setVraagNr(0);
     setVraag(null);
+    setVraagVisuals([]);
     setOpties(null);
+    setJuisteOptie(null);
     setVolgende(null);
     setAntwoord("");
     setFeedback(null);
+    setFeedbackVisuals([]);
     setLesstofFragment(null);
     setUitleg(null);
     setGesteldeVragen([]);
@@ -92,8 +100,10 @@ export function TweeMinutenOefenen({ subjects }: { subjects: Subject[] }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Kon geen vraag ophalen.");
+      const { tekst: vraagTekst, visuals } = extraheerVisuals(data.vraag ?? "");
       setSubject(s);
-      setVraag(data.vraag);
+      setVraag(vraagTekst);
+      setVraagVisuals(visuals);
       setOpties(Array.isArray(data.opties) && data.opties.length > 0 ? data.opties : null);
       setVraagNr(1);
       setFeedback(null);
@@ -129,7 +139,10 @@ export function TweeMinutenOefenen({ subjects }: { subjects: Subject[] }) {
       if (!res.ok) throw new Error(data.error || "Kon niet controleren.");
 
       const beoordeling = (data.beoordeling as Beoordeling) ?? "geen";
-      setFeedback({ tekst: data.feedback || "", beoordeling });
+      const { tekst: feedbackTekst, visuals: fVisuals } = extraheerVisuals(data.feedback || "");
+      setFeedback({ tekst: feedbackTekst, beoordeling });
+      setFeedbackVisuals(fVisuals);
+      setJuisteOptie(typeof data.juisteOptie === "string" ? data.juisteOptie : null);
       setLesstofFragment(normFragment(data.lesstofFragment));
       if (beoordeling === "goed" || beoordeling === "deels" || beoordeling === "fout") {
         setScore((s) => ({ ...s, [beoordeling]: s[beoordeling] + 1 }));
@@ -140,7 +153,12 @@ export function TweeMinutenOefenen({ subjects }: { subjects: Subject[] }) {
         { vraag, antwoord: antwoordTeControleren, feedback: data.feedback || "", beoordeling },
       ]);
       setLaatsteAntwoord(antwoordTeControleren);
-      setVolgende({ vraag: data.vraag, opties: Array.isArray(data.opties) && data.opties.length > 0 ? data.opties : null });
+      const { tekst: volgendeVraagTekst, visuals: volgendeVisuals } = extraheerVisuals(data.vraag ?? "");
+      setVolgende({
+        vraag: volgendeVraagTekst,
+        visuals: volgendeVisuals,
+        opties: Array.isArray(data.opties) && data.opties.length > 0 ? data.opties : null,
+      });
       setAntwoord("");
       setUitleg(null);
       setFase("feedback");
@@ -158,9 +176,12 @@ export function TweeMinutenOefenen({ subjects }: { subjects: Subject[] }) {
       return;
     }
     setVraag(volgende?.vraag ?? null);
+    setVraagVisuals(volgende?.visuals ?? []);
     setOpties(volgende?.opties ?? null);
+    setJuisteOptie(null);
     setVraagNr((n) => n + 1);
     setFeedback(null);
+    setFeedbackVisuals([]);
     setLesstofFragment(null);
     setUitleg(null);
     setFase("vraag");
@@ -245,6 +266,9 @@ export function TweeMinutenOefenen({ subjects }: { subjects: Subject[] }) {
               </p>
               <div className="rounded-xl bg-slate-50 p-3 font-medium text-slate-800">
                 <MarkdownTekst>{eenRegel(vraag ?? "")}</MarkdownTekst>
+                {vraagVisuals.map((v, i) => (
+                  <VisualWeergave key={i} visual={v} />
+                ))}
               </div>
 
               {opties ? (
@@ -286,8 +310,46 @@ export function TweeMinutenOefenen({ subjects }: { subjects: Subject[] }) {
 
           {fase === "feedback" && feedback && (
             <div className="flex flex-col gap-3">
+              {opties && (
+                <div className="flex flex-col gap-2">
+                  {opties.map((optie, i) => {
+                    const isJuist = juisteOptie !== null && optie === juisteOptie;
+                    const isGekozenFout = !isJuist && optie === laatsteAntwoord;
+                    return (
+                      <div
+                        key={i}
+                        className={clsx(
+                          "flex items-start gap-2.5 rounded-xl border px-3.5 py-2.5 text-left text-sm",
+                          isJuist
+                            ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+                            : isGekozenFout
+                              ? "border-rose-300 bg-rose-50 text-rose-700"
+                              : "border-slate-200 bg-slate-50 text-slate-400"
+                        )}
+                      >
+                        <span
+                          className={clsx(
+                            "flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-bold",
+                            isJuist
+                              ? "bg-emerald-200 text-emerald-800"
+                              : isGekozenFout
+                                ? "bg-rose-200 text-rose-700"
+                                : "bg-slate-200 text-slate-500"
+                          )}
+                        >
+                          {isJuist ? <Icon name="check" size={12} /> : isGekozenFout ? <Icon name="close" size={12} /> : LETTERS[i] ?? i + 1}
+                        </span>
+                        {optie}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
               <div className={clsx("rounded-xl border p-3 text-sm", BEOORDELING_STIJL[feedback.beoordeling])}>
                 <MarkdownTekst>{feedback.tekst}</MarkdownTekst>
+                {feedbackVisuals.map((v, i) => (
+                  <VisualWeergave key={i} visual={v} />
+                ))}
               </div>
 
               {lesstofFragment && (

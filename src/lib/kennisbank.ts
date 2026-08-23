@@ -47,6 +47,27 @@ function woordenVan(tekst: string) {
     .filter((w) => w.length > 2 && !NEGEER_WOORDEN.has(w));
 }
 
+function scoorMaterialen<T extends MateriaalRij>(materials: T[], zoekTekst: string) {
+  const paragraafMatch = zoekTekst.match(/\b\d{1,2}\.\d{1,2}\b/g) ?? [];
+  const woorden = woordenVan(zoekTekst);
+
+  return materials
+    .map((m) => {
+      let score = 0;
+      const titelLower = m.title.toLowerCase();
+      for (const par of paragraafMatch) {
+        if (titelLower.startsWith(par.toLowerCase())) score += 10;
+      }
+      for (const w of woorden) {
+        if (titelLower.includes(w)) score += 3;
+        if (m.hoofdstuk?.toLowerCase().includes(w)) score += 2;
+        if (m.content.toLowerCase().includes(w)) score += 1;
+      }
+      return { materiaal: m, score };
+    })
+    .sort((a, b) => b.score - a.score);
+}
+
 /**
  * Kiest welke materialen relevant genoeg zijn om in de prompt mee te geven,
  * op basis van paragraafnummers/trefwoorden in `zoekTekst`. Geeft "index"
@@ -58,26 +79,8 @@ export function kiesRelevanteMaterialen<T extends MateriaalRij>(materials: T[], 
     return { modus: "alles" as const, gekozen: materials };
   }
 
-  const paragraafMatch = zoekTekst.match(/\b\d{1,2}\.\d{1,2}\b/g) ?? [];
-  const woorden = woordenVan(zoekTekst);
-
-  const gescoord = materials.map((m) => {
-    let score = 0;
-    const titelLower = m.title.toLowerCase();
-    for (const par of paragraafMatch) {
-      if (titelLower.startsWith(par.toLowerCase())) score += 10;
-    }
-    for (const w of woorden) {
-      if (titelLower.includes(w)) score += 3;
-      if (m.hoofdstuk?.toLowerCase().includes(w)) score += 2;
-      if (m.content.toLowerCase().includes(w)) score += 1;
-    }
-    return { materiaal: m, score };
-  });
-
-  const gekozen = gescoord
+  const gekozen = scoorMaterialen(materials, zoekTekst)
     .filter((g) => g.score > 0)
-    .sort((a, b) => b.score - a.score)
     .slice(0, MAX_GESELECTEERDE_MATERIALEN)
     .map((g) => g.materiaal);
 
@@ -85,6 +88,19 @@ export function kiesRelevanteMaterialen<T extends MateriaalRij>(materials: T[], 
     return { modus: "index" as const, gekozen: [] as T[] };
   }
   return { modus: "selectie" as const, gekozen };
+}
+
+/**
+ * Kiest het ENE best-passende materiaal (of null als niets echt matcht) -
+ * i.t.t. kiesRelevanteMaterialen valt dit NOOIT terug op "geef alles maar"
+ * bij een kleine kennisbank. Bedoeld voor plekken waar maar 1 concreet,
+ * relevant stukje getoond moet worden (bv. een lesstof-fragment bij
+ * feedback) - een willekeurig eerste materiaal tonen zou daar juist
+ * verwarrend/irrelevant zijn.
+ */
+export function kiesBesteMateriaal<T extends MateriaalRij>(materials: T[], zoekTekst: string): T | null {
+  const beste = scoorMaterialen(materials, zoekTekst)[0];
+  return beste && beste.score > 0 ? beste.materiaal : null;
 }
 
 /** Kiest een willekeurige subset materialen - voor overhoren, waar geen vrije-tekstvraag is om op te matchen. */
