@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { DiagramSpec, GetallenlijnSpec, GrafiekSpec, TabelSpec, VisualSpec } from "@/lib/visuals";
+import type { BreukSpec, BreukTerm, DiagramSpec, GetallenlijnSpec, GrafiekSpec, TabelSpec, VisualSpec } from "@/lib/visuals";
 
 const STROOK_KLEUREN = ["stroke-accent-600", "stroke-emerald-600", "stroke-amber-600"];
 const TEKST_KLEUREN = ["text-accent-600", "text-emerald-600", "text-amber-600"];
@@ -215,6 +215,40 @@ function DiagramWeergave({ spec }: { spec: DiagramSpec }) {
   );
 }
 
+// Breuken als echte gestapelde teller/noemer i.p.v. platte tekst zoals
+// "2/3" - dat mist juist het visuele onderscheid tussen "boven" en "onder"
+// dat een leerling nodig heeft om breukbewerkingen te begrijpen.
+function BreukTermWeergave({ term }: { term: BreukTerm }) {
+  return (
+    <span className="inline-flex flex-col items-center px-1 text-base font-semibold leading-none text-slate-800">
+      <span className="pb-0.5">{term.teller}</span>
+      <span className="w-full border-t-2 border-slate-700" />
+      <span className="pt-0.5">{term.noemer}</span>
+    </span>
+  );
+}
+
+function BreukWeergave({ spec }: { spec: BreukSpec }) {
+  return (
+    <Kaart titel={spec.titel}>
+      <div className="flex flex-wrap items-center gap-2 py-1">
+        {spec.breuken.map((b, i) => (
+          <span key={i} className="flex items-center gap-2">
+            {i > 0 && <span className="text-lg font-semibold text-slate-500">{spec.operator ?? ""}</span>}
+            <BreukTermWeergave term={b} />
+          </span>
+        ))}
+        {spec.uitkomst && (
+          <>
+            <span className="text-lg font-semibold text-slate-500">=</span>
+            <BreukTermWeergave term={spec.uitkomst} />
+          </>
+        )}
+      </div>
+    </Kaart>
+  );
+}
+
 export function VisualWeergave({ visual }: { visual: VisualSpec }) {
   switch (visual.type) {
     case "grafiek":
@@ -225,5 +259,7 @@ export function VisualWeergave({ visual }: { visual: VisualSpec }) {
       return <TabelWeergave spec={visual} />;
     case "diagram":
       return <DiagramWeergave spec={visual} />;
+    case "breuk":
+      return <BreukWeergave spec={visual} />;
   }
 }

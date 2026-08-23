@@ -62,7 +62,19 @@ export interface DiagramSpec {
   categorieen: DiagramCategorie[];
 }
 
-export type VisualSpec = GrafiekSpec | GetallenlijnSpec | TabelSpec | DiagramSpec;
+export interface BreukTerm {
+  teller: number;
+  noemer: number;
+}
+export interface BreukSpec {
+  type: "breuk";
+  titel: string;
+  operator: "×" | "+" | "-" | "÷" | null;
+  breuken: BreukTerm[];
+  uitkomst: BreukTerm | null;
+}
+
+export type VisualSpec = GrafiekSpec | GetallenlijnSpec | TabelSpec | DiagramSpec | BreukSpec;
 
 function isNum(v: unknown): v is number {
   return typeof v === "number" && Number.isFinite(v);
@@ -148,14 +160,38 @@ function valideerDiagram(v: Record<string, unknown>): DiagramSpec | null {
   return { type: "diagram", titel: v.titel, soort: v.soort, categorieen };
 }
 
+const BREUK_OPERATOREN = new Set(["×", "+", "-", "÷"]);
+
+function isBreukTerm(v: unknown): v is BreukTerm {
+  if (!v || typeof v !== "object") return false;
+  const rec = v as Record<string, unknown>;
+  return isNum(rec.teller) && isNum(rec.noemer) && rec.noemer !== 0;
+}
+
+function valideerBreuk(v: Record<string, unknown>): BreukSpec | null {
+  if (!isStr(v.titel) || !Array.isArray(v.breuken)) return null;
+
+  const breuken: BreukTerm[] = [];
+  for (const b of v.breuken.slice(0, 3)) {
+    if (isBreukTerm(b)) breuken.push(b);
+  }
+  if (breuken.length === 0) return null;
+
+  const operator = typeof v.operator === "string" && BREUK_OPERATOREN.has(v.operator) ? (v.operator as BreukSpec["operator"]) : null;
+  const uitkomst = isBreukTerm(v.uitkomst) ? v.uitkomst : null;
+
+  return { type: "breuk", titel: v.titel, operator, breuken, uitkomst };
+}
+
 const VALIDATORS: Record<string, (v: Record<string, unknown>) => VisualSpec | null> = {
   grafiek: valideerGrafiek,
   getallenlijn: valideerGetallenlijn,
   tabel: valideerTabel,
   diagram: valideerDiagram,
+  breuk: valideerBreuk,
 };
 
-const BLOK_REGEX = /```(grafiek|getallenlijn|tabel|diagram)\s*\n([\s\S]*?)```/g;
+const BLOK_REGEX = /```(grafiek|getallenlijn|tabel|diagram|breuk)\s*\n([\s\S]*?)```/g;
 
 /**
  * Haalt visual-blokken uit een AI-antwoord: geeft de tekst terug zonder de

@@ -152,7 +152,7 @@ ${kennisbank}`;
       client,
       ResponsSchema,
       [{ role: "user", parts: [{ text: prompt }] }],
-      2048
+      3072
     );
     return NextResponse.json(geparsed);
   } catch (e) {

@@ -30,11 +30,17 @@ const VISUAL_INSTRUCTIE = `Als een grafiek, getallenlijn, tabel of diagram de ui
 \`\`\`
 ("soort" is "staaf" of "cirkel")
 
+\`\`\`breuk
+{"titel": "2/3 keer 4/5", "operator": "×", "breuken": [{"teller": 2, "noemer": 3}, {"teller": 4, "noemer": 5}], "uitkomst": {"teller": 8, "noemer": 15}}
+\`\`\`
+(gebruik dit ALTIJD i.p.v. platte tekst als "2/3" zodra teller/noemer er echt toe doen - bv. breuken optellen/vermenigvuldigen/vereenvoudigen; "operator" is "×", "+", "-" of "÷"; "uitkomst" is optioneel, laat weg als je die nog niet geeft)
+
 Zet dit blok NIET in plaats van je uitleg, maar erbij - je normale tekst blijft gewoon het antwoord.`;
 
 const OPMAAK_INSTRUCTIE = `Opmaak:
 - Je mag markdown gebruiken (**vet**, opsommingen met "-", genummerde stappen) om je antwoord makkelijker leesbaar te maken - gebruik dit om structuur te geven, niet overdreven.
-- Gebruik NOOIT LaTeX-notatie (dus geen $...$, \\frac{}{}, \\times, \\cdot e.d.) - een leerling kent die syntax niet en ziet dan alleen rare tekens. Schrijf wiskunde in gewone, leesbare tekst: "2/3 × 4/5", "x²", "√2", "3 x + 5 = 11". Gebruik het grafiek/getallenlijn/tabel-blok hierboven als iets echt visueel moet.`;
+- Gebruik NOOIT LaTeX-notatie (dus geen $...$, \\frac{}{}, \\times, \\cdot e.d.) - een leerling kent die syntax niet en ziet dan alleen rare tekens. Schrijf wiskunde in gewone, leesbare tekst: "x²", "√2", "3 x + 5 = 11".
+- Voor een BREUK geldt een uitzondering: schrijf die nooit als platte tekst zoals "2/3" (een leerling ziet dan geen teller/noemer) - gebruik altijd het breuk-blok hierboven, ook als je er zelf naar verwijst in je uitleg (zeg dan bv. "kijk naar de breuk hieronder" i.p.v. de breuk zelf uit te typen).`;
 
 function bouwSysteemPrompt(
   subjectName: string,

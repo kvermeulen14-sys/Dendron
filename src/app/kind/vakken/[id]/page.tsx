@@ -55,7 +55,7 @@ export default async function KindVakDetailPage({
         </span>
         <div>
           <h1 className="text-xl font-semibold text-slate-900">{subject.name}</h1>
-          <p className="text-sm text-slate-500">Chat met je vakdocent, of laat je overhoren.</p>
+          <p className="text-sm text-slate-500">Chat met je vakdocent, of ga oefenen.</p>
         </div>
       </div>
 
@@ -72,17 +72,18 @@ export default async function KindVakDetailPage({
         initialMessages={messages ?? []}
         initialModus={initialModus}
         hoofdstukken={hoofdstukken}
+        beheerSectie={
+          <div className="flex flex-col gap-3">
+            <p className="text-sm text-slate-500">
+              Heb je een foto van je boek of aantekeningen die kunnen helpen? Voeg ze toe.
+            </p>
+            <KennisbankUploader subjectId={id} />
+            <div>
+              <MateriaalForm subjectId={id} />
+            </div>
+          </div>
+        }
       />
-
-      <div className="flex flex-col gap-3">
-        <p className="text-sm text-slate-500">
-          Heb je een foto van je boek of aantekeningen die kunnen helpen? Voeg ze toe.
-        </p>
-        <KennisbankUploader subjectId={id} />
-        <div>
-          <MateriaalForm subjectId={id} />
-        </div>
-      </div>
     </div>
   );
 }

@@ -7,11 +7,13 @@ import { Card } from "@/components/ui/card";
 import { Icon } from "@/components/icon";
 import { MarkdownTekst } from "@/components/markdown-tekst";
 import { slaOverhoorResultaatOp, type OverhoorTranscriptRegel } from "@/lib/actions/overhoor";
+import { eenRegel } from "@/lib/tekst";
 
 type Leerfase = "eerste" | "tussentijds" | "laatste";
 type Beoordeling = "goed" | "deels" | "fout" | "geen";
 type Stijl = "open" | "meerkeuze";
 type WizardStap = "hoofdstuk" | "stijl" | null;
+type SessieFase = "vraag" | "feedback";
 
 const LEERFASE_OPTIES: { value: Leerfase; label: string; uitleg: string }[] = [
   { value: "eerste", label: "Eerste keer", uitleg: "Meer hulp, rustig opbouwen" },
@@ -28,14 +30,21 @@ const BEOORDELING_STIJL: Record<Beoordeling, { label: string; icon: string; clas
 
 const LETTERS = ["a", "b", "c", "d", "e", "f"];
 
+function normOpties(o: unknown): string[] | null {
+  return Array.isArray(o) && o.length > 0 ? (o as string[]) : null;
+}
+
 export function OverhoorPanel({
   subjectId,
   subjectName,
   hoofdstukken = [],
+  sessieActiefChange,
 }: {
   subjectId: string;
   subjectName: string;
   hoofdstukken?: string[];
+  /** Meldt aan de omgeving of er een sessie loopt, zodat elders (bv. lesstof toevoegen) verborgen kan worden. */
+  sessieActiefChange?: (actief: boolean) => void;
 }) {
   const [gestart, setGestart] = useState(false);
   const [spellingStrict, setSpellingStrict] = useState(false);
@@ -43,11 +52,16 @@ export function OverhoorPanel({
 
   const [wizardStap, setWizardStap] = useState<WizardStap>(null);
   const [gekozenHoofdstuk, setGekozenHoofdstuk] = useState<string | null>(null);
+  const [andersInvoer, setAndersInvoer] = useState("");
+  const [andersModus, setAndersModus] = useState(false);
   const [scopeInstructie, setScopeInstructie] = useState<string | null>(null);
 
+  const [fase, setFase] = useState<SessieFase>("vraag");
   const [vraag, setVraag] = useState<string | null>(null);
   const [opties, setOpties] = useState<string[] | null>(null);
+  const [volgende, setVolgende] = useState<{ vraag: string; opties: string[] | null } | null>(null);
   const [antwoord, setAntwoord] = useState("");
+  const [laatsteAntwoord, setLaatsteAntwoord] = useState("");
   const [feedback, setFeedback] = useState<string | null>(null);
   const [beoordeling, setBeoordeling] = useState<Beoordeling | null>(null);
   const [gesteldeVragen, setGesteldeVragen] = useState<string[]>([]);
@@ -56,8 +70,13 @@ export function OverhoorPanel({
   const [bezig, setBezig] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  function meldSessieStatus(actief: boolean) {
+    sessieActiefChange?.(actief);
+  }
+
   function start() {
     setGestart(true);
+    meldSessieStatus(true);
     setScore({ goed: 0, deels: 0, fout: 0 });
     setFeedback(null);
     setBeoordeling(null);
@@ -65,8 +84,12 @@ export function OverhoorPanel({
     setTranscript([]);
     setScopeInstructie(null);
     setGekozenHoofdstuk(null);
+    setAndersInvoer("");
+    setAndersModus(false);
     setVraag(null);
     setOpties(null);
+    setVolgende(null);
+    setFase("vraag");
     setWizardStap(hoofdstukken.length > 0 ? "hoofdstuk" : "stijl");
   }
 
@@ -75,15 +98,40 @@ export function OverhoorPanel({
     setWizardStap("stijl");
   }
 
-  function kiesStijl(stijl: Stijl) {
-    const onderwerp = gekozenHoofdstuk ? `hoofdstuk "${gekozenHoofdstuk}"` : "alle beschikbare lesstof";
+  function bevestigAnders() {
+    if (!andersInvoer.trim()) return;
+    kiesHoofdstuk(andersInvoer.trim());
+  }
+
+  async function kiesStijl(stijl: Stijl) {
+    const onderwerp = gekozenHoofdstuk ? `"${gekozenHoofdstuk}"` : "alle beschikbare lesstof";
     const instructie = `Onderwerp: ${onderwerp}. Vraagstijl: ${stijl === "meerkeuze" ? "meerkeuzevragen (3-4 opties)" : "open vragen"}.`;
     setScopeInstructie(instructie);
     setWizardStap(null);
-    haalVolgendeVraagOp(undefined, instructie, true);
+
+    setBezig(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/overhoor", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subjectId, spellingStrict, leerfase, gesteldeVragen: [], scopeInstructie: instructie }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Er ging iets mis.");
+      setVraag(data.vraag);
+      setOpties(normOpties(data.opties));
+      setFase("vraag");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Er ging iets mis.");
+      setWizardStap("stijl");
+    } finally {
+      setBezig(false);
+    }
   }
 
-  async function haalVolgendeVraagOp(vorigAntwoord?: string, nieuweScopeInstructie?: string, naWizard = false) {
+  async function controleer(gegevenAntwoord: string) {
+    if (!vraag || !gegevenAntwoord.trim()) return;
     setBezig(true);
     setError(null);
     try {
@@ -95,31 +143,29 @@ export function OverhoorPanel({
           spellingStrict,
           leerfase,
           gesteldeVragen,
-          vorigeVraag: naWizard ? null : vraag,
-          vorigAntwoord,
-          scopeInstructie: nieuweScopeInstructie ?? scopeInstructie,
+          vorigeVraag: vraag,
+          vorigAntwoord: gegevenAntwoord,
+          scopeInstructie,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Er ging iets mis.");
 
-      if (data.beoordeling && data.beoordeling !== "geen") {
-        setScore((s) => ({ ...s, [data.beoordeling]: s[data.beoordeling as "goed" | "deels" | "fout"] + 1 }));
+      const nieuweBeoordeling = (data.beoordeling as Beoordeling) ?? "geen";
+      if (nieuweBeoordeling !== "geen") {
+        setScore((s) => ({ ...s, [nieuweBeoordeling]: s[nieuweBeoordeling] + 1 }));
       }
       setFeedback(data.feedback || null);
-      setBeoordeling(data.beoordeling ?? null);
-      if (vraag && !naWizard) {
-        setGesteldeVragen((prev) => [...prev, vraag]);
-        if (vorigAntwoord) {
-          setTranscript((prev) => [
-            ...prev,
-            { vraag, antwoord: vorigAntwoord, feedback: data.feedback || "", beoordeling: data.beoordeling ?? "geen" },
-          ]);
-        }
-      }
-      setVraag(data.vraag);
-      setOpties(Array.isArray(data.opties) && data.opties.length > 0 ? data.opties : null);
+      setBeoordeling(nieuweBeoordeling);
+      setLaatsteAntwoord(gegevenAntwoord);
+      setGesteldeVragen((prev) => [...prev, vraag]);
+      setTranscript((prev) => [
+        ...prev,
+        { vraag, antwoord: gegevenAntwoord, feedback: data.feedback || "", beoordeling: nieuweBeoordeling },
+      ]);
+      setVolgende({ vraag: data.vraag, opties: normOpties(data.opties) });
       setAntwoord("");
+      setFase("feedback");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Er ging iets mis.");
     } finally {
@@ -127,11 +173,22 @@ export function OverhoorPanel({
     }
   }
 
+  function volgendeVraag() {
+    if (!volgende) return;
+    setVraag(volgende.vraag);
+    setOpties(volgende.opties);
+    setVolgende(null);
+    setFeedback(null);
+    setBeoordeling(null);
+    setFase("vraag");
+  }
+
   function stop() {
     if (score.goed + score.deels + score.fout > 0) {
       void slaOverhoorResultaatOp(subjectId, leerfase, score, transcript);
     }
     setGestart(false);
+    meldSessieStatus(false);
     setWizardStap(null);
     setVraag(null);
   }
@@ -141,7 +198,7 @@ export function OverhoorPanel({
       <Card className="flex flex-col gap-4">
         <div className="flex items-center gap-2">
           <Icon name="target" size={18} className="text-accent-600" />
-          <p className="text-sm font-semibold text-slate-900">Overhoor mij over {subjectName}</p>
+          <p className="text-sm font-semibold text-slate-900">Oefenen met {subjectName}</p>
         </div>
 
         <div>
@@ -186,7 +243,7 @@ export function OverhoorPanel({
         {error && <p className="text-sm text-rose-600">{error}</p>}
 
         <Button onClick={start} icon={<Icon name="rocket" size={18} />}>
-          Begin met overhoren
+          Beginnen
         </Button>
       </Card>
     );
@@ -197,7 +254,7 @@ export function OverhoorPanel({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Icon name="target" size={18} className="text-accent-600" />
-          <p className="text-sm font-semibold text-slate-900">Overhoren - {subjectName}</p>
+          <p className="text-sm font-semibold text-slate-900">Oefenen - {subjectName}</p>
         </div>
         <button onClick={stop} className="text-xs font-medium text-slate-500 hover:underline">
           Stoppen
@@ -225,15 +282,51 @@ export function OverhoorPanel({
                 >
                   Alle lesstof
                 </button>
+                <button
+                  onClick={() => setAndersModus(true)}
+                  className={clsx(
+                    "rounded-xl border border-dashed px-3.5 py-2.5 text-sm font-medium transition-colors hover:border-accent-300 hover:bg-accent-50",
+                    andersModus ? "border-accent-300 bg-accent-50 text-accent-700" : "border-slate-300 text-slate-500"
+                  )}
+                >
+                  Anders, namelijk...
+                </button>
               </div>
+              {andersModus && (
+                <div className="mt-3 flex gap-2">
+                  <input
+                    autoFocus
+                    value={andersInvoer}
+                    onChange={(e) => setAndersInvoer(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && bevestigAnders()}
+                    placeholder="Bijv. 'de opgaven over breuken' of 'paragraaf 4.2 en 4.3'"
+                    className="flex-1 rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
+                  />
+                  <Button size="md" disabled={!andersInvoer.trim()} onClick={bevestigAnders}>
+                    Verder
+                  </Button>
+                </div>
+              )}
             </div>
           ) : (
             <div>
-              <p className="mb-2 text-sm font-medium text-slate-700">Hoe wil je de vragen?</p>
+              <div className="mb-2 flex items-center justify-between">
+                <p className="text-sm font-medium text-slate-700">Hoe wil je de vragen?</p>
+                {hoofdstukken.length > 0 && (
+                  <button
+                    onClick={() => setWizardStap("hoofdstuk")}
+                    className="flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-700"
+                  >
+                    <Icon name="chevron-left" size={13} />
+                    Terug
+                  </button>
+                )}
+              </div>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <button
+                  disabled={bezig}
                   onClick={() => kiesStijl("open")}
-                  className="flex flex-col items-start gap-1 rounded-xl border border-slate-200 px-3.5 py-3 text-left transition-colors hover:border-accent-300 hover:bg-accent-50"
+                  className="flex flex-col items-start gap-1 rounded-xl border border-slate-200 px-3.5 py-3 text-left transition-colors hover:border-accent-300 hover:bg-accent-50 disabled:opacity-50"
                 >
                   <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-800">
                     <Icon name="pencil-line" size={16} className="text-accent-600" />
@@ -242,8 +335,9 @@ export function OverhoorPanel({
                   <span className="text-xs text-slate-500">Zelf het antwoord intypen</span>
                 </button>
                 <button
+                  disabled={bezig}
                   onClick={() => kiesStijl("meerkeuze")}
-                  className="flex flex-col items-start gap-1 rounded-xl border border-slate-200 px-3.5 py-3 text-left transition-colors hover:border-accent-300 hover:bg-accent-50"
+                  className="flex flex-col items-start gap-1 rounded-xl border border-slate-200 px-3.5 py-3 text-left transition-colors hover:border-accent-300 hover:bg-accent-50 disabled:opacity-50"
                 >
                   <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-800">
                     <Icon name="check" size={16} className="text-accent-600" />
@@ -252,6 +346,7 @@ export function OverhoorPanel({
                   <span className="text-xs text-slate-500">Zoals op sommige toetsen</span>
                 </button>
               </div>
+              {bezig && <p className="mt-2 text-xs text-slate-400">Eerste vraag wordt bedacht...</p>}
             </div>
           )}
           {error && <p className="text-sm text-rose-600">{error}</p>}
@@ -264,32 +359,46 @@ export function OverhoorPanel({
             <span>{score.fout} nog niet</span>
           </div>
 
-          {beoordeling && beoordeling !== "geen" && (
-            <div className={clsx("flex items-start gap-2 rounded-xl border p-3 text-sm", BEOORDELING_STIJL[beoordeling].className)}>
-              <Icon name={BEOORDELING_STIJL[beoordeling].icon} size={16} className="mt-0.5 shrink-0" />
-              <div className="min-w-0 flex-1">
-                <p className="font-medium">{BEOORDELING_STIJL[beoordeling].label}</p>
-                {feedback && <MarkdownTekst className="mt-0.5">{feedback}</MarkdownTekst>}
-              </div>
-            </div>
-          )}
-
           {bezig && !vraag ? (
             <p className="text-sm text-slate-400">Volgende vraag wordt bedacht...</p>
           ) : (
             vraag && (
               <div className="flex flex-col gap-3">
                 <div className="rounded-xl bg-slate-50 p-3 font-medium text-slate-800">
-                  <MarkdownTekst>{vraag}</MarkdownTekst>
+                  <MarkdownTekst>{eenRegel(vraag)}</MarkdownTekst>
                 </div>
 
-                {opties ? (
+                {fase === "feedback" ? (
+                  <>
+                    <p className="rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-600">
+                      <span className="font-medium text-slate-400">Jouw antwoord: </span>
+                      {laatsteAntwoord}
+                    </p>
+                    {beoordeling && beoordeling !== "geen" && (
+                      <div
+                        className={clsx(
+                          "flex items-start gap-2 rounded-xl border p-3 text-sm",
+                          BEOORDELING_STIJL[beoordeling].className
+                        )}
+                      >
+                        <Icon name={BEOORDELING_STIJL[beoordeling].icon} size={16} className="mt-0.5 shrink-0" />
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium">{BEOORDELING_STIJL[beoordeling].label}</p>
+                          {feedback && <MarkdownTekst className="mt-0.5">{feedback}</MarkdownTekst>}
+                        </div>
+                      </div>
+                    )}
+                    <Button loading={bezig} onClick={volgendeVraag} icon={<Icon name="chevron-right" size={16} />}>
+                      Volgende vraag
+                    </Button>
+                  </>
+                ) : opties ? (
                   <div className="flex flex-col gap-2">
                     {opties.map((optie, i) => (
                       <button
                         key={i}
                         disabled={bezig}
-                        onClick={() => haalVolgendeVraagOp(optie)}
+                        onClick={() => controleer(optie)}
                         className="flex items-start gap-2.5 rounded-xl border border-slate-200 px-3.5 py-2.5 text-left text-sm text-slate-700 transition-colors hover:border-accent-300 hover:bg-accent-50 disabled:opacity-50"
                       >
                         <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-bold text-slate-500">
@@ -308,8 +417,8 @@ export function OverhoorPanel({
                       placeholder="Typ hier je antwoord..."
                       className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
                     />
-                    <Button loading={bezig} disabled={!antwoord.trim()} onClick={() => haalVolgendeVraagOp(antwoord)}>
-                      Controleren & volgende vraag
+                    <Button loading={bezig} disabled={!antwoord.trim()} onClick={() => controleer(antwoord)}>
+                      Controleren
                     </Button>
                   </>
                 )}

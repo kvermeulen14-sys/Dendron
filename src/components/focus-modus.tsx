@@ -144,7 +144,7 @@ export function FocusModus({ item, subject }: { item: PlanningItem; subject: Sub
             Opdracht maken
           </LinkButton>
           <LinkButton href={`/kind/vakken/${subject.id}?modus=overhoren`} variant="secondary" icon={<Icon name="target" size={18} />}>
-            Overhoren
+            Oefenen
           </LinkButton>
         </div>
       )}

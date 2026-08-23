@@ -8,6 +8,7 @@ import { Modal } from "@/components/ui/modal";
 import { Icon } from "@/components/icon";
 import { MarkdownTekst } from "@/components/markdown-tekst";
 import { slaOverhoorResultaatOp, type OverhoorTranscriptRegel } from "@/lib/actions/overhoor";
+import { eenRegel } from "@/lib/tekst";
 import type { Subject } from "@/lib/types";
 
 type Beoordeling = "goed" | "deels" | "fout" | "geen";
@@ -222,7 +223,7 @@ export function TweeMinutenOefenen({ subjects }: { subjects: Subject[] }) {
                 {subject.name} - vraag {vraagNr} van {AANTAL_VRAGEN}
               </p>
               <div className="rounded-xl bg-slate-50 p-3 font-medium text-slate-800">
-                <MarkdownTekst>{vraag ?? ""}</MarkdownTekst>
+                <MarkdownTekst>{eenRegel(vraag ?? "")}</MarkdownTekst>
               </div>
 
               {opties ? (

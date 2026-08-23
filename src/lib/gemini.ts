@@ -42,24 +42,34 @@ export async function genereerGestructureerd<T>(
   contents: ContentListUnion,
   maxOutputTokens = 8192
 ): Promise<T> {
-  const response = await client.models.generateContent({
-    model: GEMINI_MODEL,
-    contents,
-    config: {
-      maxOutputTokens,
-      responseMimeType: "application/json",
-      responseJsonSchema: jsonSchemaVoorGemini(schema),
-      thinkingConfig: GEEN_THINKING,
-    },
-  });
+  async function eenPoging(): Promise<T> {
+    const response = await client.models.generateContent({
+      model: GEMINI_MODEL,
+      contents,
+      config: {
+        maxOutputTokens,
+        responseMimeType: "application/json",
+        responseJsonSchema: jsonSchemaVoorGemini(schema),
+        thinkingConfig: GEEN_THINKING,
+      },
+    });
 
-  if (!response.text) throw new Error("Geen bruikbaar resultaat van de AI ontvangen.");
-
-  let ruw: unknown;
-  try {
-    ruw = JSON.parse(response.text);
-  } catch {
-    throw new Error("De AI gaf geen volledig/geldig resultaat terug - probeer het opnieuw.");
+    if (!response.text) throw new Error("Geen bruikbaar resultaat van de AI ontvangen.");
+    const ruw: unknown = JSON.parse(response.text);
+    return schema.parse(ruw);
   }
-  return schema.parse(ruw);
+
+  // 1x automatisch opnieuw proberen bij een kapotte/afgekapte JSON-respons -
+  // dit gebeurt af en toe (bv. bij een net iets langer antwoord) en is voor
+  // de gebruiker vervelend als het meteen een foutmelding oplevert terwijl
+  // een nieuwe poging het meestal gewoon oplost.
+  try {
+    return await eenPoging();
+  } catch {
+    try {
+      return await eenPoging();
+    } catch {
+      throw new Error("De AI gaf geen volledig/geldig resultaat terug - probeer het opnieuw.");
+    }
+  }
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import clsx from "clsx";
 import { Icon } from "@/components/icon";
 import { ChatPanel } from "@/components/chat-panel";
@@ -10,7 +10,7 @@ import type { ChatMessage } from "@/lib/types";
 const TABS = [
   { modus: "chat", label: "Chat", icon: "chat" },
   { modus: "opdracht", label: "Opdracht maken", icon: "pencil-line" },
-  { modus: "overhoren", label: "Overhoren", icon: "target" },
+  { modus: "overhoren", label: "Oefenen", icon: "target" },
 ] as const;
 
 export function VakWerkruimte({
@@ -19,14 +19,18 @@ export function VakWerkruimte({
   initialMessages,
   initialModus = "chat",
   hoofdstukken = [],
+  beheerSectie,
 }: {
   subjectId: string;
   subjectName: string;
   initialMessages: ChatMessage[];
   initialModus?: (typeof TABS)[number]["modus"];
   hoofdstukken?: string[];
+  /** Materiaal-toevoegen e.d. - blijft weg zolang er een oefensessie loopt, dat is dan niet relevant. */
+  beheerSectie?: ReactNode;
 }) {
   const [modus, setModus] = useState<(typeof TABS)[number]["modus"]>(initialModus);
+  const [oefenSessieActief, setOefenSessieActief] = useState(false);
 
   return (
     <div className="flex flex-col gap-3">
@@ -52,7 +56,16 @@ export function VakWerkruimte({
         <ChatPanel subjectId={subjectId} subjectName={subjectName} initialMessages={initialMessages} modus="algemeen" />
       )}
       {modus === "opdracht" && <ChatPanel subjectId={subjectId} subjectName={subjectName} modus="opdracht" />}
-      {modus === "overhoren" && <OverhoorPanel subjectId={subjectId} subjectName={subjectName} hoofdstukken={hoofdstukken} />}
+      {modus === "overhoren" && (
+        <OverhoorPanel
+          subjectId={subjectId}
+          subjectName={subjectName}
+          hoofdstukken={hoofdstukken}
+          sessieActiefChange={setOefenSessieActief}
+        />
+      )}
+
+      {!oefenSessieActief && beheerSectie}
     </div>
   );
 }
