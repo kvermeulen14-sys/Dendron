@@ -136,3 +136,14 @@ export interface ChatMessage {
   content: string;
   created_at: string;
 }
+
+export type Stemming = "goed" | "neutraal" | "moeilijk";
+
+export interface WeekTerugblik {
+  id: string;
+  family_id: string;
+  user_id: string;
+  week_start: string;
+  stemming: Stemming;
+  created_at: string;
+}

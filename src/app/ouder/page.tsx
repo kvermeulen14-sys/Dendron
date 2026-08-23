@@ -3,6 +3,13 @@ import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/card";
 import { Icon } from "@/components/icon";
 import { PLANNING_TYPE_META } from "@/lib/planning";
+import type { Stemming } from "@/lib/types";
+
+const STEMMING_META: Record<Stemming, { icon: string; klasse: string; label: string }> = {
+  goed: { icon: "thumbs-up", klasse: "bg-emerald-100 text-emerald-600", label: "Goede week" },
+  neutraal: { icon: "meh", klasse: "bg-amber-100 text-amber-600", label: "Gewoontjes" },
+  moeilijk: { icon: "thumbs-down", klasse: "bg-rose-100 text-rose-600", label: "Zware week" },
+};
 
 export default async function OuderOverzicht() {
   const supabase = await createClient();
@@ -19,11 +26,21 @@ export default async function OuderOverzicht() {
   const vandaag = nu.toISOString().slice(0, 10);
   const overWeek = new Date(nu.getTime() + 7 * 86400000).toISOString().slice(0, 10);
 
-  const { data: items } = await supabase
-    .from("planning_items")
-    .select("*")
-    .eq("family_id", profile!.family_id)
-    .order("due_date", { ascending: true });
+  const [{ data: items }, { data: terugblikkenData }] = await Promise.all([
+    supabase
+      .from("planning_items")
+      .select("*")
+      .eq("family_id", profile!.family_id)
+      .order("due_date", { ascending: true }),
+    supabase
+      .from("week_terugblikken")
+      .select("week_start, stemming")
+      .eq("family_id", profile!.family_id)
+      .order("week_start", { ascending: false })
+      .limit(8),
+  ]);
+
+  const terugblikken = (terugblikkenData ?? []).slice().reverse();
 
   const alle = items ?? [];
   const open = alle.filter((i) => i.status !== "klaar");
@@ -47,6 +64,30 @@ export default async function OuderOverzicht() {
         <Stat label="Toetsen gepland" value={toetsen.length} tone="amber" icon="pencil-line" />
         <Stat label="Afgerond" value={klaarDezeMaand} tone="emerald" icon="check" />
       </div>
+
+      <Card>
+        <h2 className="mb-3 text-base font-semibold text-slate-900">Hoe ging het de laatste weken?</h2>
+        {terugblikken.length === 0 ? (
+          <p className="text-sm text-slate-500">
+            Nog geen weekterugblikken - je kind ziet elke week 1 korte vraag op het dashboard.
+          </p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {terugblikken.map((t) => {
+              const meta = STEMMING_META[t.stemming as Stemming];
+              return (
+                <span
+                  key={t.week_start}
+                  title={`Week van ${new Date(t.week_start + "T00:00:00").toLocaleDateString("nl-NL", { day: "numeric", month: "short" })} - ${meta.label}`}
+                  className={`flex h-10 w-10 items-center justify-center rounded-xl ${meta.klasse}`}
+                >
+                  <Icon name={meta.icon} size={18} />
+                </span>
+              );
+            })}
+          </div>
+        )}
+      </Card>
 
       <Card>
         <div className="mb-3 flex items-center justify-between">

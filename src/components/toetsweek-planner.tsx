@@ -32,6 +32,7 @@ export function ToetsweekPlanner({
   const [bezig, setBezig] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resultaat, setResultaat] = useState<number | null>(null);
+  const [clusterVakId, setClusterVakId] = useState<string | null>(null);
 
   const gekozenToetsweek = toetsweken.find((t) => t.id === toetsweekId) ?? null;
 
@@ -41,6 +42,11 @@ export function ToetsweekPlanner({
       .filter((t) => t.due_date >= gekozenToetsweek.start_datum && t.due_date <= gekozenToetsweek.eind_datum)
       .sort((a, b) => a.due_date.localeCompare(b.due_date));
   }, [toetsen, gekozenToetsweek]);
+
+  const aantalVakken = useMemo(
+    () => new Set(toetsenInWeek.map((t) => t.subject_id).filter(Boolean)).size,
+    [toetsenInWeek]
+  );
 
   function subjectNaam(id: string | null) {
     return subjects.find((s) => s.id === id)?.name ?? "Geen vak";
@@ -54,14 +60,21 @@ export function ToetsweekPlanner({
     setBezig(true);
     setError(null);
     setResultaat(null);
-    const res = await plantToetsweek(toetsenInWeek.map((t) => ({ toetsId: t.id, gewicht: gewichtVan(t.id) })));
-    setBezig(false);
-    if (res.error) {
-      setError(res.error);
-      return;
+    setClusterVakId(null);
+    try {
+      const res = await plantToetsweek(toetsenInWeek.map((t) => ({ toetsId: t.id, gewicht: gewichtVan(t.id) })));
+      if (res.error) {
+        setError(res.error);
+        return;
+      }
+      setResultaat(res.aantal ?? 0);
+      setClusterVakId(res.clusterSubjectId ?? null);
+      router.refresh();
+    } catch {
+      setError("Plannen is mislukt. Probeer het nog eens.");
+    } finally {
+      setBezig(false);
     }
-    setResultaat(res.aantal ?? 0);
-    router.refresh();
   }
 
   const agendaHref = pathname.startsWith("/ouder") ? "/ouder/agenda" : "/kind/agenda";
@@ -110,6 +123,18 @@ export function ToetsweekPlanner({
         </Card>
       ) : (
         <>
+          {aantalVakken >= 2 && (
+            <Card className="flex items-start gap-3 border-accent-100 bg-accent-50/60 py-3">
+              <Icon name="sparkles" size={18} className="mt-0.5 shrink-0 text-accent-600" />
+              <p className="text-sm text-slate-700">
+                <span className="font-medium">Tip: wissel vakken af.</span> Leren voor meerdere vakken door
+                elkaar (interleaving) werkt beter voor je geheugen dan alles voor 1 vak achter elkaar doen.
+                Probeer in de agenda leermomenten van verschillende vakken naast elkaar te zetten, in plaats
+                van dagen achter elkaar met steeds hetzelfde vak.
+              </p>
+            </Card>
+          )}
+
           <div className="flex flex-col gap-2">
             <p className="text-sm font-medium text-slate-700">
               Hoeveel werk is het voor jou, per vak? (bepaalt hoeveel leermomenten je krijgt)
@@ -152,6 +177,14 @@ export function ToetsweekPlanner({
                 je agenda
               </Link>
               .
+            </p>
+          )}
+          {clusterVakId && (
+            <p className="flex items-start gap-1.5 text-sm text-amber-700">
+              <Icon name="alert-circle" size={16} className="mt-0.5 shrink-0" />
+              Je hebt nu 3 of meer dagen achter elkaar alleen leermomenten voor{" "}
+              <span className="font-medium">{subjectNaam(clusterVakId)}</span> staan. Schuif in de agenda een
+              paar leermomenten van een ander vak ertussen - afwisselen onthoud je beter.
             </p>
           )}
 

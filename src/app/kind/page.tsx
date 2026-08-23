@@ -3,6 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/card";
 import { Icon } from "@/components/icon";
 import { KindVandaagLijst } from "@/components/kind-vandaag-lijst";
+import { WeekTerugblikVraag } from "@/components/week-terugblik-vraag";
+import { huidigeWeekMaandag } from "@/lib/week";
 import type { PlanningItem, Subject } from "@/lib/types";
 
 export default async function KindOverzicht() {
@@ -17,43 +19,57 @@ export default async function KindOverzicht() {
     .single();
 
   const vandaag = new Date().toISOString().slice(0, 10);
+  const weekMaandag = huidigeWeekMaandag();
 
-  const [{ data: vandaagData }, { data: teLaatData }, { data: voorstellenData }, { data: toetsData }, { data: subjectsData }] =
-    await Promise.all([
-      supabase
-        .from("planning_items")
-        .select("*")
-        .eq("family_id", profile!.family_id)
-        .eq("due_date", vandaag)
-        .neq("status", "voorstel"),
-      supabase
-        .from("planning_items")
-        .select("*")
-        .eq("family_id", profile!.family_id)
-        .lt("due_date", vandaag)
-        .eq("status", "open"),
-      supabase
-        .from("planning_items")
-        .select("*")
-        .eq("family_id", profile!.family_id)
-        .eq("status", "voorstel"),
-      supabase
-        .from("planning_items")
-        .select("*")
-        .eq("family_id", profile!.family_id)
-        .eq("type", "toets")
-        .gte("due_date", vandaag)
-        .order("due_date", { ascending: true })
-        .limit(1)
-        .maybeSingle(),
-      supabase.from("subjects").select("*").eq("family_id", profile!.family_id),
-    ]);
+  const [
+    { data: vandaagData },
+    { data: teLaatData },
+    { data: voorstellenData },
+    { data: toetsData },
+    { data: subjectsData },
+    { data: terugblikData },
+  ] = await Promise.all([
+    supabase
+      .from("planning_items")
+      .select("*")
+      .eq("family_id", profile!.family_id)
+      .eq("due_date", vandaag)
+      .neq("status", "voorstel"),
+    supabase
+      .from("planning_items")
+      .select("*")
+      .eq("family_id", profile!.family_id)
+      .lt("due_date", vandaag)
+      .eq("status", "open"),
+    supabase
+      .from("planning_items")
+      .select("*")
+      .eq("family_id", profile!.family_id)
+      .eq("status", "voorstel"),
+    supabase
+      .from("planning_items")
+      .select("*")
+      .eq("family_id", profile!.family_id)
+      .eq("type", "toets")
+      .gte("due_date", vandaag)
+      .order("due_date", { ascending: true })
+      .limit(1)
+      .maybeSingle(),
+    supabase.from("subjects").select("*").eq("family_id", profile!.family_id),
+    supabase
+      .from("week_terugblikken")
+      .select("id")
+      .eq("user_id", user!.id)
+      .eq("week_start", weekMaandag)
+      .maybeSingle(),
+  ]);
 
   const vandaagItems = (vandaagData ?? []) as PlanningItem[];
   const teLaat = (teLaatData ?? []) as PlanningItem[];
   const voorstellen = (voorstellenData ?? []) as PlanningItem[];
   const subjects = (subjectsData ?? []) as Subject[];
   const eerstvolgendeToets = toetsData as PlanningItem | null;
+  const heeftTerugblikDezeWeek = Boolean(terugblikData);
 
   const vandaagGedaan = vandaagItems.filter((i) => i.status === "klaar").length;
 
@@ -65,6 +81,8 @@ export default async function KindOverzicht() {
         </h1>
         <p className="mt-1 text-sm text-slate-500">Dit staat er voor je klaar.</p>
       </div>
+
+      {!heeftTerugblikDezeWeek && <WeekTerugblikVraag />}
 
       {eerstvolgendeToets && (
         <Card className="border-rose-100 bg-rose-50/60">

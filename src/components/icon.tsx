@@ -34,6 +34,9 @@ import {
   PartyPopper,
   Rocket,
   Loader2,
+  ThumbsUp,
+  ThumbsDown,
+  Meh,
   type LucideProps,
 } from "lucide-react";
 
@@ -73,6 +76,9 @@ export const ICONS = {
   party: PartyPopper,
   rocket: Rocket,
   loader: Loader2,
+  "thumbs-up": ThumbsUp,
+  "thumbs-down": ThumbsDown,
+  meh: Meh,
 } as const;
 
 export type IconName = keyof typeof ICONS;
