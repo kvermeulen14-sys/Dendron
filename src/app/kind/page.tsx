@@ -146,7 +146,7 @@ export default async function KindOverzicht() {
           <Card className="flex items-center gap-3 border-amber-100 bg-amber-50/60 transition-shadow hover:shadow-md">
             <Icon name="brain" size={20} className="text-amber-600" />
             <p className="text-sm font-medium text-amber-800">
-              {voorstellen.length} voorgestelde leermoment(en) wachten op jouw akkoord
+              {voorstellen.length} voorgestelde leermoment(en) - bevestig ze even
             </p>
           </Card>
         </Link>

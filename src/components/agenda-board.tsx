@@ -1168,13 +1168,13 @@ export function AgendaBoard({
             {type === "toets" && testTypes.length > 0 && (
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                  Toetsvorm (bepaalt het leeradvies)
+                  Soort toets (voor leertips)
                 </label>
                 <select
                   name="testTypeId"
                   className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
                 >
-                  <option value="">Standaard vuistregel</option>
+                  <option value="">Standaard</option>
                   {testTypes.map((t) => (
                     <option key={t.id} value={t.id}>
                       {t.name} ({t.dagen_van_tevoren} dagen vooraf, {t.aantal_leermomenten}x leren)
@@ -1196,7 +1196,7 @@ export function AgendaBoard({
               />
               {type === "toets" && (
                 <p className="mt-1.5 text-xs text-slate-500">
-                  Er worden automatisch gespreide leermomenten voorgesteld die je samen kunt
+                  Je krijgt er automatisch een paar leermomenten bij, verspreid vóór de toets - die kun je zelf
                   aanpassen.
                 </p>
               )}
@@ -1316,7 +1316,8 @@ export function AgendaBoard({
                     </button>
                   ) : (
                     <p className="mt-1.5 text-xs text-slate-500">
-                      Helpt om in te schatten wat er op een dag realistisch in past.
+                      Voor de hele taak samen, niet per keer dat je ermee bezig gaat. Helpt om in te schatten wat er
+                      op een dag realistisch in past.
                     </p>
                   )}
                   <input type="hidden" name="estimatedMinutes" value={estimatedMinutes ?? ""} />
@@ -1326,11 +1327,12 @@ export function AgendaBoard({
 
             <div>
               <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                Toelichting (optioneel)
+                Omschrijving (optioneel)
               </label>
               <textarea
                 name="description"
                 rows={2}
+                placeholder="bijv. paragraaf 3.2, opgave 5 t/m 10"
                 className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
               />
             </div>
