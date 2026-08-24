@@ -22,6 +22,7 @@ import {
   bewerkKennisOefenvraag,
   zetKennisOefenvraagStatus,
   verwijderKennisOefenvraag,
+  publiceerParagraaf,
 } from "@/lib/actions/kennis-bron-import";
 import type { KennisOnderdeel, KennisOefenvraag, KennisParagraafContext } from "@/lib/types";
 
@@ -247,6 +248,19 @@ function ParagraafRij({
 
   const aantalGepubliceerd = onderdelen.filter((o) => o.status === "gepubliceerd").length;
   const aantalConcept = onderdelen.length - aantalGepubliceerd;
+  const totaalConcept =
+    aantalConcept +
+    (context?.status === "concept" ? 1 : 0) +
+    oefenvragen.filter((v) => v.status === "concept").length;
+
+  function alleenPubliceren() {
+    setError(null);
+    startTransition(async () => {
+      const res = await publiceerParagraaf(subjectId, paragraafId);
+      if (res.error) setError(res.error);
+      router.refresh();
+    });
+  }
 
   function genereer() {
     setError(null);
@@ -370,6 +384,17 @@ function ParagraafRij({
           {error && <p className="text-xs text-rose-600">{error}</p>}
 
           <div className="flex flex-wrap gap-2">
+            {totaalConcept > 0 && (
+              <Button
+                variant="secondary"
+                size="md"
+                icon={<Icon name="check" size={15} />}
+                onClick={alleenPubliceren}
+                disabled={pending}
+              >
+                Alles publiceren ({totaalConcept})
+              </Button>
+            )}
             {uitIngebouwdeDataset && (
               <Button
                 variant="secondary"

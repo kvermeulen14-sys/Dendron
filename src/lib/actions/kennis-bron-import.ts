@@ -354,3 +354,41 @@ export async function verwijderKennisOefenvraag(id: string, subjectId: string) {
   revalidateVak(subjectId);
   return { success: true };
 }
+
+/**
+ * Publiceert in 1 keer alle 'concept'-onderdelen, de paragraafcontext en
+ * alle 'concept'-oefenvragen van 1 paragraaf - scheelt los doorklikken per
+ * kaartje na een controle-ronde.
+ */
+export async function publiceerParagraaf(subjectId: string, paragraafId: string) {
+  const ouder = await ouderProfiel();
+  if ("error" in ouder) return { error: ouder.error };
+  const { supabase } = ouder;
+
+  const nu = new Date().toISOString();
+  const [onderdelenRes, contextRes, oefenvragenRes] = await Promise.all([
+    supabase
+      .from("kennis_onderdelen")
+      .update({ status: "gepubliceerd", updated_at: nu })
+      .eq("subject_id", subjectId)
+      .eq("paragraaf_id", paragraafId)
+      .eq("status", "concept"),
+    supabase
+      .from("kennis_paragraaf_context")
+      .update({ status: "gepubliceerd", updated_at: nu })
+      .eq("subject_id", subjectId)
+      .eq("paragraaf_id", paragraafId)
+      .eq("status", "concept"),
+    supabase
+      .from("kennis_oefenvragen")
+      .update({ status: "gepubliceerd", updated_at: nu })
+      .eq("subject_id", subjectId)
+      .eq("paragraaf_id", paragraafId)
+      .eq("status", "concept"),
+  ]);
+  const fout = onderdelenRes.error || contextRes.error || oefenvragenRes.error;
+  if (fout) return { error: fout.message };
+
+  revalidateVak(subjectId);
+  return { success: true };
+}
