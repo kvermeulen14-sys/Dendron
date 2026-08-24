@@ -55,12 +55,23 @@ export function TweeMinutenOefenen({
   const [vraagVisuals, setVraagVisuals] = useState<VisualSpec[]>([]);
   const [opties, setOpties] = useState<string[] | null>(null);
   const [juisteOptie, setJuisteOptie] = useState<string | null>(null);
-  const [volgende, setVolgende] = useState<{ vraag: string; visuals: VisualSpec[]; opties: string[] | null } | null>(null);
+  const [volgende, setVolgende] = useState<{
+    vraag: string;
+    visuals: VisualSpec[];
+    opties: string[] | null;
+    zelfCheck: boolean;
+    zelfCheckAntwoord: string | null;
+  } | null>(null);
   const [antwoord, setAntwoord] = useState("");
   const [laatsteAntwoord, setLaatsteAntwoord] = useState("");
   const [feedback, setFeedback] = useState<{ tekst: string; beoordeling: Beoordeling } | null>(null);
   const [feedbackVisuals, setFeedbackVisuals] = useState<VisualSpec[]>([]);
   const [lesstofFragment, setLesstofFragment] = useState<LesstofFragment>(null);
+  const [juisteAntwoord, setJuisteAntwoord] = useState<string | null>(null);
+  const [zelfCheck, setZelfCheck] = useState(false);
+  const [zelfCheckAntwoord, setZelfCheckAntwoord] = useState<string | null>(null);
+  const [zelfCheckOnthuld, setZelfCheckOnthuld] = useState(false);
+  const [laatsteWasZelfCheck, setLaatsteWasZelfCheck] = useState(false);
   const [uitleg, setUitleg] = useState<string | null>(null);
   const [uitlegBezig, setUitlegBezig] = useState(false);
   const [gesteldeVragen, setGesteldeVragen] = useState<string[]>([]);
@@ -85,6 +96,11 @@ export function TweeMinutenOefenen({
     setFeedback(null);
     setFeedbackVisuals([]);
     setLesstofFragment(null);
+    setJuisteAntwoord(null);
+    setZelfCheck(false);
+    setZelfCheckAntwoord(null);
+    setZelfCheckOnthuld(false);
+    setLaatsteWasZelfCheck(false);
     setUitleg(null);
     setGesteldeVragen([]);
     setScopeInstructie(undefined);
@@ -127,6 +143,9 @@ export function TweeMinutenOefenen({
       setVraag(vraagTekst);
       setVraagVisuals(visuals);
       setOpties(Array.isArray(data.opties) && data.opties.length > 0 ? data.opties : null);
+      setZelfCheck(Boolean(data.zelfCheck));
+      setZelfCheckAntwoord(typeof data.zelfCheckAntwoord === "string" ? data.zelfCheckAntwoord : null);
+      setZelfCheckOnthuld(false);
       setVraagNr(1);
       setFeedback(null);
       setUitleg(null);
@@ -144,6 +163,7 @@ export function TweeMinutenOefenen({
     if (!subject || !vraag || !antwoordTeControleren.trim()) return;
     setError(null);
     setBezig(true);
+    const dieZelfCheckWas = zelfCheck;
     try {
       const res = await fetch("/api/overhoor", {
         method: "POST",
@@ -166,6 +186,8 @@ export function TweeMinutenOefenen({
       setFeedback({ tekst: feedbackTekst, beoordeling });
       setFeedbackVisuals(fVisuals);
       setJuisteOptie(typeof data.juisteOptie === "string" ? data.juisteOptie : null);
+      setJuisteAntwoord(typeof data.juisteAntwoord === "string" ? data.juisteAntwoord : null);
+      setLaatsteWasZelfCheck(dieZelfCheckWas);
       setLesstofFragment(normFragment(data.lesstofFragment));
       if (beoordeling === "goed" || beoordeling === "deels" || beoordeling === "fout") {
         setScore((s) => ({ ...s, [beoordeling]: s[beoordeling] + 1 }));
@@ -181,6 +203,8 @@ export function TweeMinutenOefenen({
         vraag: volgendeVraagTekst,
         visuals: volgendeVisuals,
         opties: Array.isArray(data.opties) && data.opties.length > 0 ? data.opties : null,
+        zelfCheck: Boolean(data.zelfCheck),
+        zelfCheckAntwoord: typeof data.zelfCheckAntwoord === "string" ? data.zelfCheckAntwoord : null,
       });
       setAntwoord("");
       setUitleg(null);
@@ -202,10 +226,14 @@ export function TweeMinutenOefenen({
     setVraagVisuals(volgende?.visuals ?? []);
     setOpties(volgende?.opties ?? null);
     setJuisteOptie(null);
+    setZelfCheck(volgende?.zelfCheck ?? false);
+    setZelfCheckAntwoord(volgende?.zelfCheckAntwoord ?? null);
+    setZelfCheckOnthuld(false);
     setVraagNr((n) => n + 1);
     setFeedback(null);
     setFeedbackVisuals([]);
     setLesstofFragment(null);
+    setJuisteAntwoord(null);
     setUitleg(null);
     setFase("vraag");
   }
@@ -313,6 +341,47 @@ export function TweeMinutenOefenen({
                     </button>
                   ))}
                 </div>
+              ) : zelfCheck ? (
+                <div className="flex flex-col gap-3">
+                  {!zelfCheckOnthuld ? (
+                    <>
+                      <p className="text-xs text-slate-500">
+                        Het antwoord hierop is lastig exact te typen - werk het op papier uit en controleer daarna zelf.
+                      </p>
+                      <Button variant="secondary" onClick={() => setZelfCheckOnthuld(true)} icon={<Icon name="eye" size={16} />}>
+                        Toon het juiste antwoord
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <div className="rounded-xl border border-accent-200 bg-accent-50/60 p-3 text-sm text-slate-700">
+                        <p className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-accent-700">
+                          <Icon name="check" size={13} />
+                          Het juiste antwoord
+                        </p>
+                        {zelfCheckAntwoord && <MarkdownTekst>{zelfCheckAntwoord}</MarkdownTekst>}
+                      </div>
+                      <p className="text-sm font-medium text-slate-700">Had jij dit goed?</p>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          loading={bezig}
+                          onClick={() => controleer("(zelf gecontroleerd: had ik goed)")}
+                          icon={<Icon name="thumbs-up" size={16} />}
+                        >
+                          Ja, had ik goed
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          loading={bezig}
+                          onClick={() => controleer("(zelf gecontroleerd: nog niet helemaal goed)")}
+                          icon={<Icon name="thumbs-down" size={16} />}
+                        >
+                          Nog niet helemaal
+                        </Button>
+                      </div>
+                    </>
+                  )}
+                </div>
               ) : (
                 <>
                   <textarea
@@ -370,6 +439,18 @@ export function TweeMinutenOefenen({
                     );
                   })}
                 </div>
+              )}
+              {!opties && laatsteWasZelfCheck && (
+                <p className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-500">
+                  <Icon name="check" size={14} className="text-slate-400" />
+                  Je hebt dit zelf op papier gecontroleerd.
+                </p>
+              )}
+              {!opties && !laatsteWasZelfCheck && juisteAntwoord && feedback.beoordeling !== "goed" && (
+                <p className="rounded-xl border border-emerald-200 bg-emerald-50/60 px-3.5 py-2.5 text-sm text-emerald-800">
+                  <span className="font-medium">Het juiste antwoord: </span>
+                  {juisteAntwoord}
+                </p>
               )}
               <div className={clsx("rounded-xl border p-3 text-sm", BEOORDELING_STIJL[feedback.beoordeling])}>
                 <MarkdownTekst>{feedback.tekst}</MarkdownTekst>

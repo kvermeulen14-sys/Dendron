@@ -38,6 +38,7 @@ import {
   ThumbsUp,
   ThumbsDown,
   Meh,
+  Eye,
   type LucideProps,
 } from "lucide-react";
 
@@ -80,6 +81,7 @@ export const ICONS = {
   "thumbs-up": ThumbsUp,
   "thumbs-down": ThumbsDown,
   meh: Meh,
+  eye: Eye,
   grip: GripVertical,
 } as const;
 

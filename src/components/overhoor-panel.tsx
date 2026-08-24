@@ -85,13 +85,24 @@ export function OverhoorPanel({
   const [vraagVisuals, setVraagVisuals] = useState<VisualSpec[]>([]);
   const [opties, setOpties] = useState<string[] | null>(null);
   const [juisteOptie, setJuisteOptie] = useState<string | null>(null);
-  const [volgende, setVolgende] = useState<{ vraag: string; visuals: VisualSpec[]; opties: string[] | null } | null>(null);
+  const [volgende, setVolgende] = useState<{
+    vraag: string;
+    visuals: VisualSpec[];
+    opties: string[] | null;
+    zelfCheck: boolean;
+    zelfCheckAntwoord: string | null;
+  } | null>(null);
   const [antwoord, setAntwoord] = useState("");
   const [laatsteAntwoord, setLaatsteAntwoord] = useState("");
   const [feedback, setFeedback] = useState<string | null>(null);
   const [feedbackVisuals, setFeedbackVisuals] = useState<VisualSpec[]>([]);
   const [beoordeling, setBeoordeling] = useState<Beoordeling | null>(null);
   const [lesstofFragment, setLesstofFragment] = useState<LesstofFragment>(null);
+  const [juisteAntwoord, setJuisteAntwoord] = useState<string | null>(null);
+  const [zelfCheck, setZelfCheck] = useState(false);
+  const [zelfCheckAntwoord, setZelfCheckAntwoord] = useState<string | null>(null);
+  const [zelfCheckOnthuld, setZelfCheckOnthuld] = useState(false);
+  const [laatsteWasZelfCheck, setLaatsteWasZelfCheck] = useState(false);
   const [gesteldeVragen, setGesteldeVragen] = useState<string[]>([]);
   const [transcript, setTranscript] = useState<OverhoorTranscriptRegel[]>([]);
   const [score, setScore] = useState({ goed: 0, deels: 0, fout: 0 });
@@ -110,6 +121,11 @@ export function OverhoorPanel({
     setFeedbackVisuals([]);
     setBeoordeling(null);
     setLesstofFragment(null);
+    setJuisteAntwoord(null);
+    setZelfCheck(false);
+    setZelfCheckAntwoord(null);
+    setZelfCheckOnthuld(false);
+    setLaatsteWasZelfCheck(false);
     setGesteldeVragen([]);
     setTranscript([]);
     setScopeInstructie(null);
@@ -161,6 +177,9 @@ export function OverhoorPanel({
       setVraag(vraagTekst);
       setVraagVisuals(visuals);
       setOpties(normOpties(data.opties));
+      setZelfCheck(Boolean(data.zelfCheck));
+      setZelfCheckAntwoord(typeof data.zelfCheckAntwoord === "string" ? data.zelfCheckAntwoord : null);
+      setZelfCheckOnthuld(false);
       setVraagIndex(1);
       setFase("vraag");
     } catch (e) {
@@ -175,6 +194,7 @@ export function OverhoorPanel({
     if (!vraag || !gegevenAntwoord.trim()) return;
     setBezig(true);
     setError(null);
+    const dieZelfCheckWas = zelfCheck;
     try {
       const res = await fetch("/api/overhoor", {
         method: "POST",
@@ -201,6 +221,8 @@ export function OverhoorPanel({
       setFeedbackVisuals(fVisuals);
       setBeoordeling(nieuweBeoordeling);
       setJuisteOptie(typeof data.juisteOptie === "string" ? data.juisteOptie : null);
+      setJuisteAntwoord(typeof data.juisteAntwoord === "string" ? data.juisteAntwoord : null);
+      setLaatsteWasZelfCheck(dieZelfCheckWas);
       setLesstofFragment(normFragment(data.lesstofFragment));
       setLaatsteAntwoord(gegevenAntwoord);
       setGesteldeVragen((prev) => [...prev, vraag]);
@@ -209,7 +231,13 @@ export function OverhoorPanel({
         { vraag, antwoord: gegevenAntwoord, feedback: data.feedback || "", beoordeling: nieuweBeoordeling },
       ]);
       const { tekst: volgendeVraagTekst, visuals: volgendeVisuals } = extraheerVisuals(data.vraag ?? "");
-      setVolgende({ vraag: volgendeVraagTekst, visuals: volgendeVisuals, opties: normOpties(data.opties) });
+      setVolgende({
+        vraag: volgendeVraagTekst,
+        visuals: volgendeVisuals,
+        opties: normOpties(data.opties),
+        zelfCheck: Boolean(data.zelfCheck),
+        zelfCheckAntwoord: typeof data.zelfCheckAntwoord === "string" ? data.zelfCheckAntwoord : null,
+      });
       setAntwoord("");
       setFase("feedback");
     } catch (e) {
@@ -232,11 +260,15 @@ export function OverhoorPanel({
     setVraagVisuals(volgende.visuals);
     setOpties(volgende.opties);
     setJuisteOptie(null);
+    setZelfCheck(volgende.zelfCheck);
+    setZelfCheckAntwoord(volgende.zelfCheckAntwoord);
+    setZelfCheckOnthuld(false);
     setVolgende(null);
     setFeedback(null);
     setFeedbackVisuals([]);
     setBeoordeling(null);
     setLesstofFragment(null);
+    setJuisteAntwoord(null);
     setVraagIndex((n) => n + 1);
     setFase("vraag");
   }
@@ -525,11 +557,24 @@ export function OverhoorPanel({
                           );
                         })}
                       </div>
-                    ) : (
-                      <p className="rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-600">
-                        <span className="font-medium text-slate-400">Jouw antwoord: </span>
-                        {laatsteAntwoord}
+                    ) : laatsteWasZelfCheck ? (
+                      <p className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-500">
+                        <Icon name="check" size={14} className="text-slate-400" />
+                        Je hebt dit zelf op papier gecontroleerd.
                       </p>
+                    ) : (
+                      <>
+                        <p className="rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-600">
+                          <span className="font-medium text-slate-400">Jouw antwoord: </span>
+                          {laatsteAntwoord}
+                        </p>
+                        {juisteAntwoord && beoordeling !== "goed" && (
+                          <p className="rounded-xl border border-emerald-200 bg-emerald-50/60 px-3.5 py-2.5 text-sm text-emerald-800">
+                            <span className="font-medium">Het juiste antwoord: </span>
+                            {juisteAntwoord}
+                          </p>
+                        )}
+                      </>
                     )}
                     {beoordeling && beoordeling !== "geen" && (
                       <div
@@ -576,6 +621,47 @@ export function OverhoorPanel({
                         {optie}
                       </button>
                     ))}
+                  </div>
+                ) : zelfCheck ? (
+                  <div className="flex flex-col gap-3">
+                    {!zelfCheckOnthuld ? (
+                      <>
+                        <p className="text-xs text-slate-500">
+                          Het antwoord hierop is lastig exact te typen - werk het op papier uit en controleer daarna zelf.
+                        </p>
+                        <Button variant="secondary" onClick={() => setZelfCheckOnthuld(true)} icon={<Icon name="eye" size={16} />}>
+                          Toon het juiste antwoord
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <div className="rounded-xl border border-accent-200 bg-accent-50/60 p-3 text-sm text-slate-700">
+                          <p className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-accent-700">
+                            <Icon name="check" size={13} />
+                            Het juiste antwoord
+                          </p>
+                          {zelfCheckAntwoord && <MarkdownTekst>{zelfCheckAntwoord}</MarkdownTekst>}
+                        </div>
+                        <p className="text-sm font-medium text-slate-700">Had jij dit goed?</p>
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            loading={bezig}
+                            onClick={() => controleer("(zelf gecontroleerd: had ik goed)")}
+                            icon={<Icon name="thumbs-up" size={16} />}
+                          >
+                            Ja, had ik goed
+                          </Button>
+                          <Button
+                            variant="secondary"
+                            loading={bezig}
+                            onClick={() => controleer("(zelf gecontroleerd: nog niet helemaal goed)")}
+                            icon={<Icon name="thumbs-down" size={16} />}
+                          >
+                            Nog niet helemaal
+                          </Button>
+                        </div>
+                      </>
+                    )}
                   </div>
                 ) : (
                   <>

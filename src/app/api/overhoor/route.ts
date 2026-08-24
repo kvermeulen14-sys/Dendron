@@ -42,6 +42,23 @@ const ResponsSchema = z.object({
     .describe(
       "Alleen als de lesstof hieronder is opgebouwd uit kennisonderdelen (herkenbaar aan '### naam'-koppen): de EXACTE naam van het onderdeel waar de ZOJUIST BEOORDEELDE vraag over ging (niet de nieuwe vraag hierboven). Null als er nog geen vorige vraag was, of de lesstof geen kennisonderdelen-koppen bevat."
     ),
+  juisteAntwoord: z
+    .string()
+    .nullable()
+    .describe(
+      "Het EXACTE juiste antwoord op de ZOJUIST BEOORDEELDE vraag (niet de nieuwe vraag hierboven) - kort en concreet (het getal/de term/de formule), geen uitleg. Verplicht bij beoordeling 'deels' of 'fout' op een open vraag. Null bij 'goed' of 'geen', en bij een meerkeuzevraag (die heeft al 'juisteOptie')."
+    ),
+  zelfCheck: z
+    .boolean()
+    .describe(
+      "True als de NIEUWE vraag hierboven een open vraag is waarvan het juiste antwoord lastig exact te typen is (bv. machten, breuken, wortels, of een meerstaps herleiding) - de leerling werkt het dan op papier uit en controleert zelf i.p.v. intypen. Bij een meerkeuzevraag of een vraag met een kort simpel antwoord: altijd false."
+    ),
+  zelfCheckAntwoord: z
+    .string()
+    .nullable()
+    .describe(
+      "Alleen als zelfCheck true is: het volledige juiste antwoord/uitwerking van de NIEUWE vraag hierboven, in dezelfde notatiestijl als de rest (² i.p.v. ^2, breuk-blok voor breuken). Null als zelfCheck false is."
+    ),
 });
 
 const LEERFASE_INSTRUCTIE: Record<string, string> = {
@@ -230,11 +247,14 @@ ${
 }
 ${
   vorigeVraag && vorigAntwoord
-    ? `Beoordeel eerst dit antwoord van de leerling:\nVraag: ${vorigeVraag}\nAntwoord van de leerling: ${vorigAntwoord}\nGeef een beoordeling (goed/deels/fout). Bij 'goed': korte felicitatie MET in 1 zin WAAROM het klopt (zo blijft ook een gokje dat toevallig goed was leerzaam, en wordt goed gokken niet beloond met niets). Bij 'deels' of 'fout': geef GEEN kale foutmelding en niet alleen een hint, maar een echte, behulpzame uitleg (2-4 zinnen) die het onderliggende idee verduidelijkt - zodat de leerling begrijpt WAAROM het niet (helemaal) klopte en hoe het wel zit. BELANGRIJK: een antwoord dat geen echte inhoudelijke poging is (bijvoorbeeld enkel "?", "weet niet", "geen idee", of duidelijk willekeurige tekst) is ALTIJD 'fout' - beoordeel zo'n antwoord nooit als 'goed' of 'deels', ook al lijkt het toevallig ergens op te passen. Vul ook "beoordeeldOnderdeelNaam" in als de lesstof hieronder "### naam"-koppen bevat: de EXACTE naam van het kopje waar deze zojuist beoordeelde vraag het beste bij past.\n\n`
+    ? vorigAntwoord.startsWith("(zelf gecontroleerd:")
+      ? `De leerling heeft de vorige vraag op papier uitgewerkt en zelf tegen het juiste antwoord gecontroleerd, met dit resultaat: ${vorigAntwoord}\nVraag: ${vorigeVraag}\nVertrouw dit zelf-gerapporteerde resultaat direct - beoordeel niet zelf opnieuw. Zet "beoordeling" op 'goed' bij "had ik goed", of 'fout' bij "nog niet helemaal goed". Geef bij 'goed' een korte felicitatie. Geef bij 'fout' een korte, bemoedigende uitleg (2-3 zinnen) van het onderliggende idee, zodat het de volgende keer wel lukt. Laat "juisteAntwoord" op null (de leerling heeft het antwoord al gezien) en vul "beoordeeldOnderdeelNaam" in zoals hieronder beschreven.\n\n`
+      : `Beoordeel eerst dit antwoord van de leerling:\nVraag: ${vorigeVraag}\nAntwoord van de leerling: ${vorigAntwoord}\nGeef een beoordeling (goed/deels/fout). Bij 'goed': korte felicitatie MET in 1 zin WAAROM het klopt (zo blijft ook een gokje dat toevallig goed was leerzaam, en wordt goed gokken niet beloond met niets). Bij 'deels' of 'fout': geef GEEN kale foutmelding en niet alleen een hint, maar een echte, behulpzame uitleg (2-4 zinnen) die het onderliggende idee verduidelijkt - zodat de leerling begrijpt WAAROM het niet (helemaal) klopte en hoe het wel zit, EN vul "juisteAntwoord" in met het exacte juiste antwoord (kort, geen uitleg - alleen bij een open vraag, niet bij meerkeuze). BELANGRIJK: een antwoord dat geen echte inhoudelijke poging is (bijvoorbeeld enkel "?", "weet niet", "geen idee", of duidelijk willekeurige tekst) is ALTIJD 'fout' - beoordeel zo'n antwoord nooit als 'goed' of 'deels', ook al lijkt het toevallig ergens op te passen. Vul ook "beoordeeldOnderdeelNaam" in als de lesstof hieronder "### naam"-koppen bevat: de EXACTE naam van het kopje waar deze zojuist beoordeelde vraag het beste bij past.\n\n`
     : "Er is nog geen vorig antwoord - laat feedback leeg en beoordeling op 'geen'.\n\n"
 }Stel daarna een NIEUWE vraag over de lesstof hieronder. Deze vragen zijn deze sessie al gesteld, stel geen vraag die daar erg op lijkt: ${
     Array.isArray(gesteldeVragen) && gesteldeVragen.length > 0 ? gesteldeVragen.join(" | ") : "(nog geen)"
   }
+Bepaal voor deze NIEUWE vraag ook "zelfCheck": true als het juiste antwoord lastig exact te typen is (machten, breuken, wortels, een meerstaps herleiding) - vul dan ook "zelfCheckAntwoord" met het volledige juiste antwoord. Bij een meerkeuzevraag of een vraag met een kort, simpel antwoord (een getal, woord, jaartal): "zelfCheck" false en "zelfCheckAntwoord" null.
 
 LESSTOF:
 ${kennisbank}`;
