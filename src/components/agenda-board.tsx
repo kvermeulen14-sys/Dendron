@@ -1031,19 +1031,6 @@ export function AgendaBoard({
         </Card>
       )}
 
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
-        {(Object.entries(STATUS_META) as [PlanningItem["status"], (typeof STATUS_META)[keyof typeof STATUS_META]][]).map(
-          ([status, meta]) => (
-            <span key={status} className="flex items-center gap-1.5">
-              <span className={clsx("h-2 w-2 rounded-full", meta.dot)} />
-              {meta.label}
-            </span>
-          )
-        )}
-        <span className="text-slate-300">|</span>
-        <span>Tik op een taak voor details</span>
-      </div>
-
       {/* Puur navigatie, geen dag-informatie meer hier - dag/datum/capaciteit
           staat al in de kalendergrid (en in elke dag-kop in de lijstweergave),
           dus dit was letterlijk dubbelop. */}
@@ -2426,6 +2413,21 @@ export function AgendaBoard({
             </div>
           );
         })}
+      </div>
+
+      {/* Onder de agenda, niet erboven - zo staat de agenda zelf zoveel
+          mogelijk meteen in beeld. */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
+        {(Object.entries(STATUS_META) as [PlanningItem["status"], (typeof STATUS_META)[keyof typeof STATUS_META]][]).map(
+          ([status, meta]) => (
+            <span key={status} className="flex items-center gap-1.5">
+              <span className={clsx("h-2 w-2 rounded-full", meta.dot)} />
+              {meta.label}
+            </span>
+          )
+        )}
+        <span className="text-slate-300">|</span>
+        <span>Tik op een taak voor details</span>
       </div>
 
       {/* Wat je vasthoudt tijdens het slepen in de lijstweergave. */}
