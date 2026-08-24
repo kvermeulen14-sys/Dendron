@@ -399,7 +399,7 @@ export function AgendaBoard({
   const [bewerkError, setBewerkError] = useState<string | null>(null);
   const [detailItem, setDetailItem] = useState<PlanningItem | null>(null);
   const [weergave, setWeergave] = useState<"rooster" | "lijst">("rooster");
-  // Klik-op-vak-in-het-rooster -> snel huiswerk toevoegen (alleen ouder-kant,
+  // Klik-op-vak-in-het-rooster -> snel huiswerk toevoegen (ouder en kind,
   // zie RoosterBlokHuiswerkModal).
   const [huiswerkBlok, setHuiswerkBlok] = useState<{ subjectId: string; titel: string; datum: string } | null>(null);
   // Waar het kaartje zou landen als je nu loslaat - als kwartier-lijn zichtbaar.
@@ -2044,7 +2044,7 @@ export function AgendaBoard({
                 }}
               >
                 {roosterBlokken.map((b, bi) => {
-                  const klikbaar = !voorKind && !b.isFietsen && Boolean(b.subjectId);
+                  const klikbaar = !b.isFietsen && Boolean(b.subjectId);
                   return (
                     <div
                       key={`r-${bi}`}
@@ -2251,7 +2251,7 @@ export function AgendaBoard({
               {roosterBlokken.length > 0 && (
                 <div className="mb-2 flex flex-col gap-1 rounded-xl border border-slate-100 bg-slate-50/60 p-2.5">
                   {roosterBlokken.map((b, i) => {
-                    const klikbaar = !voorKind && !b.isFietsen && Boolean(b.subjectId);
+                    const klikbaar = !b.isFietsen && Boolean(b.subjectId);
                     return (
                       <div
                         key={i}

@@ -10,13 +10,14 @@ import { maakPlanningItem } from "@/lib/actions/planning";
 import type { PlanningItem } from "@/lib/types";
 
 /**
- * Klik-op-een-rooster-blokje-flow (ouder-agenda): snel huiswerk toevoegen voor
- * het vak van dat lesuur, met een verplichte deadline - het rooster
- * (rooster_items) zelf blijft altijd ongewijzigd, dit maakt gewoon een los
- * planning_item aan (zelfde actie als "Nieuw item"/de rooster-beheerpagina).
- * Na het opslaan opent meteen de Planningshulp-chat, zodat er direct
- * (rekening houdend met de rest van de week/werkdruk) besproken wordt wanneer
- * er echt aan gewerkt gaat worden - een deadline alleen is nog geen planning.
+ * Klik-op-een-rooster-blokje-flow (agenda, ouder en kind): snel huiswerk
+ * toevoegen voor het vak van dat lesuur, met een verplichte deadline - het
+ * rooster (rooster_items) zelf blijft altijd ongewijzigd, dit maakt gewoon
+ * een los planning_item aan (zelfde actie als "Nieuw item"/de
+ * rooster-beheerpagina). Na het opslaan opent meteen de Planningshulp-chat,
+ * zodat er direct (rekening houdend met de rest van de week/werkdruk)
+ * besproken wordt wanneer er echt aan gewerkt gaat worden - een deadline
+ * alleen is nog geen planning.
  */
 export function RoosterBlokHuiswerkModal({
   open,
