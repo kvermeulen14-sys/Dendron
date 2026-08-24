@@ -65,10 +65,16 @@ export async function genereerGestructureerd<T>(
   // een nieuwe poging het meestal gewoon oplost.
   try {
     return await eenPoging();
-  } catch {
+  } catch (eersteFout) {
     try {
       return await eenPoging();
-    } catch {
+    } catch (tweedeFout) {
+      // Volledige fout (bv. de exacte zod-validatiefout of API-foutmelding)
+      // alleen naar de serverlogs, nooit naar de gebruiker - die krijgt een
+      // begrijpelijke generieke melding, maar dit maakt het bij herhaalde
+      // fouten mogelijk om de echte oorzaak in de Netlify-functielogs terug
+      // te vinden.
+      console.error("genereerGestructureerd: 2 pogingen mislukt.", { eersteFout, tweedeFout });
       throw new Error("De AI gaf geen volledig/geldig resultaat terug - probeer het opnieuw.");
     }
   }

@@ -42,9 +42,11 @@ export const OnderdeelSchema = z.object({
   regel: z.string().describe("De regel zelf, kort en scherp (1-2 zinnen), zoals een leerling die zou opschrijven."),
   voorbeelden: z
     .array(z.string())
-    .min(2)
+    .min(1)
     .max(3)
-    .describe("2 of 3 losse, eenvoudige rekenvoorbeelden die de regel toepassen, elk als 1 regel tekst."),
+    .describe(
+      "1 tot 3 losse, eenvoudige rekenvoorbeelden die de regel toepassen, elk als 1 regel tekst. Gebruik bij voorkeur 2-3, maar bij een bron die maar 1 duidelijk voorbeeld geeft is 1 ook goed - verzin er geen tweede bij als dat niet natuurlijk is."
+    ),
   gecombineerdVoorbeeld: z
     .string()
     .nullable()
