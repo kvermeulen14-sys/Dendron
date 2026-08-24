@@ -36,6 +36,12 @@ const ResponsSchema = z.object({
     .describe(
       "Alleen bij een meerkeuzevraag: de letterlijke tekst van de juiste optie uit de 'opties' van de NET beoordeelde vraag (dus niet de nieuwe vraag hierboven) - hiermee kan de app die groen markeren. Null als er nog geen antwoord was, bij een open vraag, of als de vorige vraag geen meerkeuzevraag was."
     ),
+  beoordeeldOnderdeelNaam: z
+    .string()
+    .nullable()
+    .describe(
+      "Alleen als de lesstof hieronder is opgebouwd uit kennisonderdelen (herkenbaar aan '### naam'-koppen): de EXACTE naam van het onderdeel waar de ZOJUIST BEOORDEELDE vraag over ging (niet de nieuwe vraag hierboven). Null als er nog geen vorige vraag was, of de lesstof geen kennisonderdelen-koppen bevat."
+    ),
 });
 
 const LEERFASE_INSTRUCTIE: Record<string, string> = {
@@ -224,7 +230,7 @@ ${
 }
 ${
   vorigeVraag && vorigAntwoord
-    ? `Beoordeel eerst dit antwoord van de leerling:\nVraag: ${vorigeVraag}\nAntwoord van de leerling: ${vorigAntwoord}\nGeef een beoordeling (goed/deels/fout). Bij 'goed': korte felicitatie MET in 1 zin WAAROM het klopt (zo blijft ook een gokje dat toevallig goed was leerzaam, en wordt goed gokken niet beloond met niets). Bij 'deels' of 'fout': geef GEEN kale foutmelding en niet alleen een hint, maar een echte, behulpzame uitleg (2-4 zinnen) die het onderliggende idee verduidelijkt - zodat de leerling begrijpt WAAROM het niet (helemaal) klopte en hoe het wel zit. BELANGRIJK: een antwoord dat geen echte inhoudelijke poging is (bijvoorbeeld enkel "?", "weet niet", "geen idee", of duidelijk willekeurige tekst) is ALTIJD 'fout' - beoordeel zo'n antwoord nooit als 'goed' of 'deels', ook al lijkt het toevallig ergens op te passen.\n\n`
+    ? `Beoordeel eerst dit antwoord van de leerling:\nVraag: ${vorigeVraag}\nAntwoord van de leerling: ${vorigAntwoord}\nGeef een beoordeling (goed/deels/fout). Bij 'goed': korte felicitatie MET in 1 zin WAAROM het klopt (zo blijft ook een gokje dat toevallig goed was leerzaam, en wordt goed gokken niet beloond met niets). Bij 'deels' of 'fout': geef GEEN kale foutmelding en niet alleen een hint, maar een echte, behulpzame uitleg (2-4 zinnen) die het onderliggende idee verduidelijkt - zodat de leerling begrijpt WAAROM het niet (helemaal) klopte en hoe het wel zit. BELANGRIJK: een antwoord dat geen echte inhoudelijke poging is (bijvoorbeeld enkel "?", "weet niet", "geen idee", of duidelijk willekeurige tekst) is ALTIJD 'fout' - beoordeel zo'n antwoord nooit als 'goed' of 'deels', ook al lijkt het toevallig ergens op te passen. Vul ook "beoordeeldOnderdeelNaam" in als de lesstof hieronder "### naam"-koppen bevat: de EXACTE naam van het kopje waar deze zojuist beoordeelde vraag het beste bij past.\n\n`
     : "Er is nog geen vorig antwoord - laat feedback leeg en beoordeling op 'geen'.\n\n"
 }Stel daarna een NIEUWE vraag over de lesstof hieronder. Deze vragen zijn deze sessie al gesteld, stel geen vraag die daar erg op lijkt: ${
     Array.isArray(gesteldeVragen) && gesteldeVragen.length > 0 ? gesteldeVragen.join(" | ") : "(nog geen)"
@@ -245,9 +251,34 @@ ${kennisbank}`;
     // Bij een niet-volledig-goed antwoord: het echte lesstof-fragment erbij
     // zoeken (deterministisch, geen AI-parafrase) zodat de leerling de
     // theorie zelf kan naslaan terwijl het nog vers is.
+    //
+    // Bij kennisonderdelen eerst proberen het onderdeel op te zoeken dat de
+    // AI zelf noemde (beoordeeldOnderdeelNaam) - exact en betrouwbaar, i.p.v.
+    // te gokken via woord-overlap. Die keyword-matching (kiesLesstofFragment)
+    // was gebouwd voor hele materials-paragrafen (met een paragraafnummer als
+    // sterk signaal); bij korte, losse kennisonderdelen zonder paragraafnummer
+    // in de vraagtekst zelf bleek die matching onbetrouwbaar en koos hij
+    // geregeld een onderdeel dat inhoudelijk niets met de vraag te maken had.
     let lesstofFragment: { titel: string; tekst: string } | null = null;
     if (vorigeVraag && vorigAntwoord && (geparsed.beoordeling === "deels" || geparsed.beoordeling === "fout")) {
-      lesstofFragment = kiesLesstofFragment(materialenVoorMatching, `${vorigeVraag} ${vorigAntwoord}`);
+      const onderdeelViaNaam =
+        heeftKennisOnderdelen && geparsed.beoordeeldOnderdeelNaam
+          ? (kennisOnderdelen ?? []).find(
+              (o) => o.naam.trim().toLowerCase() === geparsed.beoordeeldOnderdeelNaam!.trim().toLowerCase()
+            )
+          : undefined;
+
+      if (onderdeelViaNaam) {
+        lesstofFragment = {
+          titel: onderdeelViaNaam.naam,
+          tekst: [onderdeelViaNaam.regel, ...onderdeelViaNaam.voorbeelden].join(" "),
+        };
+      } else if (!heeftKennisOnderdelen) {
+        lesstofFragment = kiesLesstofFragment(materialenVoorMatching, `${vorigeVraag} ${vorigAntwoord}`);
+      }
+      // heeftKennisOnderdelen zonder geldige naam-match: liever geen fragment
+      // tonen dan een willekeurig/irrelevant onderdeel via de zwakke
+      // keyword-matching.
     }
 
     return NextResponse.json({ ...geparsed, lesstofFragment });
