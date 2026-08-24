@@ -85,26 +85,31 @@ export default async function VakDetailPage({
         <OverhoorResultaten sessies={(overhoorSessies ?? []) as OverhoorSessie[]} />
       </Card>
 
-      {(isWiskunde || heeftKennisbank) && (
+      <div>
+        <h2 className="mb-3 text-base font-semibold text-slate-900">Kennisonderdelen (regel-niveau)</h2>
+        <KennisOnderdelenBeheer
+          subjectId={id}
+          onderdelen={(kennisOnderdelen ?? []) as KennisOnderdeel[]}
+          contexten={(kennisContexten ?? []) as KennisParagraafContext[]}
+          oefenvragen={(kennisOefenvragen ?? []) as KennisOefenvraag[]}
+          toonIngebouwdePilot={isWiskunde}
+        />
+      </div>
+
+      {/* Zodra dit vak kennisonderdelen heeft, is dat de ene bron van waarheid
+          (zie ook chat/oefenen) - lesstof los toevoegen zou dan weer 2
+          plekken geven om bij te houden, dus dan niet meer tonen. Voor een
+          vak zonder kennisonderdelen blijft dit de manier om lesstof toe te
+          voegen. */}
+      {!heeftKennisbank && (
         <div>
-          <h2 className="mb-3 text-base font-semibold text-slate-900">Kennisonderdelen (regel-niveau)</h2>
-          <KennisOnderdelenBeheer
-            subjectId={id}
-            onderdelen={(kennisOnderdelen ?? []) as KennisOnderdeel[]}
-            contexten={(kennisContexten ?? []) as KennisParagraafContext[]}
-            oefenvragen={(kennisOefenvragen ?? []) as KennisOefenvraag[]}
-            toonIngebouwdePilot={isWiskunde}
-          />
+          <h2 className="mb-3 text-base font-semibold text-slate-900">Lesstof toevoegen</h2>
+          <KennisbankUploader subjectId={id} />
+          <div className="mt-3">
+            <MateriaalForm subjectId={id} />
+          </div>
         </div>
       )}
-
-      <div>
-        <h2 className="mb-3 text-base font-semibold text-slate-900">Lesstof toevoegen</h2>
-        <KennisbankUploader subjectId={id} />
-        <div className="mt-3">
-          <MateriaalForm subjectId={id} />
-        </div>
-      </div>
 
       <div>
         <div className="mb-3 flex items-center justify-between gap-2">
