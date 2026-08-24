@@ -42,10 +42,13 @@ import {
   CAPACITEIT_META,
   berekenDagCapaciteit,
   capaciteitTekst,
+  dagRitmesPerWeek,
   tijdNaarMinuten,
+  vensterTekst,
   type DagCapaciteit,
 } from "@/lib/capaciteit";
 import type {
+  DagInstelling,
   JaarEvent,
   PlanningItem,
   PlanningType,
@@ -236,28 +239,31 @@ function roosterBlokkenVoorDag(
   const periode = vindPeriode(periodes, iso);
   const dagUitzonderingen = uitzonderingen.filter((u) => u.datum === iso);
   // Een "vervallen"-uitzondering zonder gekoppeld lesuur betekent "hele dag
-  // vervalt" (gekozen via "Hele dag" i.p.v. 1 specifiek lesuur).
-  if (dagUitzonderingen.some((u) => u.type === "vervallen" && !u.origineel_item_id)) return [];
+  // vervalt" (gekozen via "Hele dag" i.p.v. 1 specifiek lesuur) - dan vervallen
+  // alle gewone lessen, maar een los toegevoegde "extra"-activiteit die dag
+  // (bv. een schoolreisje) blijft wel gewoon staan.
+  const heleDagVervallen = dagUitzonderingen.some((u) => u.type === "vervallen" && !u.origineel_item_id);
   const vervallenIds = new Set(dagUitzonderingen.filter((u) => u.type === "vervallen").map((u) => u.origineel_item_id));
   const gewijzigdMap = new Map(
     dagUitzonderingen.filter((u) => u.type === "gewijzigd").map((u) => [u.origineel_item_id, u])
   );
 
-  let lessen: { titel: string; start_tijd: string; eind_tijd: string; bron: "rooster" | "gewijzigd" | "extra" }[] = periode
-    ? roosterItems
-        .filter((i) => i.periode_id === periode.id && i.dag_van_week === weekdag && !vervallenIds.has(i.id))
-        .map((i) => {
-          const wijziging = gewijzigdMap.get(i.id);
-          return wijziging
-            ? {
-                titel: wijziging.titel ?? i.titel,
-                start_tijd: wijziging.start_tijd ?? i.start_tijd,
-                eind_tijd: wijziging.eind_tijd ?? i.eind_tijd,
-                bron: "gewijzigd" as const,
-              }
-            : { titel: i.titel, start_tijd: i.start_tijd, eind_tijd: i.eind_tijd, bron: "rooster" as const };
-        })
-    : [];
+  let lessen: { titel: string; start_tijd: string; eind_tijd: string; bron: "rooster" | "gewijzigd" | "extra" }[] =
+    periode && !heleDagVervallen
+      ? roosterItems
+          .filter((i) => i.periode_id === periode.id && i.dag_van_week === weekdag && !vervallenIds.has(i.id))
+          .map((i) => {
+            const wijziging = gewijzigdMap.get(i.id);
+            return wijziging
+              ? {
+                  titel: wijziging.titel ?? i.titel,
+                  start_tijd: wijziging.start_tijd ?? i.start_tijd,
+                  eind_tijd: wijziging.eind_tijd ?? i.eind_tijd,
+                  bron: "gewijzigd" as const,
+                }
+              : { titel: i.titel, start_tijd: i.start_tijd, eind_tijd: i.eind_tijd, bron: "rooster" as const };
+          })
+      : [];
 
   for (const extra of dagUitzonderingen.filter((u) => u.type === "extra")) {
     if (extra.titel && extra.start_tijd && extra.eind_tijd) {
@@ -314,7 +320,7 @@ export function AgendaBoard({
   roosterItems,
   uitzonderingen,
   reistijdMinuten,
-  avondGrens,
+  dagInstellingen,
   jaarEvents,
   voorKind = false,
 }: {
@@ -325,8 +331,8 @@ export function AgendaBoard({
   roosterItems: RoosterItem[];
   uitzonderingen: RoosterUitzondering[];
   reistijdMinuten: number;
-  /** Tot hoe laat er 's avonds gepland mag worden, bv. "20:30". */
-  avondGrens: string;
+  /** Ochtend/avond/eten-ritme per weekdag, zie /ouder/rooster. */
+  dagInstellingen: DagInstelling[];
   jaarEvents: JaarEvent[];
   /** Kind-omgeving: begint in de rustigere lijstweergave i.p.v. het dichte roosterraster, en toont een link naar Focusmodus. */
   voorKind?: boolean;
@@ -361,7 +367,7 @@ export function AgendaBoard({
   );
   const klaarBevestiging = useKlaarBevestiging();
 
-  const avondGrensMinuten = useMemo(() => tijdNaarMinuten(avondGrens), [avondGrens]);
+  const ritmesPerWeek = useMemo(() => dagRitmesPerWeek(dagInstellingen), [dagInstellingen]);
 
   // Wat eerdere taken leerden over hoe lang dit soort werk echt duurt.
   const kalibratie = useMemo(() => berekenKalibratie(items), [items]);
@@ -417,9 +423,9 @@ export function AgendaBoard({
       berekenDagCapaciteit({
         roosterBlokken: vandaagRoosterBlokken,
         items: items.filter((i) => i.due_date === vandaagIso),
-        avondGrensMinuten,
+        ritme: ritmesPerWeek.get(naarIsoWeekdag(new Date(vandaagIso + "T00:00:00")))!,
       }),
-    [items, vandaagIso, vandaagRoosterBlokken, avondGrensMinuten]
+    [items, vandaagIso, vandaagRoosterBlokken, ritmesPerWeek]
   );
 
   // Leren in delen werkt alleen als je ook ziet dat je ermee bezig bent: op het
@@ -484,12 +490,12 @@ export function AgendaBoard({
         berekenDagCapaciteit({
           roosterBlokken: roosterPerDag.get(iso) ?? [],
           items: itemsPerDag.get(iso) ?? [],
-          avondGrensMinuten,
+          ritme: ritmesPerWeek.get(naarIsoWeekdag(dag))!,
         })
       );
     }
     return map;
-  }, [weekDagen, roosterPerDag, itemsPerDag, avondGrensMinuten]);
+  }, [weekDagen, roosterPerDag, itemsPerDag, ritmesPerWeek]);
 
   // Het weekend klapt vanzelf in zolang er niets staat, en gaat open zodra er
   // wel iets is (ook bij een vakantie of toetsweek uit de jaarkalender) - tenzij
@@ -674,10 +680,14 @@ export function AgendaBoard({
           duurMinuten: i.estimated_minutes ?? ONBEKENDE_DUUR_MINUTEN,
         })),
     ];
+    const eersteVenster = cap?.vensters[0];
+    const laatsteVenster = cap?.vensters[cap.vensters.length - 1];
     const slot = vindEersteVrijeSlot(
       bezet,
       duur,
-      cap ? { vanafMinuten: cap.startMinuten, totMinuten: Math.max(cap.startMinuten, cap.eindMinuten - duur) } : undefined
+      eersteVenster && laatsteVenster
+        ? { vanafMinuten: eersteVenster.start, totMinuten: Math.max(eersteVenster.start, laatsteVenster.eind - duur) }
+        : undefined
     );
     return minutenNaarTijd(Math.round(slot / SNAP_MINUTEN) * SNAP_MINUTEN);
   }
@@ -873,7 +883,7 @@ export function AgendaBoard({
             </p>
             <p className="text-xs text-slate-500">
               {vandaagCapaciteit.niveau === "over"
-                ? `Er staat ${formatMinuten(vandaagCapaciteit.overMinuten)} meer gepland dan er tijd is (tot ${avondGrens.slice(0, 5)}). Wat schuiven we naar een andere dag?`
+                ? `Er staat ${formatMinuten(vandaagCapaciteit.overMinuten)} meer gepland dan er past. Wat schuiven we naar een andere dag?`
                 : vandaagCapaciteit.zonderInschatting > 0
                   ? `${vandaagCapaciteit.zonderInschatting} zonder tijdsinschatting - vul die in, dan klopt het beeld van wat er past.`
                   : `Dit past binnen de ${formatMinuten(vandaagCapaciteit.beschikbaarMinuten)} die je vandaag hebt.`}
@@ -1673,7 +1683,7 @@ export function AgendaBoard({
                 {cap && capMeta && cap.niveau !== "leeg" && (
                   <div
                     className="flex flex-col gap-1"
-                    title={`${formatMinuten(cap.geplandMinuten)} gepland, ${formatMinuten(cap.beschikbaarMinuten)} beschikbaar (${minutenNaarTijd(cap.startMinuten)} tot ${minutenNaarTijd(cap.eindMinuten)})`}
+                    title={`${formatMinuten(cap.geplandMinuten)} gepland, ${formatMinuten(cap.beschikbaarMinuten)} beschikbaar (${vensterTekst(cap)})`}
                   >
                     <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
                       <span

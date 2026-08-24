@@ -16,6 +16,12 @@ export interface GrafiekPunt {
   x: number;
   y: number;
 }
+export interface GrafiekLijnstuk {
+  label: string;
+  /** Verwijst naar het label van een punt in "punten" - nooit losse coordinaten, zodat een lijnstuk altijd precies tussen de 2 echte punten loopt. */
+  van: string;
+  naar: string;
+}
 export interface GrafiekSpec {
   type: "grafiek";
   titel: string;
@@ -25,6 +31,7 @@ export interface GrafiekSpec {
   yMax: number;
   functies: GrafiekFunctie[];
   punten: GrafiekPunt[];
+  lijnstukken: GrafiekLijnstuk[];
 }
 
 export interface GetallenlijnPunt {
@@ -97,7 +104,6 @@ function valideerGrafiek(v: Record<string, unknown>): GrafiekSpec | null {
       }
     }
   }
-  if (functies.length === 0) return null;
 
   const punten: GrafiekPunt[] = [];
   if (Array.isArray(v.punten)) {
@@ -109,7 +115,27 @@ function valideerGrafiek(v: Record<string, unknown>): GrafiekSpec | null {
     }
   }
 
-  return { type: "grafiek", titel: v.titel, xMin: v.xMin, xMax: v.xMax, yMin: v.yMin, yMax: v.yMax, functies, punten };
+  // Een lijnstuk verwijst altijd naar 2 bestaande punt-labels - zo loopt een
+  // zijde van een driehoek/veelhoek altijd precies tussen de echte punten,
+  // in plaats van dat de AI zelf een richtingscoefficient moet uitrekenen
+  // voor een lijnSTUK (wat "functies" niet kan: dat tekent altijd de hele
+  // lijn door het hele zichtbare venster, niet een stuk tussen 2 punten).
+  const puntLabels = new Set(punten.map((p) => p.label));
+  const lijnstukken: GrafiekLijnstuk[] = [];
+  if (Array.isArray(v.lijnstukken)) {
+    for (const l of v.lijnstukken.slice(0, 12)) {
+      if (l && typeof l === "object") {
+        const rec = l as Record<string, unknown>;
+        if (isStr(rec.label) && isStr(rec.van) && isStr(rec.naar) && puntLabels.has(rec.van) && puntLabels.has(rec.naar)) {
+          lijnstukken.push({ label: rec.label, van: rec.van, naar: rec.naar });
+        }
+      }
+    }
+  }
+
+  if (functies.length === 0 && lijnstukken.length === 0) return null;
+
+  return { type: "grafiek", titel: v.titel, xMin: v.xMin, xMax: v.xMax, yMin: v.yMin, yMax: v.yMax, functies, punten, lijnstukken };
 }
 
 function valideerGetallenlijn(v: Record<string, unknown>): GetallenlijnSpec | null {

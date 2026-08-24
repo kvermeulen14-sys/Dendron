@@ -1,4 +1,4 @@
-import type { PlanningItem } from "@/lib/types";
+import type { DagInstelling, PlanningItem } from "@/lib/types";
 
 /**
  * Capaciteitsmodel voor de agenda.
@@ -6,8 +6,7 @@ import type { PlanningItem } from "@/lib/types";
  * Het idee: een dag waarop te veel gepland staat moet er ook zo uitzien. Niet
  * door kaartjes weg te vouwen achter een "+3 meer"-knop (dan zie je juist niet
  * dat het te veel is), maar door de geplande tijd af te zetten tegen de tijd
- * die er die dag echt is - vanaf het moment dat je thuis bent tot de avondgrens
- * die het gezin instelt.
+ * die er die dag echt is.
  *
  * Dat is ook waar de planning fallacy zichtbaar wordt: we schatten structureel
  * te laag in hoe lang iets duurt. Door de som van de inschattingen naast de
@@ -19,29 +18,65 @@ import type { PlanningItem } from "@/lib/types";
 export const PAUZE_NA_SCHOOL_MINUTEN = 30;
 
 /**
- * Eten staat niet als afspraak in de agenda, maar kost wel elke dag een gat in
- * de avond. Zonder deze aftrek lijkt er structureel meer tijd te zijn dan er is
- * en slaat de meter nooit uit - precies het probleem dat hij moet laten zien.
+ * Meer dan dit op 1 dag plannen is niet meer realistisch, ook niet op een
+ * verder helemaal vrije dag - vanaf hier slaat de meter uit, ongeacht hoeveel
+ * tijd er op papier nog "beschikbaar" zou zijn. Meer inplannen kan gewoon,
+ * maar de meter waarschuwt dan eerder in plaats van dat een vrije zaterdag
+ * nooit "vol" kan worden.
  */
-export const ETEN_MINUTEN = 60;
+export const MAX_PLAN_MINUTEN = 8 * 60;
 
-/** Op een dag zonder school (weekend, vakantie) begint de planbare tijd later. */
-export const VRIJE_DAG_START_MINUTEN = 10 * 60;
-
+export const STANDAARD_OCHTEND_START_SCHOOLDAG = "07:00";
+export const STANDAARD_OCHTEND_START_WEEKEND = "09:30";
 export const STANDAARD_AVOND_GRENS = "20:30";
+export const STANDAARD_ETEN_MINUTEN = 60;
 
 export function tijdNaarMinuten(tijd: string) {
   const [h, m] = tijd.slice(0, 5).split(":").map(Number);
   return h * 60 + m;
 }
 
+export interface DagRitme {
+  ochtendStartMinuten: number;
+  avondGrensMinuten: number;
+  etenMinuten: number;
+}
+
+/** Redelijke standaard als de ouder deze dag nog niet zelf heeft ingesteld. */
+export function standaardDagRitme(dagVanWeek: number): DagRitme {
+  const weekend = dagVanWeek === 6 || dagVanWeek === 7;
+  return {
+    ochtendStartMinuten: tijdNaarMinuten(weekend ? STANDAARD_OCHTEND_START_WEEKEND : STANDAARD_OCHTEND_START_SCHOOLDAG),
+    avondGrensMinuten: tijdNaarMinuten(STANDAARD_AVOND_GRENS),
+    etenMinuten: STANDAARD_ETEN_MINUTEN,
+  };
+}
+
+/** Zet de opgeslagen rijen om naar 1 ritme per weekdag (1-7), met standaardwaarden voor ontbrekende dagen. */
+export function dagRitmesPerWeek(instellingen: DagInstelling[]): Map<number, DagRitme> {
+  const map = new Map<number, DagRitme>();
+  for (let dag = 1; dag <= 7; dag++) map.set(dag, standaardDagRitme(dag));
+  for (const i of instellingen) {
+    map.set(i.dag_van_week, {
+      ochtendStartMinuten: tijdNaarMinuten(i.ochtend_start),
+      avondGrensMinuten: tijdNaarMinuten(i.avond_grens),
+      etenMinuten: i.eten_minuten,
+    });
+  }
+  return map;
+}
+
 export type CapaciteitNiveau = "leeg" | "rustig" | "vol" | "over";
 
+export interface CapaciteitVenster {
+  start: number;
+  eind: number;
+}
+
 export interface DagCapaciteit {
-  /** Vanaf wanneer er die dag gepland kan worden (minuten sinds middernacht). */
-  startMinuten: number;
-  eindMinuten: number;
-  /** Bruikbare tijd, dus na aftrek van prive-afspraken die in de avond vallen. */
+  /** De planbare gaten die dag (bv. een vrije ochtend voor school + de avond). Leeg op een volledig dichte dag. */
+  vensters: CapaciteitVenster[];
+  /** Bruikbare tijd binnen de vensters, na aftrek van eten en prive-afspraken, en geplafonneerd op MAX_PLAN_MINUTEN. */
   beschikbaarMinuten: number;
   /** Som van de tijdsinschattingen van wat nog open staat (prive niet meegeteld). */
   geplandMinuten: number;
@@ -69,34 +104,61 @@ export const CAPACITEIT_META: Record<
   },
 };
 
+/**
+ * De planbare gaten op een dag: een vrije ochtend vóór het eerste (fiets- of
+ * les-)blok als die er is, en de tijd na school tot de avondgrens. Op een dag
+ * zonder rooster (weekend, vakantie) is de hele periode tussen ochtend- en
+ * avondgrens 1 groot venster.
+ */
+function berekenVensters(
+  roosterBlokken: { startMinuten: number; duurMinuten: number }[],
+  ritme: DagRitme
+): CapaciteitVenster[] {
+  if (roosterBlokken.length === 0) {
+    if (ritme.avondGrensMinuten <= ritme.ochtendStartMinuten) return [];
+    return [{ start: ritme.ochtendStartMinuten, eind: ritme.avondGrensMinuten }];
+  }
+
+  const vertrekMinuten = Math.min(...roosterBlokken.map((b) => b.startMinuten));
+  const thuiskomstMinuten = Math.max(...roosterBlokken.map((b) => b.startMinuten + b.duurMinuten));
+
+  const vensters: CapaciteitVenster[] = [];
+  if (vertrekMinuten > ritme.ochtendStartMinuten) {
+    vensters.push({ start: ritme.ochtendStartMinuten, eind: vertrekMinuten });
+  }
+  const avondStart = thuiskomstMinuten + PAUZE_NA_SCHOOL_MINUTEN;
+  if (ritme.avondGrensMinuten > avondStart) {
+    vensters.push({ start: avondStart, eind: ritme.avondGrensMinuten });
+  }
+  return vensters;
+}
+
 export function berekenDagCapaciteit({
   roosterBlokken,
   items,
-  avondGrensMinuten,
+  ritme,
 }: {
   roosterBlokken: { startMinuten: number; duurMinuten: number }[];
   items: PlanningItem[];
-  avondGrensMinuten: number;
+  ritme: DagRitme;
 }): DagCapaciteit {
-  // Het laatste roosterblok is de fietstijd naar huis, dus dit is het moment
-  // waarop het kind daadwerkelijk thuis is.
-  const thuisMinuten = roosterBlokken.reduce((laatste, b) => Math.max(laatste, b.startMinuten + b.duurMinuten), 0);
-  const startMinuten =
-    roosterBlokken.length > 0 ? thuisMinuten + PAUZE_NA_SCHOOL_MINUTEN : VRIJE_DAG_START_MINUTEN;
-  const eindMinuten = avondGrensMinuten;
-
-  const ruwBeschikbaar = Math.max(0, eindMinuten - startMinuten - ETEN_MINUTEN);
+  const vensters = berekenVensters(roosterBlokken, ritme);
+  const ruwVensterMinuten = vensters.reduce((som, v) => som + (v.eind - v.start), 0);
+  const ruwBeschikbaar = Math.max(0, ruwVensterMinuten - ritme.etenMinuten);
 
   // Alleen wat nog moet gebeuren telt mee: voorstellen zijn nog geen afspraak,
   // en afgevinkt werk hoort de balk juist te laten leeglopen gedurende de dag.
   const teDoen = items.filter((i) => i.status === "open");
 
   // Prive-afspraken (training, verjaardag) zijn geen huiswerk, maar ze nemen wel
-  // avond in beslag - die gaan er dus af van de beschikbare tijd.
+  // tijd in beslag - die gaan er dus af van de beschikbare tijd.
   const priveMinuten = teDoen
     .filter((i) => i.type === "prive")
     .reduce((som, i) => som + (i.estimated_minutes ?? 0), 0);
-  const beschikbaarMinuten = Math.max(0, ruwBeschikbaar - priveMinuten);
+
+  // Meer dan MAX_PLAN_MINUTEN plannen is nooit meer "gewoon vol" - dat is het
+  // plafond waarop de meter zich baseert, ook als er op papier meer tijd is.
+  const beschikbaarMinuten = Math.min(MAX_PLAN_MINUTEN, Math.max(0, ruwBeschikbaar - priveMinuten));
 
   const werk = teDoen.filter((i) => i.type !== "prive");
   const geplandMinuten = werk.reduce((som, i) => som + (i.estimated_minutes ?? 0), 0);
@@ -113,8 +175,7 @@ export function berekenDagCapaciteit({
   else niveau = "rustig";
 
   return {
-    startMinuten,
-    eindMinuten,
+    vensters,
     beschikbaarMinuten,
     geplandMinuten,
     zonderInschatting,
@@ -143,4 +204,18 @@ export function capaciteitTekst(cap: DagCapaciteit) {
   }
   if (cap.niveau === "leeg") return "Niets gepland";
   return `${formatCapaciteitMinuten(cap.geplandMinuten)} van ${formatCapaciteitMinuten(cap.beschikbaarMinuten)}`;
+}
+
+function minutenNaarKlok(minuten: number) {
+  const h = Math.floor(minuten / 60)
+    .toString()
+    .padStart(2, "0");
+  const m = (minuten % 60).toString().padStart(2, "0");
+  return `${h}:${m}`;
+}
+
+/** Voor een tooltip: "07:00-08:15 en 16:00-20:30". */
+export function vensterTekst(cap: DagCapaciteit) {
+  if (cap.vensters.length === 0) return "geen planbare tijd";
+  return cap.vensters.map((v) => `${minutenNaarKlok(v.start)}-${minutenNaarKlok(v.eind)}`).join(" en ");
 }

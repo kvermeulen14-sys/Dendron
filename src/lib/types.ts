@@ -19,7 +19,7 @@ export interface Family {
   id: string;
   name: string;
   reistijd_minuten: number;
-  /** Tot hoe laat er 's avonds gepland mag worden, bv. "20:30". */
+  /** @deprecated Vervangen door DagInstelling (per-weekdag), zie dag_instellingen. */
   avond_grens: string;
   created_at: string;
 }
@@ -98,6 +98,18 @@ export interface RoosterUitzondering {
   eind_tijd: string | null;
   created_by: string;
   created_at: string;
+}
+
+export interface DagInstelling {
+  id: string;
+  family_id: string;
+  /** 1 = maandag ... 7 = zondag, zelfde telling als RoosterItem.dag_van_week. */
+  dag_van_week: number;
+  ochtend_start: string;
+  avond_grens: string;
+  eten_minuten: number;
+  created_by: string | null;
+  updated_at: string;
 }
 
 export interface JaarEvent {

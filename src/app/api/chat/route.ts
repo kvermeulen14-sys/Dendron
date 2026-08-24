@@ -15,7 +15,13 @@ const VISUAL_INSTRUCTIE = `Als een grafiek, getallenlijn, tabel of diagram de ui
 \`\`\`grafiek
 {"titel": "y = x^2 - 2", "xMin": -5, "xMax": 5, "yMin": -4, "yMax": 8, "functies": [{"label": "y = x^2 - 2", "a": 1, "b": 0, "c": -2}], "punten": [{"label": "top", "x": 0, "y": -2}]}
 \`\`\`
-(voor grafieken geldt altijd y = a*x^2 + b*x + c; gebruik a=0 voor een rechte lijn; "punten" is optioneel)
+(voor een grafiek van een FUNCTIE geldt altijd y = a*x^2 + b*x + c; gebruik a=0 voor een rechte lijn; "punten" is optioneel)
+
+Voor een MEETKUNDIGE figuur (driehoek, vierhoek, elke figuur met rechte zijden tussen punten) gebruik je HETZELFDE \`\`\`grafiek\`\`\`-blok, maar dan met "lijnstukken" in plaats van "functies" - "functies" is alleen voor y=ax²+bx+c en kan geen los lijnstuk tussen 2 punten tekenen (dat trekt de lijn door het hele venster). Elk lijnstuk verwijst naar het "label" van 2 punten uit "punten":
+\`\`\`grafiek
+{"titel": "Rechthoekige driehoek ABC", "xMin": 0, "xMax": 5, "yMin": 0, "yMax": 5, "functies": [], "punten": [{"label": "A", "x": 1, "y": 1}, {"label": "B", "x": 4, "y": 1}, {"label": "C", "x": 4, "y": 4}], "lijnstukken": [{"label": "AB", "van": "A", "naar": "B"}, {"label": "BC", "van": "B", "naar": "C"}, {"label": "CA", "van": "C", "naar": "A"}]}
+\`\`\`
+(elk "van"/"naar" MOET exact een label uit "punten" zijn, anders wordt het lijnstuk niet getekend)
 
 \`\`\`getallenlijn
 {"titel": "wortel van 2 op de getallenlijn", "min": -3, "max": 3, "punten": [{"label": "√2", "waarde": 1.41}]}

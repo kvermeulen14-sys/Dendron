@@ -290,7 +290,7 @@ export async function verwijderRoosterUitzondering(id: string) {
   revalidateRooster();
 }
 
-// -- Dagindeling: fietstijd + avondgrens -----------------------------------
+// -- Reistijd (fietstijd) --------------------------------------------------
 
 export async function updateReistijd(formData: FormData) {
   const ctx = await vereistOuder();
@@ -302,17 +302,57 @@ export async function updateReistijd(formData: FormData) {
     return { error: "Vul een reistijd tussen 0 en 120 minuten in." };
   }
 
-  // De avondgrens bepaalt samen met het rooster en de fietstijd hoeveel tijd er
-  // per dag beschikbaar is - daarop rekent de agenda uit of een dag nog past.
-  const avondGrens = String(formData.get("avondGrens") || "").slice(0, 5);
-  if (!/^\d{2}:\d{2}$/.test(avondGrens)) {
-    return { error: "Kies tot hoe laat er 's avonds gepland mag worden." };
-  }
-
   const { error } = await supabase
     .from("families")
-    .update({ reistijd_minuten: reistijd, avond_grens: avondGrens })
+    .update({ reistijd_minuten: reistijd })
     .eq("id", profile.family_id);
+
+  if (error) return { error: error.message };
+  revalidateRooster();
+  return { success: true };
+}
+
+// -- Dagindeling: ochtend/avond/eten per weekdag ---------------------------
+
+const TIJD_REGEX = /^\d{2}:\d{2}$/;
+const DAGNAMEN_KORT = ["", "maandag", "dinsdag", "woensdag", "donderdag", "vrijdag", "zaterdag", "zondag"];
+
+// 1 formulier voor alle 7 dagen tegelijk, met per dag 3 velden (ochtend_N/
+// avond_N/eten_N) - dat is duidelijker voor een ouder dan 7 losse popups, en
+// voorkomt dat een half ingevulde week blijft hangen.
+export async function bewerkDagInstellingen(formData: FormData) {
+  const ctx = await vereistOuder();
+  if ("error" in ctx) return ctx;
+  const { supabase, profile, userId } = ctx;
+
+  const rijen: { family_id: string; dag_van_week: number; ochtend_start: string; avond_grens: string; eten_minuten: number; created_by: string }[] = [];
+
+  for (let dag = 1; dag <= 7; dag++) {
+    const ochtendStart = String(formData.get(`ochtend_${dag}`) || "").slice(0, 5);
+    const avondGrens = String(formData.get(`avond_${dag}`) || "").slice(0, 5);
+    const etenMinuten = Number(formData.get(`eten_${dag}`) || 0);
+
+    if (!TIJD_REGEX.test(ochtendStart) || !TIJD_REGEX.test(avondGrens)) {
+      return { error: `Vul voor ${DAGNAMEN_KORT[dag]} een ochtend- en avondtijd in.` };
+    }
+    if (avondGrens <= ochtendStart) {
+      return { error: `Op ${DAGNAMEN_KORT[dag]} moet de avondgrens na de ochtendstart liggen.` };
+    }
+    if (etenMinuten < 0 || etenMinuten > 180) {
+      return { error: `Vul voor ${DAGNAMEN_KORT[dag]} een etenstijd tussen 0 en 180 minuten in.` };
+    }
+
+    rijen.push({
+      family_id: profile.family_id,
+      dag_van_week: dag,
+      ochtend_start: ochtendStart,
+      avond_grens: avondGrens,
+      eten_minuten: etenMinuten,
+      created_by: userId,
+    });
+  }
+
+  const { error } = await supabase.from("dag_instellingen").upsert(rijen, { onConflict: "family_id,dag_van_week" });
 
   if (error) return { error: error.message };
   revalidateRooster();
