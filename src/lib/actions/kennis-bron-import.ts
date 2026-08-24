@@ -9,80 +9,45 @@ import type { KennisOnderdeelStatus } from "@/lib/types";
 
 const MAX_BRONTEKST_LENGTE = 60_000;
 
+// Let op: schema's + beschrijvingen bewust klein/kort houden, en in 2 losse
+// aanroepen gesplitst (meta+context+onderdelen, en apart de oefenbank).
+// 1 groot gecombineerd schema (met o.a. een geneste array tot 40 items)
+// bleek bij Gemini's structured output een harde 400-fout te geven:
+// "The specified schema produces a constraint that has too many states for
+// serving" - de constrained-decoding-engine compileert het schema naar een
+// eindige automaat met een maximumgrootte, en te veel tekst/te lange
+// geneste arrays laten die grens overschrijden. Kleinere, losse schema's
+// blijven daar ruim onder.
+const MetaSchema = z.object({
+  isParagraafBestand: z.boolean().describe("True = bevat lesstof van 1 paragraaf. False = index/rapport zonder eigen lesstof."),
+  paragraafId: z.string().nullable().describe("Paragraafnummer, bv '1.2', of null."),
+  paragraafTitel: z.string().nullable().describe("Titel van de paragraaf, of null."),
+  hoofdstukLabel: z.string().nullable().describe("Leesbaar hoofdstuklabel, of null."),
+  leerdoelen: z.string().nullable().describe("Leerdoelen als platte tekst, of null."),
+  voorkennis: z.string().nullable().describe("Benodigde voorkennis, platte tekst, of null."),
+  kernbegrippen: z.string().nullable().describe("Belangrijkste begrippen + korte omschrijving, platte tekst, of null."),
+  oplossingsroute: z.string().nullable().describe("Vaste oplossingsstappen, platte tekst, of null."),
+  beheersingscriterium: z.string().nullable().describe("Beheersingscriterium, of null."),
+  coachaanpak: z.string().nullable().describe("Coachtips voor een AI-tutor: fouten+coachvraag/hint, kort samengevat, of null."),
+  videos: z.array(z.object({ titel: z.string(), url: z.string(), aanbiedenBij: z.string().nullable() })).max(5),
+  onderdelen: z.array(OnderdeelSchema).max(8),
+});
+
 const OefenvraagSchema = z.object({
-  niveau: z
-    .string()
-    .nullable()
-    .describe("Niveau-/groepslabel zoals in de bron gebruikt (bv 'A', 'B', 'Niveau 2'), of null als de bron geen niveaus onderscheidt."),
-  vraag: z.string().describe("De opgave, letterlijk of vrijwel letterlijk overgenomen uit de bron."),
-  antwoord: z.string().describe("Het (eind)antwoord, letterlijk overgenomen uit de bron - verzin of wijzig niets."),
-  uitwerking: z.string().nullable().describe("De tussenstappen/kernuitwerking uit de bron, indien aanwezig, anders null."),
+  niveau: z.string().nullable().describe("Niveau-label (bv 'A'), of null."),
+  vraag: z.string().describe("De opgave, letterlijk overgenomen."),
+  antwoord: z.string().describe("Het antwoord, letterlijk overgenomen."),
+  uitwerking: z.string().nullable().describe("Kernuitwerking, of null."),
 });
 
-const VideoSchema = z.object({
-  titel: z.string().describe("Titel van de aanbevolen uitlegvideo."),
-  url: z.string().describe("De directe link naar de video."),
-  aanbiedenBij: z
-    .string()
-    .nullable()
-    .describe("Wanneer/bij welk type vraag de tutor deze video zou moeten aanbieden, indien de bron dat aangeeft, anders null."),
+const OefenvragenSchema = z.object({
+  oefenvragen: z.array(OefenvraagSchema).max(24),
 });
 
-// Let op: dit schema bewust PLAT houden (geen nullable object binnen een
-// object) - een genest "context: {...}.nullable()"-veld bleek in de praktijk
-// bij Gemini's structured output nooit een geldig resultaat op te leveren
-// (alle bestanden faalden identiek, bij elke poging). Losse nullable
-// strings/arrays op het top-niveau werken wel betrouwbaar.
-const BrontekstExtractieSchema = z.object({
-  isParagraafBestand: z
-    .boolean()
-    .describe(
-      "True als dit bestand de lesstof van 1 specifieke paragraaf bevat; false als het een hoofdstukindex, dekkings-/controlerapport of ander overzichtsbestand is zonder eigen lesstof voor 1 paragraaf."
-    ),
-  paragraafId: z.string().nullable().describe("Het paragraafnummer dat dit bestand behandelt (bv '1.2'), of null als dat niet te herkennen is."),
-  paragraafTitel: z.string().nullable().describe("De titel van de paragraaf (bv 'Breuken optellen'), of null als niet te herkennen."),
-  hoofdstukLabel: z
-    .string()
-    .nullable()
-    .describe("Een leesbaar hoofdstuklabel zoals in de bron gebruikt (bv 'Hoofdstuk 1 - Rekenen met letters'), of null."),
-  leerdoelen: z
-    .string()
-    .nullable()
-    .describe("Leerdoelen als lopende tekst of met regeleinden tussen punten, zonder markdown-koppen, of null als niet aanwezig."),
-  voorkennis: z.string().nullable().describe("Benodigde voorkennis, als platte tekst, of null als niet aanwezig."),
-  kernbegrippen: z.string().nullable().describe("De belangrijkste begrippen met een korte omschrijving, als platte tekst, of null."),
-  oplossingsroute: z
-    .string()
-    .nullable()
-    .describe("De vaste stappen/aanpak om dit type opgave op te lossen, als platte tekst, of null."),
-  beheersingscriterium: z
-    .string()
-    .nullable()
-    .describe("Het criterium waaraan te zien is dat de leerling deze paragraaf beheerst, indien in de bron aanwezig, anders null."),
-  coachaanpak: z
-    .string()
-    .nullable()
-    .describe(
-      "Praktische coachaanpak voor een AI-tutor bij deze paragraaf, als lopende tekst: veelgemaakte fouten met een kort signaal en welke coachvraag/hint daarbij hoort, plus algemene diagnostische/coach-instructies uit de bron. Negeer bronvermeldingen. Null als de bron dit niet bevat."
-    ),
-  videos: z
-    .array(VideoSchema)
-    .max(5)
-    .describe("Aanbevolen uitlegvideo's uit de bron met hun link, indien aanwezig - anders een lege array."),
-  onderdelen: z
-    .array(OnderdeelSchema)
-    .max(8)
-    .describe("Losse, benoemde regels/deelvaardigheden uit de paragraaf, zelfde aanpak als bij de ingebouwde generator."),
-  oefenvragen: z
-    .array(OefenvraagSchema)
-    .max(40)
-    .describe("Kant-en-klare oefenvragen met antwoord uit de bron (oefenbank), indien aanwezig. Neem er bij meer dan 40 de eerste 40."),
-});
-
-function bouwExtractiePrompt(bestandsnaam: string, brontekst: string): string {
+function bouwMetaPrompt(bestandsnaam: string, brontekst: string): string {
   return [
-    "Dit is 1 geëxporteerd kennisbank-bestand (.md) uit een extern hulpmiddel, bedoeld als lesstof voor een leerling van 2 havo.",
-    "De structuur/koppen kunnen per vak en per bestand verschillen - herken zelf welk stuk tekst bij welk veld hoort, in plaats van op exacte kopnamen te zoeken.",
+    "Dit is 1 geëxporteerd kennisbank-bestand (.md) uit een extern hulpmiddel, lesstof voor een leerling van 2 havo.",
+    "De structuur/koppen kunnen per bestand verschillen - herken zelf welk stuk tekst bij welk veld hoort.",
     "",
     `Bestandsnaam: ${bestandsnaam}`,
     "",
@@ -90,13 +55,30 @@ function bouwExtractiePrompt(bestandsnaam: string, brontekst: string): string {
     brontekst,
     "",
     "Instructies:",
-    "- Bepaal eerst of dit bestand de lesstof van 1 specifieke paragraaf bevat (isParagraafBestand=true), of een hoofdstukindex/dekkingsrapport/ander overzicht zonder eigen paragraaflesstof (isParagraafBestand=false, laat dan de overige velden leeg/leeg array).",
-    "- Negeer bronvermeldingen en interne kwaliteitslabels zoals [N-structuur]/[Schooldoel]/[Didactische synthese] - die zijn niet relevant voor de leerling.",
-    "- Voor 'onderdelen': splits de regels/theorie op in losse, benoemde deelvaardigheden met voorbeelden, tip, uitzondering en foutvoorbeeld, gebaseerd op wat in de tekst staat (regels/uitzonderingen, uitgewerkte voorbeelden, veelgemaakte fouten). Gebruik uitsluitend de wiskundige inhoud uit de tekst.",
-    "- Voor 'oefenvragen': neem vraag/antwoord/uitwerking zo veel mogelijk LETTERLIJK over uit een eventuele oefenbank/opgavenlijst met antwoorden - dit zijn al gecontroleerde antwoorden, verzin niets nieuws en wijzig geen getallen.",
-    "- Voor 'coachaanpak': vat een eventuele tabel met veelgemaakte fouten (signaal, oorzaak, coachvraag, hint) en algemene diagnostische/coach-instructies samen als korte, praktische lopende tekst voor een AI-tutor - geen tabel, geen markdown.",
-    "- Voor 'videos': neem elke aanbevolen uitlegvideo over met zijn titel, de directe link, en wanneer die aangeboden zou moeten worden (indien aangegeven). Alleen bestaande links uit de tekst, verzin er geen.",
-    "- Gebruik ^ voor machten (bv a^2) en / voor breuken in platte tekst; gebruik geen LaTeX en geen markdown-koppen (#, ##) in de tekstvelden.",
+    "- Bepaal eerst of dit bestand de lesstof van 1 paragraaf bevat (isParagraafBestand=true), of een index/rapport zonder eigen paragraaflesstof (false, dan overige velden leeg/leeg array).",
+    "- Negeer bronvermeldingen, video-links en interne labels zoals [N-structuur]/[Schooldoel].",
+    "- Voor 'onderdelen': splits de regels/theorie op in losse, benoemde deelvaardigheden met voorbeelden/tip/uitzondering/foutvoorbeeld, gebaseerd op de tekst. Gebruik alleen de wiskundige inhoud uit de tekst zelf.",
+    "- Voor 'coachaanpak': vat een eventuele fouten-tabel en coach-/diagnostische instructies samen als korte lopende tekst, geen tabel/markdown.",
+    "- Voor 'videos': alleen bestaande links uit de tekst met titel en (indien aangegeven) wanneer aan te bieden.",
+    "- Gebruik ^ voor machten en / voor breuken in platte tekst, geen LaTeX, geen markdown-koppen in tekstvelden.",
+  ].join("\n");
+}
+
+function bouwOefenvragenPrompt(bestandsnaam: string, brontekst: string): string {
+  return [
+    "Dit is 1 geëxporteerd kennisbank-bestand (.md), lesstof voor een leerling van 2 havo.",
+    "Zoek alleen de oefenbank/opgavenlijst met antwoorden op (indien aanwezig) - negeer de rest van het bestand.",
+    "",
+    `Bestandsnaam: ${bestandsnaam}`,
+    "",
+    "Inhoud van het bestand:",
+    brontekst,
+    "",
+    "Instructies:",
+    "- Neem vraag/antwoord/uitwerking zo veel mogelijk LETTERLIJK over - dit zijn al gecontroleerde antwoorden, verzin niets nieuws en wijzig geen getallen.",
+    "- Geen oefenbank gevonden? Geef een lege array terug.",
+    "- Meer dan 24 vragen? Neem de eerste 24.",
+    "- Gebruik ^ voor machten en / voor breuken in platte tekst, geen LaTeX.",
   ].join("\n");
 }
 
@@ -144,26 +126,23 @@ export async function verwerkKennisBrontekst(
   const { data: subject } = await supabase.from("subjects").select("id, family_id").eq("id", subjectId).single();
   if (!subject || subject.family_id !== familyId) return { error: "Vak niet gevonden." };
 
-  let resultaat: z.infer<typeof BrontekstExtractieSchema>;
+  const client = createGeminiClient();
+
+  let meta: z.infer<typeof MetaSchema>;
   try {
-    const client = createGeminiClient();
-    resultaat = await genereerGestructureerd(
-      client,
-      BrontekstExtractieSchema,
-      bouwExtractiePrompt(bestandsnaam, tekst),
-      32_768,
-      { debugFouten: true }
-    );
+    meta = await genereerGestructureerd(client, MetaSchema, bouwMetaPrompt(bestandsnaam, tekst), 16_384, {
+      debugFouten: true,
+    });
   } catch (e) {
     return { error: e instanceof Error ? e.message : "AI-verwerking mislukt." };
   }
 
-  if (!resultaat.isParagraafBestand) {
+  if (!meta.isParagraafBestand) {
     return { overgeslagen: true, reden: "Geen paragraaf-lesstof herkend (waarschijnlijk een index-/overzichtsbestand)." };
   }
 
   const bestandsnaamMatch = bestandsnaam.match(/^(\d+\.\d+)/);
-  const paragraafId = verwachteParagraafId || resultaat.paragraafId || bestandsnaamMatch?.[1];
+  const paragraafId = verwachteParagraafId || meta.paragraafId || bestandsnaamMatch?.[1];
   if (!paragraafId) {
     return {
       error: `Kon geen paragraafnummer herkennen in "${bestandsnaam}". Hernoem het bestand zodat het begint met het paragraafnummer (bv "1.2_...") of upload het via de knop bij de juiste paragraaf.`,
@@ -171,9 +150,8 @@ export async function verwerkKennisBrontekst(
   }
 
   const ingebouwd = GETAL_EN_RUIMTE_2HV13.find((p) => p.id === paragraafId);
-  const titel = resultaat.paragraafTitel || ingebouwd?.titel || afgeleideTitelVanBestandsnaam(bestandsnaam);
-  const hoofdstuk =
-    resultaat.hoofdstukLabel || (ingebouwd ? hoofdstukLabel(ingebouwd) : `Hoofdstuk ${paragraafId.split(".")[0]}`);
+  const titel = meta.paragraafTitel || ingebouwd?.titel || afgeleideTitelVanBestandsnaam(bestandsnaam);
+  const hoofdstuk = meta.hoofdstukLabel || (ingebouwd ? hoofdstukLabel(ingebouwd) : `Hoofdstuk ${paragraafId.split(".")[0]}`);
 
   const onderdelenRes = await slaGegenereerdeOnderdelenOp(
     supabase,
@@ -182,21 +160,21 @@ export async function verwerkKennisBrontekst(
     subjectId,
     hoofdstuk,
     paragraafId,
-    resultaat.onderdelen,
+    meta.onderdelen,
     { vervang: true }
   );
   if ("error" in onderdelenRes) return { error: onderdelenRes.error };
 
   const contextVelden = [
-    resultaat.leerdoelen,
-    resultaat.voorkennis,
-    resultaat.kernbegrippen,
-    resultaat.oplossingsroute,
-    resultaat.beheersingscriterium,
-    resultaat.coachaanpak,
+    meta.leerdoelen,
+    meta.voorkennis,
+    meta.kernbegrippen,
+    meta.oplossingsroute,
+    meta.beheersingscriterium,
+    meta.coachaanpak,
   ];
   let contextOpgeslagen = false;
-  if (contextVelden.some(Boolean) || resultaat.videos.length > 0) {
+  if (contextVelden.some(Boolean) || meta.videos.length > 0) {
     const { error: contextError } = await supabase.from("kennis_paragraaf_context").upsert(
       {
         family_id: familyId,
@@ -204,13 +182,13 @@ export async function verwerkKennisBrontekst(
         hoofdstuk,
         paragraaf_id: paragraafId,
         titel,
-        leerdoelen: resultaat.leerdoelen,
-        voorkennis: resultaat.voorkennis,
-        kernbegrippen: resultaat.kernbegrippen,
-        oplossingsroute: resultaat.oplossingsroute,
-        beheersingscriterium: resultaat.beheersingscriterium,
-        coachaanpak: resultaat.coachaanpak,
-        videos: resultaat.videos,
+        leerdoelen: meta.leerdoelen,
+        voorkennis: meta.voorkennis,
+        kernbegrippen: meta.kernbegrippen,
+        oplossingsroute: meta.oplossingsroute,
+        beheersingscriterium: meta.beheersingscriterium,
+        coachaanpak: meta.coachaanpak,
+        videos: meta.videos,
         status: "concept" as const,
         created_by: user.id,
         updated_at: new Date().toISOString(),
@@ -221,23 +199,43 @@ export async function verwerkKennisBrontekst(
     contextOpgeslagen = true;
   }
 
-  await supabase.from("kennis_oefenvragen").delete().eq("subject_id", subjectId).eq("paragraaf_id", paragraafId);
-  if (resultaat.oefenvragen.length > 0) {
-    const oefenrijen = resultaat.oefenvragen.map((v, i) => ({
-      family_id: familyId,
-      subject_id: subjectId,
-      hoofdstuk,
-      paragraaf_id: paragraafId,
-      niveau: v.niveau,
-      vraag: v.vraag,
-      antwoord: v.antwoord,
-      uitwerking: v.uitwerking,
-      volgorde: i,
-      status: "concept" as const,
-      created_by: user.id,
-    }));
-    const { error: oefenError } = await supabase.from("kennis_oefenvragen").insert(oefenrijen);
-    if (oefenError) return { error: oefenError.message };
+  // Oefenbank in een aparte, kleinere aanroep (zie schema-opmerking hierboven).
+  // Als deze losse aanroep faalt, laten we de rest van het resultaat
+  // (onderdelen + context, hierboven al opgeslagen) gewoon staan - de ouder
+  // kan de oefenbank dan alsnog los proberen door het bestand opnieuw te
+  // uploaden, in plaats van dat de hele import verloren gaat.
+  let aantalOefenvragen = 0;
+  let oefenvragenFout: string | null = null;
+  try {
+    const oefenResultaat = await genereerGestructureerd(
+      client,
+      OefenvragenSchema,
+      bouwOefenvragenPrompt(bestandsnaam, tekst),
+      16_384,
+      { debugFouten: true }
+    );
+
+    await supabase.from("kennis_oefenvragen").delete().eq("subject_id", subjectId).eq("paragraaf_id", paragraafId);
+    if (oefenResultaat.oefenvragen.length > 0) {
+      const oefenrijen = oefenResultaat.oefenvragen.map((v, i) => ({
+        family_id: familyId,
+        subject_id: subjectId,
+        hoofdstuk,
+        paragraaf_id: paragraafId,
+        niveau: v.niveau,
+        vraag: v.vraag,
+        antwoord: v.antwoord,
+        uitwerking: v.uitwerking,
+        volgorde: i,
+        status: "concept" as const,
+        created_by: user.id,
+      }));
+      const { error: oefenError } = await supabase.from("kennis_oefenvragen").insert(oefenrijen);
+      if (oefenError) throw new Error(oefenError.message);
+    }
+    aantalOefenvragen = oefenResultaat.oefenvragen.length;
+  } catch (e) {
+    oefenvragenFout = e instanceof Error ? e.message : "Oefenbank ophalen mislukt.";
   }
 
   revalidateVak(subjectId);
@@ -245,7 +243,8 @@ export async function verwerkKennisBrontekst(
     paragraafId,
     titel,
     aantalOnderdelen: onderdelenRes.aantal ?? 0,
-    aantalOefenvragen: resultaat.oefenvragen.length,
+    aantalOefenvragen,
+    oefenvragenFout,
     contextOpgeslagen,
   };
 }

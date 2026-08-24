@@ -33,33 +33,18 @@ export async function ouderProfiel() {
   return { supabase, user, familyId: profile.family_id } as const;
 }
 
+// Let op: beschrijvingen bewust kort houden. Gemini's structured output
+// compileert het schema naar een eindige-automaat voor constrained decoding
+// en geeft een 400 ("te veel states voor serving") bij een schema met te
+// veel tekst en/of te veel/lange geneste arrays - zie kennis-bron-import.ts.
 export const OnderdeelSchema = z.object({
-  naam: z
-    .string()
-    .describe(
-      "Korte naam van 1 losse, apart te oefenen regel/deelvaardigheid, in de stijl 'De regel a(b+c) = ab + ac' of 'Breuken vereenvoudigen'."
-    ),
-  regel: z.string().describe("De regel zelf, kort en scherp (1-2 zinnen), zoals een leerling die zou opschrijven."),
-  voorbeelden: z
-    .array(z.string())
-    .min(1)
-    .max(3)
-    .describe(
-      "1 tot 3 losse, eenvoudige rekenvoorbeelden die de regel toepassen, elk als 1 regel tekst. Gebruik bij voorkeur 2-3, maar bij een bron die maar 1 duidelijk voorbeeld geeft is 1 ook goed - verzin er geen tweede bij als dat niet natuurlijk is."
-    ),
-  gecombineerdVoorbeeld: z
-    .string()
-    .nullable()
-    .describe("1 voorbeeld waarin deze regel in een iets grotere, meerstaps-opgave gebruikt wordt, of null."),
-  tip: z.string().nullable().describe("Een kort ezelsbruggetje/praktische tip, of null als er geen goede is."),
-  uitzondering: z
-    .string()
-    .nullable()
-    .describe("Een uitzondering of valkuil bij deze regel, gebaseerd op de meegegeven veelgemaakte fouten, of null."),
-  foutVoorbeeld: z
-    .string()
-    .nullable()
-    .describe("Een kort voorbeeld van een foute toepassing zoals leerlingen die vaak maken, of null."),
+  naam: z.string().describe("Naam van de regel, bv 'De regel a(b+c) = ab + ac'."),
+  regel: z.string().describe("De regel zelf, kort (1-2 zinnen)."),
+  voorbeelden: z.array(z.string()).min(1).max(3).describe("1-3 korte rekenvoorbeelden."),
+  gecombineerdVoorbeeld: z.string().nullable().describe("1 meerstaps-voorbeeld, of null."),
+  tip: z.string().nullable().describe("Kort ezelsbruggetje, of null."),
+  uitzondering: z.string().nullable().describe("Uitzondering/valkuil, of null."),
+  foutVoorbeeld: z.string().nullable().describe("Voorbeeld van een veelgemaakte fout, of null."),
 });
 
 export const GenereerSchema = z.object({

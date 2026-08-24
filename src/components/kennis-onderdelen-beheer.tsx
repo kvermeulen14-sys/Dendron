@@ -107,7 +107,9 @@ export function KennisOnderdelenBeheer({
 // verbinding i.p.v. een nette foutrespons) zou "await" hier voor altijd
 // blijven hangen zonder deze cliëntzijdige noodrem - dan blijft de UI oneindig
 // "Bezig..." tonen in plaats van een foutmelding.
-const VERWERK_TIMEOUT_MS = 55_000;
+// 2 losse AI-aanroepen na elkaar (meta+onderdelen, dan de oefenbank) - iets
+// meer marge dan bij 1 aanroep.
+const VERWERK_TIMEOUT_MS = 90_000;
 
 function metTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -159,7 +161,9 @@ function BulkUpload({ subjectId }: { subjectId: string }) {
             uitkomst = {
               naam: file.name,
               status: "klaar",
-              bericht: `${res.paragraafId} - ${res.aantalOnderdelen} onderdelen, ${res.aantalOefenvragen} oefenvragen`,
+              bericht:
+                `${res.paragraafId} - ${res.aantalOnderdelen} onderdelen, ${res.aantalOefenvragen} oefenvragen` +
+                (res.oefenvragenFout ? ` (oefenbank mislukt: ${res.oefenvragenFout})` : ""),
             };
           }
         } catch (e) {
