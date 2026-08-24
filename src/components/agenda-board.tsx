@@ -15,6 +15,7 @@ import clsx from "clsx";
 import { Icon } from "@/components/icon";
 import { Button, LinkButton } from "@/components/ui/button";
 import { PlanningshulpKnop } from "@/components/planningshulp-knop";
+import { RoosterBlokHuiswerkModal } from "@/components/rooster-blok-huiswerk-modal";
 import { NuEnStraks } from "@/components/nu-en-straks";
 import { kiesKlaarLabel, kiesVierTekst } from "@/lib/motiverend";
 import { useKlaarBevestiging } from "@/lib/use-klaar-bevestiging";
@@ -218,6 +219,7 @@ interface RoosterBlok {
   duurMinuten: number;
   startMinuten: number;
   bron: "rooster" | "gewijzigd" | "extra";
+  subjectId: string | null;
 }
 
 function vindPeriode(periodes: RoosterPeriode[], iso: string) {
@@ -249,7 +251,13 @@ function roosterBlokkenVoorDag(
     dagUitzonderingen.filter((u) => u.type === "gewijzigd").map((u) => [u.origineel_item_id, u])
   );
 
-  let lessen: { titel: string; start_tijd: string; eind_tijd: string; bron: "rooster" | "gewijzigd" | "extra" }[] =
+  let lessen: {
+    titel: string;
+    start_tijd: string;
+    eind_tijd: string;
+    bron: "rooster" | "gewijzigd" | "extra";
+    subjectId: string | null;
+  }[] =
     periode && !heleDagVervallen
       ? roosterItems
           .filter((i) => i.periode_id === periode.id && i.dag_van_week === weekdag && !vervallenIds.has(i.id))
@@ -261,14 +269,21 @@ function roosterBlokkenVoorDag(
                   start_tijd: wijziging.start_tijd ?? i.start_tijd,
                   eind_tijd: wijziging.eind_tijd ?? i.eind_tijd,
                   bron: "gewijzigd" as const,
+                  subjectId: i.subject_id,
                 }
-              : { titel: i.titel, start_tijd: i.start_tijd, eind_tijd: i.eind_tijd, bron: "rooster" as const };
+              : {
+                  titel: i.titel,
+                  start_tijd: i.start_tijd,
+                  eind_tijd: i.eind_tijd,
+                  bron: "rooster" as const,
+                  subjectId: i.subject_id,
+                };
           })
       : [];
 
   for (const extra of dagUitzonderingen.filter((u) => u.type === "extra")) {
     if (extra.titel && extra.start_tijd && extra.eind_tijd) {
-      lessen.push({ titel: extra.titel, start_tijd: extra.start_tijd, eind_tijd: extra.eind_tijd, bron: "extra" });
+      lessen.push({ titel: extra.titel, start_tijd: extra.start_tijd, eind_tijd: extra.eind_tijd, bron: "extra", subjectId: null });
     }
   }
 
@@ -288,6 +303,7 @@ function roosterBlokkenVoorDag(
       duurMinuten: reistijdMinuten,
       startMinuten: tijdNaarMinuten(start),
       bron: "rooster",
+      subjectId: null,
     });
   }
   for (const les of lessen) {
@@ -298,6 +314,7 @@ function roosterBlokkenVoorDag(
       duurMinuten: tijdVerschilMinuten(les.start_tijd, les.eind_tijd),
       startMinuten: tijdNaarMinuten(les.start_tijd),
       bron: les.bron,
+      subjectId: les.subjectId,
     });
   }
   if (reistijdMinuten > 0) {
@@ -308,6 +325,7 @@ function roosterBlokkenVoorDag(
       duurMinuten: reistijdMinuten,
       startMinuten: tijdNaarMinuten(laatste.eind_tijd),
       bron: "rooster",
+      subjectId: null,
     });
   }
   return blokken;
@@ -381,6 +399,9 @@ export function AgendaBoard({
   const [bewerkError, setBewerkError] = useState<string | null>(null);
   const [detailItem, setDetailItem] = useState<PlanningItem | null>(null);
   const [weergave, setWeergave] = useState<"rooster" | "lijst">("rooster");
+  // Klik-op-vak-in-het-rooster -> snel huiswerk toevoegen (alleen ouder-kant,
+  // zie RoosterBlokHuiswerkModal).
+  const [huiswerkBlok, setHuiswerkBlok] = useState<{ subjectId: string; titel: string; datum: string } | null>(null);
   // Waar het kaartje zou landen als je nu loslaat - als kwartier-lijn zichtbaar.
   const [dropMinuut, setDropMinuut] = useState<number | null>(null);
   const [resizeDuur, setResizeDuur] = useState<{ id: string; duur: number } | null>(null);
@@ -2022,29 +2043,39 @@ export function AgendaBoard({
                   backgroundImage: `repeating-linear-gradient(to bottom, rgba(100,116,139,0.14) 0px, rgba(100,116,139,0.14) 1px, transparent 1px, transparent ${UUR_HOOGTE}px)`,
                 }}
               >
-                {roosterBlokken.map((b, bi) => (
-                  <div
-                    key={`r-${bi}`}
-                    title={`${b.tijd} ${b.titel}`}
-                    style={{ top: topVoorMinuut(b.startMinuten), height: hoogteVoorDuur(b.duurMinuten) }}
-                    className={clsx(
-                      "absolute inset-x-1 overflow-hidden rounded-md border-l-2 px-1.5 py-0.5 text-[11px] leading-tight",
-                      b.isFietsen
-                        ? "border-l-slate-300 bg-slate-50 text-slate-400"
-                        : "border-l-slate-300 bg-slate-100 text-slate-600",
-                      b.bron === "gewijzigd" &&
-                        "border-l-amber-400 bg-amber-50 text-amber-800 ring-1 ring-inset ring-amber-200",
-                      b.bron === "extra" &&
-                        "border-l-accent-400 bg-accent-50 text-accent-800 ring-1 ring-inset ring-accent-200"
-                    )}
-                  >
-                    {b.bron === "gewijzigd" && <Icon name="pencil-line" size={9} className="mr-0.5 mb-px inline" />}
-                    <span className="line-clamp-2">
-                      {!b.isFietsen && `${b.tijd.split("-")[0]} `}
-                      {b.titel}
-                    </span>
-                  </div>
-                ))}
+                {roosterBlokken.map((b, bi) => {
+                  const klikbaar = !voorKind && !b.isFietsen && Boolean(b.subjectId);
+                  return (
+                    <div
+                      key={`r-${bi}`}
+                      title={klikbaar ? `${b.tijd} ${b.titel} - klik om huiswerk toe te voegen` : `${b.tijd} ${b.titel}`}
+                      onClick={
+                        klikbaar
+                          ? () => setHuiswerkBlok({ subjectId: b.subjectId!, titel: b.titel, datum: iso })
+                          : undefined
+                      }
+                      style={{ top: topVoorMinuut(b.startMinuten), height: hoogteVoorDuur(b.duurMinuten) }}
+                      className={clsx(
+                        "absolute inset-x-1 overflow-hidden rounded-md border-l-2 px-1.5 py-0.5 text-[11px] leading-tight",
+                        b.isFietsen
+                          ? "border-l-slate-300 bg-slate-50 text-slate-400"
+                          : "border-l-slate-300 bg-slate-100 text-slate-600",
+                        b.bron === "gewijzigd" &&
+                          "border-l-amber-400 bg-amber-50 text-amber-800 ring-1 ring-inset ring-amber-200",
+                        b.bron === "extra" &&
+                          "border-l-accent-400 bg-accent-50 text-accent-800 ring-1 ring-inset ring-accent-200",
+                        klikbaar && "cursor-pointer hover:ring-1 hover:ring-inset hover:ring-accent-300"
+                      )}
+                    >
+                      {b.bron === "gewijzigd" && <Icon name="pencil-line" size={9} className="mr-0.5 mb-px inline" />}
+                      <span className="line-clamp-2">
+                        {!b.isFietsen && `${b.tijd.split("-")[0]} `}
+                        {b.titel}
+                      </span>
+                      {klikbaar && <Icon name="plus" size={9} className="ml-0.5 mb-px inline text-accent-500" />}
+                    </div>
+                  );
+                })}
 
                 {tijdItems.map((item) => {
                   const meta = PLANNING_TYPE_META[item.type];
@@ -2219,20 +2250,30 @@ export function AgendaBoard({
 
               {roosterBlokken.length > 0 && (
                 <div className="mb-2 flex flex-col gap-1 rounded-xl border border-slate-100 bg-slate-50/60 p-2.5">
-                  {roosterBlokken.map((b, i) => (
-                    <div
-                      key={i}
-                      className={clsx(
-                        "flex items-center gap-2 text-xs",
-                        b.isFietsen ? "text-slate-400" : "text-slate-600"
-                      )}
-                    >
-                      <Icon name={b.isFietsen ? "bike" : "school"} size={13} className="shrink-0" />
-                      {b.bron === "gewijzigd" && <Icon name="pencil-line" size={11} className="shrink-0 text-amber-500" />}
-                      <span className="font-medium">{b.tijd}</span>
-                      <span>{b.titel}</span>
-                    </div>
-                  ))}
+                  {roosterBlokken.map((b, i) => {
+                    const klikbaar = !voorKind && !b.isFietsen && Boolean(b.subjectId);
+                    return (
+                      <div
+                        key={i}
+                        onClick={
+                          klikbaar
+                            ? () => setHuiswerkBlok({ subjectId: b.subjectId!, titel: b.titel, datum: iso })
+                            : undefined
+                        }
+                        className={clsx(
+                          "flex items-center gap-2 text-xs",
+                          b.isFietsen ? "text-slate-400" : "text-slate-600",
+                          klikbaar && "cursor-pointer rounded-lg px-1 py-0.5 hover:bg-accent-50 hover:text-accent-700"
+                        )}
+                      >
+                        <Icon name={b.isFietsen ? "bike" : "school"} size={13} className="shrink-0" />
+                        {b.bron === "gewijzigd" && <Icon name="pencil-line" size={11} className="shrink-0 text-amber-500" />}
+                        <span className="font-medium">{b.tijd}</span>
+                        <span>{b.titel}</span>
+                        {klikbaar && <Icon name="plus" size={11} className="shrink-0 text-accent-500" />}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 
@@ -2455,6 +2496,17 @@ export function AgendaBoard({
             </div>
           );
         })()}
+
+      {huiswerkBlok && (
+        <RoosterBlokHuiswerkModal
+          open
+          onClose={() => setHuiswerkBlok(null)}
+          titel={huiswerkBlok.titel}
+          subjectId={huiswerkBlok.subjectId}
+          standaardDatum={huiswerkBlok.datum}
+          items={items}
+        />
+      )}
     </div>
   );
 }
