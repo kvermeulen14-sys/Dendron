@@ -2020,29 +2020,6 @@ export function AgendaBoard({
                         )}
                       </span>
 
-                      <span className="absolute right-0.5 top-0.5 hidden gap-0.5 group-hover:flex">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleStatus(item);
-                          }}
-                          className="rounded bg-white/90 p-0.5 text-slate-500 hover:bg-white hover:text-slate-800"
-                          aria-label={isKlaar ? "Weer openzetten" : "Klaar markeren"}
-                        >
-                          <Icon name="check" size={10} />
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            verwijder(item);
-                          }}
-                          className="rounded bg-white/90 p-0.5 text-slate-500 hover:bg-white hover:text-rose-600"
-                          aria-label="Verwijderen"
-                        >
-                          <Icon name="trash" size={10} />
-                        </button>
-                      </span>
-
                       {/* Onderrand slepen = hoe lang het duurt. Dat voedt meteen
                           de capaciteitsmeter, dus je ziet direct of het nog past. */}
                       <span
