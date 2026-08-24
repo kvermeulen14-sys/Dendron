@@ -23,13 +23,14 @@ import { berekenKalibratie, schattingAdvies } from "@/lib/kalibratie";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { Card } from "@/components/ui/card";
 import { Modal } from "@/components/ui/modal";
-import { HuiswerkAIImport } from "@/components/huiswerk-ai-import";
+import { HuiswerkAIImport, type HuiswerkAIImportHandle } from "@/components/huiswerk-ai-import";
 import { TijdSelect } from "@/components/ui/tijd-select";
 import { PLANNING_TYPE_META, minutenNaarTijd, vindEersteVrijeSlot } from "@/lib/planning";
 import { JAAR_EVENT_META, eventsOpDatum, naarIsoDatum } from "@/lib/jaarkalender";
 import {
   accepteerPlanningItem,
   bewerkPlanningItem,
+  bewerkPlanningReeks,
   maakPlanningItem,
   updatePlanningDuur,
   updatePlanningStatus,
@@ -339,8 +340,27 @@ export function AgendaBoard({
 }) {
   const router = useRouter();
   const [formOpen, setFormOpen] = useState(false);
+  const [kiesModusOpen, setKiesModusOpen] = useState(false);
+  const huiswerkAIImportRef = useRef<HuiswerkAIImportHandle>(null);
+
+  function openHandmatigFormulier() {
+    setEstimatedMinutes(null);
+    setSubjectId("");
+    setHerhaling("geen");
+    setHerhaalTot("");
+    setPriveVan("");
+    setPriveTot("");
+    setFormOpen(true);
+  }
   const [type, setType] = useState<PlanningType>("huiswerk");
   const [estimatedMinutes, setEstimatedMinutes] = useState<number | null>(null);
+  // Prive-afspraken (bv. oppassen) duren vaak langer dan het 2u-plafond van de
+  // duur-chips en hebben typisch een concreet begin- en eindtijdstip - dus
+  // daar los van/tot invullen i.p.v. een duur uit een lijst kiezen.
+  const [priveVan, setPriveVan] = useState("");
+  const [priveTot, setPriveTot] = useState("");
+  const priveDuur =
+    priveVan && priveTot ? Math.max(0, tijdNaarMinuten(priveTot) - tijdNaarMinuten(priveVan)) : null;
   const [subjectId, setSubjectId] = useState("");
   const [herhaling, setHerhaling] = useState<HerhalingType>("geen");
   const [herhaalTot, setHerhaalTot] = useState("");
@@ -351,6 +371,13 @@ export function AgendaBoard({
   const [dragOverIso, setDragOverIso] = useState<string | null>(null);
   const [bewerkItem, setBewerkItem] = useState<PlanningItem | null>(null);
   const [bewerkEstimatedMinutes, setBewerkEstimatedMinutes] = useState<number | null>(null);
+  const [bewerkPriveVan, setBewerkPriveVan] = useState("");
+  const [bewerkPriveTot, setBewerkPriveTot] = useState("");
+  const bewerkPriveDuur =
+    bewerkPriveVan && bewerkPriveTot
+      ? Math.max(0, tijdNaarMinuten(bewerkPriveTot) - tijdNaarMinuten(bewerkPriveVan))
+      : null;
+  const [bewerkHeleReeks, setBewerkHeleReeks] = useState(false);
   const [bewerkError, setBewerkError] = useState<string | null>(null);
   const [detailItem, setDetailItem] = useState<PlanningItem | null>(null);
   const [weergave, setWeergave] = useState<"rooster" | "lijst">("rooster");
@@ -627,6 +654,10 @@ export function AgendaBoard({
     setDetailItem(null);
     setBewerkError(null);
     setBewerkEstimatedMinutes(item.estimated_minutes);
+    const van = item.start_time?.slice(0, 5) ?? "";
+    setBewerkPriveVan(van);
+    setBewerkPriveTot(van && item.estimated_minutes ? tijdPlusMinuten(van, item.estimated_minutes) : "");
+    setBewerkHeleReeks(false);
     setBewerkItem(item);
   }
 
@@ -643,7 +674,10 @@ export function AgendaBoard({
   async function handleBewerkSubmit(formData: FormData) {
     if (!bewerkItem) return;
     setBewerkError(null);
-    const res = await bewerkPlanningItem(bewerkItem.id, formData);
+    const res =
+      bewerkHeleReeks && bewerkItem.herhaling_groep_id
+        ? await bewerkPlanningReeks(bewerkItem.herhaling_groep_id, formData)
+        : await bewerkPlanningItem(bewerkItem.id, formData);
     if (res?.error) {
       setBewerkError(res.error);
       return;
@@ -806,9 +840,6 @@ export function AgendaBoard({
     });
   }
 
-  const weekZondag = weekDagen[6];
-  const weekLabel = `${weekMaandag.toLocaleDateString("nl-NL", { day: "numeric", month: "short" })} - ${weekZondag.toLocaleDateString("nl-NL", { day: "numeric", month: "short" })}`;
-
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -837,21 +868,51 @@ export function AgendaBoard({
             </button>
           </div>
           {voorKind && <PlanningshulpKnop items={items} variant="knop" />}
-          <HuiswerkAIImport subjects={subjects} />
-          <Button
-            icon={<Icon name="plus" size={18} />}
-            onClick={() => {
-              setEstimatedMinutes(null);
-              setSubjectId("");
-              setHerhaling("geen");
-              setHerhaalTot("");
-              setFormOpen(true);
-            }}
-          >
+          <Button icon={<Icon name="plus" size={18} />} onClick={() => setKiesModusOpen(true)}>
             Nieuw item
           </Button>
         </div>
       </div>
+
+      <HuiswerkAIImport subjects={subjects} ref={huiswerkAIImportRef} />
+
+      {/* 1 knop met daarachter de keuze foto/tekst (AI) of handmatig, i.p.v. 2
+          losse knoppen naast elkaar - rustiger boven de agenda. */}
+      <Modal open={kiesModusOpen} onClose={() => setKiesModusOpen(false)} title="Nieuw item toevoegen">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <button
+            onClick={() => {
+              setKiesModusOpen(false);
+              huiswerkAIImportRef.current?.open();
+            }}
+            className="flex flex-col items-start gap-2 rounded-2xl border border-slate-200 p-4 text-left transition-colors hover:border-accent-300 hover:bg-accent-50/40"
+          >
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent-100 text-accent-600">
+              <Icon name="sparkles" size={20} />
+            </span>
+            <span className="text-sm font-semibold text-slate-900">Foto of tekst (AI)</span>
+            <span className="text-xs text-slate-500">
+              Plak huiswerk als tekst, of upload een foto van je agenda of planner - je controleert het
+              hierna zelf.
+            </span>
+          </button>
+          <button
+            onClick={() => {
+              setKiesModusOpen(false);
+              openHandmatigFormulier();
+            }}
+            className="flex flex-col items-start gap-2 rounded-2xl border border-slate-200 p-4 text-left transition-colors hover:border-accent-300 hover:bg-accent-50/40"
+          >
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
+              <Icon name="pencil-line" size={20} />
+            </span>
+            <span className="text-sm font-semibold text-slate-900">Handmatig invullen</span>
+            <span className="text-xs text-slate-500">
+              Zelf 1 item invullen - huiswerk, toets, leermoment of iets privés.
+            </span>
+          </button>
+        </div>
+      </Modal>
 
       {voorKind && (
         <NuEnStraks items={vandaagItems} roosterBlokken={vandaagRoosterBlokken} voorKind={voorKind} />
@@ -982,7 +1043,11 @@ export function AgendaBoard({
         <span>Tik op een taak voor details</span>
       </div>
 
-      <Card className="flex items-center justify-between gap-2 py-3">
+      {/* Week-navigatie + weekoverzicht in 1 compacte rij: de dagnummers staan
+          al in de kalendergrid eronder, dus hier alleen de dagletters + een
+          capaciteitsbalkje per dag - dat vertelt meteen welke dag deze week
+          nog vol wordt, zonder dat te scrollen. */}
+      <Card className="flex items-center gap-2 py-3">
         <button
           onClick={() => setWeekOffset((w) => w - 1)}
           onDragOver={(e) => {
@@ -996,24 +1061,63 @@ export function AgendaBoard({
             if (item) verplaats(item, isoPlusDagen(item.due_date, -7));
             setDraggedId(null);
           }}
-          className="flex items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
+          className="shrink-0 rounded-xl p-2 text-slate-500 hover:bg-slate-100"
           aria-label="Vorige week (sleep hier een item op om het een week eerder te plannen)"
         >
           <Icon name="chevron-left" size={18} />
-          <span className="hidden sm:inline">Vorige week</span>
         </button>
 
-        <div className="flex flex-col items-center">
-          <p className="text-sm font-semibold text-slate-900">Week van {weekLabel}</p>
-          {weekOffset !== 0 && (
-            <button
-              onClick={() => setWeekOffset(0)}
-              className="text-xs font-medium text-accent-600 hover:underline"
-            >
-              Naar deze week
-            </button>
-          )}
+        <div className="flex flex-1 gap-1.5">
+          {weekDagen.map((dag) => {
+            const iso = naarIsoDatum(dag);
+            const cap = capaciteitPerDag.get(iso);
+            const capMeta = cap ? CAPACITEIT_META[cap.niveau] : null;
+            const isVandaag = iso === vandaagIso;
+            return (
+              <div
+                key={iso}
+                title={
+                  cap
+                    ? `${dag.toLocaleDateString("nl-NL", { weekday: "long", day: "numeric", month: "long" })} - ${capaciteitTekst(cap)}`
+                    : undefined
+                }
+                className={clsx(
+                  "flex flex-1 flex-col items-center gap-1 rounded-xl border px-1 py-1.5",
+                  isVandaag ? "border-accent-300 bg-accent-50/60" : "border-slate-100 bg-white"
+                )}
+              >
+                <span
+                  className={clsx(
+                    "text-[10px] font-semibold uppercase tracking-wide",
+                    isVandaag ? "text-accent-700" : "text-slate-400"
+                  )}
+                >
+                  {dag.toLocaleDateString("nl-NL", { weekday: "short" }).slice(0, 2)}
+                </span>
+                <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                  {cap && capMeta && (
+                    <span
+                      className={clsx("h-full", capMeta.barClass)}
+                      style={{ width: `${Math.min(100, Math.round(cap.percentage * 100))}%` }}
+                    />
+                  )}
+                </div>
+                {cap?.niveau === "over" && (
+                  <span className="text-[9px] font-bold uppercase text-rose-600">vol</span>
+                )}
+              </div>
+            );
+          })}
         </div>
+
+        {weekOffset !== 0 && (
+          <button
+            onClick={() => setWeekOffset(0)}
+            className="shrink-0 rounded-xl px-2.5 py-2 text-xs font-medium text-accent-600 hover:bg-accent-50"
+          >
+            Vandaag
+          </button>
+        )}
 
         <button
           onClick={() => setWeekOffset((w) => w + 1)}
@@ -1028,58 +1132,12 @@ export function AgendaBoard({
             if (item) verplaats(item, isoPlusDagen(item.due_date, 7));
             setDraggedId(null);
           }}
-          className="flex items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
+          className="shrink-0 rounded-xl p-2 text-slate-500 hover:bg-slate-100"
           aria-label="Volgende week (sleep hier een item op om het een week later te plannen)"
         >
-          <span className="hidden sm:inline">Volgende week</span>
           <Icon name="chevron-right" size={18} />
         </button>
       </Card>
-
-      {/* Weekoverzicht: welke dag te vol wordt, voordat de week begint - en
-          ook zichtbaar in de lijstweergave en op mobiel. */}
-      <div className="flex gap-1.5">
-        {weekDagen.map((dag) => {
-          const iso = naarIsoDatum(dag);
-          const cap = capaciteitPerDag.get(iso);
-          const capMeta = cap ? CAPACITEIT_META[cap.niveau] : null;
-          const isVandaag = iso === vandaagIso;
-          return (
-            <div
-              key={iso}
-              title={
-                cap
-                  ? `${dag.toLocaleDateString("nl-NL", { weekday: "long", day: "numeric", month: "long" })} - ${capaciteitTekst(cap)}`
-                  : undefined
-              }
-              className={clsx(
-                "flex flex-1 flex-col items-center gap-1 rounded-xl border px-1 py-1.5",
-                isVandaag ? "border-accent-300 bg-accent-50/60" : "border-slate-100 bg-white"
-              )}
-            >
-              <span
-                className={clsx(
-                  "text-[10px] font-semibold uppercase tracking-wide",
-                  isVandaag ? "text-accent-700" : "text-slate-400"
-                )}
-              >
-                {dag.toLocaleDateString("nl-NL", { weekday: "short" }).slice(0, 2)}
-              </span>
-              <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
-                {cap && capMeta && (
-                  <span
-                    className={clsx("h-full", capMeta.barClass)}
-                    style={{ width: `${Math.min(100, Math.round(cap.percentage * 100))}%` }}
-                  />
-                )}
-              </div>
-              {cap?.niveau === "over" && (
-                <span className="text-[9px] font-bold uppercase text-rose-600">vol</span>
-              )}
-            </div>
-          );
-        })}
-      </div>
 
       <Modal open={formOpen} onClose={() => setFormOpen(false)} title="Nieuw item">
         <form action={handleSubmit} className="flex flex-col gap-4">
@@ -1208,56 +1266,88 @@ export function AgendaBoard({
               <input type="hidden" name="herhaalTot" value={herhaalTot} />
             </div>
 
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                Vaste tijd (optioneel)
-              </label>
-              <TijdSelect name="startTime" startUur={6} eindUur={23} placeholder="Geen vaste tijd" />
-              <p className="mt-1.5 text-xs text-slate-500">
-                Zet dit op een tijdstip als je precies weet wanneer je dit gaat doen - dan komt het
-                op die tijd in de agenda te staan.
-              </p>
-            </div>
-
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                Geschatte tijd (optioneel)
-              </label>
-              <div className="flex flex-wrap gap-1.5">
-                {TIJD_OPTIES.map((minuten) => (
-                  <button
-                    type="button"
-                    key={minuten}
-                    onClick={() => setEstimatedMinutes((huidig) => (huidig === minuten ? null : minuten))}
-                    className={clsx(
-                      "rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors",
-                      estimatedMinutes === minuten
-                        ? "border-slate-900 bg-slate-900 text-white"
-                        : "border-slate-200 text-slate-600 hover:bg-slate-50"
-                    )}
-                  >
-                    {formatMinuten(minuten)}
-                  </button>
-                ))}
-              </div>
-              {advies ? (
-                <button
-                  type="button"
-                  onClick={() => setEstimatedMinutes(advies.voorstelMinuten)}
-                  className="mt-1.5 flex w-full items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-2.5 py-2 text-left text-xs text-amber-800 hover:bg-amber-100"
-                >
-                  <Icon name="alert-circle" size={14} className="mt-px shrink-0" />
-                  <span>
-                    {advies.tekst} <span className="font-semibold underline">Neem {advies.voorstelMinuten} min over</span>
-                  </span>
-                </button>
-              ) : (
+            {type === "prive" ? (
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">Van - tot (optioneel)</label>
+                <div className="flex items-center gap-2">
+                  <TijdSelect
+                    startUur={6}
+                    eindUur={23}
+                    placeholder="Van"
+                    value={priveVan}
+                    onChange={(e) => setPriveVan(e.target.value)}
+                  />
+                  <span className="text-slate-400">-</span>
+                  <TijdSelect
+                    startUur={6}
+                    eindUur={23}
+                    placeholder="Tot"
+                    value={priveTot}
+                    onChange={(e) => setPriveTot(e.target.value)}
+                  />
+                </div>
                 <p className="mt-1.5 text-xs text-slate-500">
-                  Helpt om in te schatten wat er op een dag realistisch in past.
+                  {priveDuur !== null
+                    ? `Duurt ${formatMinuten(priveDuur)} - dat komt op ${priveVan} in de agenda te staan.`
+                    : "Bv. 19:00 tot 23:00 voor een avond oppassen - geen vast plafond zoals bij huiswerk."}
                 </p>
-              )}
-              <input type="hidden" name="estimatedMinutes" value={estimatedMinutes ?? ""} />
-            </div>
+                <input type="hidden" name="startTime" value={priveVan} />
+                <input type="hidden" name="estimatedMinutes" value={priveDuur ?? ""} />
+              </div>
+            ) : (
+              <>
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                    Vaste tijd (optioneel)
+                  </label>
+                  <TijdSelect name="startTime" startUur={6} eindUur={23} placeholder="Geen vaste tijd" />
+                  <p className="mt-1.5 text-xs text-slate-500">
+                    Zet dit op een tijdstip als je precies weet wanneer je dit gaat doen - dan komt het
+                    op die tijd in de agenda te staan.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                    Geschatte tijd (optioneel)
+                  </label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {TIJD_OPTIES.map((minuten) => (
+                      <button
+                        type="button"
+                        key={minuten}
+                        onClick={() => setEstimatedMinutes((huidig) => (huidig === minuten ? null : minuten))}
+                        className={clsx(
+                          "rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors",
+                          estimatedMinutes === minuten
+                            ? "border-slate-900 bg-slate-900 text-white"
+                            : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                        )}
+                      >
+                        {formatMinuten(minuten)}
+                      </button>
+                    ))}
+                  </div>
+                  {advies ? (
+                    <button
+                      type="button"
+                      onClick={() => setEstimatedMinutes(advies.voorstelMinuten)}
+                      className="mt-1.5 flex w-full items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-2.5 py-2 text-left text-xs text-amber-800 hover:bg-amber-100"
+                    >
+                      <Icon name="alert-circle" size={14} className="mt-px shrink-0" />
+                      <span>
+                        {advies.tekst} <span className="font-semibold underline">Neem {advies.voorstelMinuten} min over</span>
+                      </span>
+                    </button>
+                  ) : (
+                    <p className="mt-1.5 text-xs text-slate-500">
+                      Helpt om in te schatten wat er op een dag realistisch in past.
+                    </p>
+                  )}
+                  <input type="hidden" name="estimatedMinutes" value={estimatedMinutes ?? ""} />
+                </div>
+              </>
+            )}
 
             <div>
               <label className="mb-1.5 block text-sm font-medium text-slate-700">
@@ -1325,42 +1415,72 @@ export function AgendaBoard({
               />
             </div>
 
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                Vaste tijd (optioneel)
-              </label>
-              <TijdSelect
-                name="startTime"
-                startUur={6}
-                eindUur={23}
-                placeholder="Geen vaste tijd"
-                defaultValue={bewerkItem.start_time?.slice(0, 5) ?? ""}
-              />
-            </div>
-
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                Geschatte tijd (optioneel)
-              </label>
-              <div className="flex flex-wrap gap-1.5">
-                {TIJD_OPTIES.map((minuten) => (
-                  <button
-                    type="button"
-                    key={minuten}
-                    onClick={() => setBewerkEstimatedMinutes((huidig) => (huidig === minuten ? null : minuten))}
-                    className={clsx(
-                      "rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors",
-                      bewerkEstimatedMinutes === minuten
-                        ? "border-slate-900 bg-slate-900 text-white"
-                        : "border-slate-200 text-slate-600 hover:bg-slate-50"
-                    )}
-                  >
-                    {formatMinuten(minuten)}
-                  </button>
-                ))}
+            {bewerkItem.type === "prive" ? (
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">Van - tot (optioneel)</label>
+                <div className="flex items-center gap-2">
+                  <TijdSelect
+                    startUur={6}
+                    eindUur={23}
+                    placeholder="Van"
+                    value={bewerkPriveVan}
+                    onChange={(e) => setBewerkPriveVan(e.target.value)}
+                  />
+                  <span className="text-slate-400">-</span>
+                  <TijdSelect
+                    startUur={6}
+                    eindUur={23}
+                    placeholder="Tot"
+                    value={bewerkPriveTot}
+                    onChange={(e) => setBewerkPriveTot(e.target.value)}
+                  />
+                </div>
+                {bewerkPriveDuur !== null && (
+                  <p className="mt-1.5 text-xs text-slate-500">Duurt {formatMinuten(bewerkPriveDuur)}.</p>
+                )}
+                <input type="hidden" name="startTime" value={bewerkPriveVan} />
+                <input type="hidden" name="estimatedMinutes" value={bewerkPriveDuur ?? ""} />
               </div>
-              <input type="hidden" name="estimatedMinutes" value={bewerkEstimatedMinutes ?? ""} />
-            </div>
+            ) : (
+              <>
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                    Vaste tijd (optioneel)
+                  </label>
+                  <TijdSelect
+                    name="startTime"
+                    startUur={6}
+                    eindUur={23}
+                    placeholder="Geen vaste tijd"
+                    defaultValue={bewerkItem.start_time?.slice(0, 5) ?? ""}
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                    Geschatte tijd (optioneel)
+                  </label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {TIJD_OPTIES.map((minuten) => (
+                      <button
+                        type="button"
+                        key={minuten}
+                        onClick={() => setBewerkEstimatedMinutes((huidig) => (huidig === minuten ? null : minuten))}
+                        className={clsx(
+                          "rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors",
+                          bewerkEstimatedMinutes === minuten
+                            ? "border-slate-900 bg-slate-900 text-white"
+                            : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                        )}
+                      >
+                        {formatMinuten(minuten)}
+                      </button>
+                    ))}
+                  </div>
+                  <input type="hidden" name="estimatedMinutes" value={bewerkEstimatedMinutes ?? ""} />
+                </div>
+              </>
+            )}
 
             <div>
               <label className="mb-1.5 block text-sm font-medium text-slate-700">
@@ -1374,10 +1494,29 @@ export function AgendaBoard({
               />
             </div>
 
+            {bewerkItem.herhaling_groep_id && (
+              <label className="flex items-start gap-2.5 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={bewerkHeleReeks}
+                  onChange={(e) => setBewerkHeleReeks(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-slate-300 text-accent-600 focus:ring-accent-500"
+                />
+                <span>
+                  <span className="font-medium">Voor de hele reeks toepassen</span>
+                  <span className="block text-xs text-slate-500">
+                    Dit item herhaalt. Pas titel/vak/tijd/toelichting aan voor alle nog niet afgevinkte
+                    herhalingen tegelijk - al afgevinkte blijven ongewijzigd, en de datum blijft per
+                    item apart.
+                  </span>
+                </span>
+              </label>
+            )}
+
             {bewerkError && <p className="text-sm text-rose-600">{bewerkError}</p>}
 
             <div className="flex gap-2">
-              <SubmitButton>Wijzigingen opslaan</SubmitButton>
+              <SubmitButton>{bewerkHeleReeks ? "Hele reeks opslaan" : "Wijzigingen opslaan"}</SubmitButton>
               <Button type="button" variant="secondary" onClick={() => setBewerkItem(null)}>
                 Annuleren
               </Button>
@@ -1608,7 +1747,6 @@ export function AgendaBoard({
       {/* Kalenderweergave: tijdlijn 7 dagen naast elkaar, zoals afsprakenplanning-software */}
       <div className={clsx("overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm", weergave === "rooster" ? "hidden md:block" : "hidden")}>
         <div className="overflow-x-auto">
-        <div className="max-h-[calc(100vh-280px)] min-h-[280px] overflow-y-auto">
         <div
           className={clsx("grid", weekendIngeklapt ? "min-w-[640px]" : "min-w-[760px]")}
           style={{
@@ -2062,7 +2200,6 @@ export function AgendaBoard({
               </div>
             );
           })}
-        </div>
         </div>
         </div>
       </div>

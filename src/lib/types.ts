@@ -139,6 +139,8 @@ export interface PlanningItem {
   estimated_minutes: number | null;
   /** Hoe lang het volgens de leerling echt duurde; null als de vraag is overgeslagen. */
   actual_minutes: number | null;
+  /** Gedeeld tussen alle occurrences van 1 herhalend item; null als dit item niet herhaalt. */
+  herhaling_groep_id: string | null;
   created_by: string;
   created_at: string;
 }

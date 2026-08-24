@@ -146,13 +146,14 @@ export function berekenDagCapaciteit({
   const ruwVensterMinuten = vensters.reduce((som, v) => som + (v.eind - v.start), 0);
   const ruwBeschikbaar = Math.max(0, ruwVensterMinuten - ritme.etenMinuten);
 
-  // Alleen wat nog moet gebeuren telt mee: voorstellen zijn nog geen afspraak,
-  // en afgevinkt werk hoort de balk juist te laten leeglopen gedurende de dag.
-  const teDoen = items.filter((i) => i.status === "open");
+  // Deze balk is een plánningstool ("past dit binnen de dag"), geen
+  // voortgangsbalk - dus telt het hele geplande werk mee, ook wat al is
+  // afgevinkt. Alleen een voorstel is nog geen afspraak en telt niet mee.
+  const gepland = items.filter((i) => i.status !== "voorstel");
 
   // Prive-afspraken (training, verjaardag) zijn geen huiswerk, maar ze nemen wel
   // tijd in beslag - die gaan er dus af van de beschikbare tijd.
-  const priveMinuten = teDoen
+  const priveMinuten = gepland
     .filter((i) => i.type === "prive")
     .reduce((som, i) => som + (i.estimated_minutes ?? 0), 0);
 
@@ -160,9 +161,12 @@ export function berekenDagCapaciteit({
   // plafond waarop de meter zich baseert, ook als er op papier meer tijd is.
   const beschikbaarMinuten = Math.min(MAX_PLAN_MINUTEN, Math.max(0, ruwBeschikbaar - priveMinuten));
 
-  const werk = teDoen.filter((i) => i.type !== "prive");
+  const werk = gepland.filter((i) => i.type !== "prive");
   const geplandMinuten = werk.reduce((som, i) => som + (i.estimated_minutes ?? 0), 0);
-  const zonderInschatting = werk.filter((i) => !i.estimated_minutes).length;
+  // Een afgevinkte taak heeft niks meer om in te vullen - dat blijft dus
+  // scoped op wat nog open staat, anders zou hij een niet-meer-relevante
+  // vul-in-nudge blijven tonen voor iets dat al klaar is.
+  const zonderInschatting = werk.filter((i) => i.status === "open" && !i.estimated_minutes).length;
 
   const overMinuten = Math.max(0, geplandMinuten - beschikbaarMinuten);
   const percentage =

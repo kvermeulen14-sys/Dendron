@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { forwardRef, useImperativeHandle, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
@@ -8,6 +8,10 @@ import { Icon } from "@/components/icon";
 import { TekstOfBestandInvoer } from "@/components/tekst-of-bestand-invoer";
 import { maakHuiswerkItemsBulk } from "@/lib/actions/planning";
 import type { Subject } from "@/lib/types";
+
+export interface HuiswerkAIImportHandle {
+  open: () => void;
+}
 
 interface RuweRegel {
   titel: string;
@@ -29,12 +33,27 @@ function vindVakMatch(subjects: Subject[], vak?: string) {
   return gevonden?.id ?? "";
 }
 
-export function HuiswerkAIImport({ subjects }: { subjects: Subject[] }) {
+/**
+ * Geen eigen zichtbare knop - wordt geopend via de ref, zodat de agenda dit
+ * kan aanbieden als 1 van de opties achter de gedeelde "Nieuw item"-knop
+ * i.p.v. een losse knop ernaast.
+ */
+export const HuiswerkAIImport = forwardRef<HuiswerkAIImportHandle, { subjects: Subject[] }>(function HuiswerkAIImport(
+  { subjects },
+  ref
+) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [bezig, setBezig] = useState(false);
   const [regels, setRegels] = useState<Regel[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useImperativeHandle(ref, () => ({
+    open: () => {
+      reset();
+      setOpen(true);
+    },
+  }));
 
   function reset() {
     setRegels(null);
@@ -94,18 +113,6 @@ export function HuiswerkAIImport({ subjects }: { subjects: Subject[] }) {
   }
 
   return (
-    <>
-      <Button
-        variant="secondary"
-        icon={<Icon name="sparkles" size={18} />}
-        onClick={() => {
-          reset();
-          setOpen(true);
-        }}
-      >
-        Huiswerk invoeren met AI
-      </Button>
-
       <Modal open={open} onClose={() => setOpen(false)} title="Huiswerk invoeren met AI" maxWidthClass="max-w-2xl">
         {!regels ? (
           <div className="flex flex-col gap-3">
@@ -194,6 +201,5 @@ export function HuiswerkAIImport({ subjects }: { subjects: Subject[] }) {
           </div>
         )}
       </Modal>
-    </>
   );
-}
+});

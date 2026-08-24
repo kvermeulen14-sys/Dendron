@@ -68,6 +68,10 @@ export async function maakPlanningItem(formData: FormData) {
   if (!title || !dueDate) return { error: "Vul een titel en datum in." };
   if (herhaling !== "geen" && !herhaalTot) return { error: "Kies tot wanneer het item moet herhalen." };
 
+  // Alle occurrences van 1 herhalend item delen deze id, zodat de reeks later
+  // in 1 keer aangepast kan worden i.p.v. elk los item apart te moeten bewerken.
+  const herhalingGroepId = herhaling !== "geen" ? crypto.randomUUID() : null;
+
   const { data: nieuwItem, error } = await supabase
     .from("planning_items")
     .insert({
@@ -81,6 +85,7 @@ export async function maakPlanningItem(formData: FormData) {
       start_time: startTime,
       status: "open",
       estimated_minutes: estimatedMinutes,
+      herhaling_groep_id: herhalingGroepId,
       created_by: user.id,
     })
     .select("id")
@@ -91,7 +96,7 @@ export async function maakPlanningItem(formData: FormData) {
   if (herhaling !== "geen" && herhaalTot) {
     const herhaaldeData = genereerHerhaaldeData(dueDate, herhaling, herhaalTot);
     if (herhaaldeData.length > 0) {
-      await supabase.from("planning_items").insert(
+      const { error: herhaalError } = await supabase.from("planning_items").insert(
         herhaaldeData.map((datum) => ({
           family_id: profile.family_id,
           subject_id: subjectId,
@@ -103,9 +108,18 @@ export async function maakPlanningItem(formData: FormData) {
           start_time: startTime,
           status: "open",
           estimated_minutes: estimatedMinutes,
+          herhaling_groep_id: herhalingGroepId,
           created_by: user.id,
         }))
       );
+      // Het eerste item staat er al (hierboven al aangemaakt) - bij een fout
+      // hier dus niet stilzwijgend doorgaan alsof de hele reeks gelukt is.
+      if (herhaalError) {
+        revalidateAgendas();
+        return {
+          error: `Het eerste item is aangemaakt, maar de herhaling kon niet volledig aangemaakt worden: ${herhaalError.message}`,
+        };
+      }
     }
   }
 
@@ -178,6 +192,44 @@ export async function bewerkPlanningItem(id: string, formData: FormData) {
       estimated_minutes: estimatedMinutes,
     })
     .eq("id", id);
+
+  if (error) return { error: error.message };
+
+  revalidateAgendas();
+  return { success: true };
+}
+
+// Past 1 wijziging toe op de hele herhaalreeks (behalve wat al afgevinkt is -
+// dat blijft staan als historisch record) i.p.v. dat je elke occurrence apart
+// moet bewerken. De datum wordt bewust niet aangepast: elke occurrence houdt
+// zijn eigen dag, alleen titel/vak/tijd/toelichting gelden voor de hele reeks.
+export async function bewerkPlanningReeks(herhalingGroepId: string, formData: FormData) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Niet ingelogd." };
+
+  const title = String(formData.get("title") || "").trim();
+  const subjectId = String(formData.get("subjectId") || "") || null;
+  const description = String(formData.get("description") || "").trim();
+  const estimatedMinutesRaw = String(formData.get("estimatedMinutes") || "");
+  const estimatedMinutes = estimatedMinutesRaw ? Number(estimatedMinutesRaw) : null;
+  const startTime = String(formData.get("startTime") || "") || null;
+
+  if (!title) return { error: "Vul een titel in." };
+
+  const { error } = await supabase
+    .from("planning_items")
+    .update({
+      title,
+      subject_id: subjectId,
+      start_time: startTime,
+      description,
+      estimated_minutes: estimatedMinutes,
+    })
+    .eq("herhaling_groep_id", herhalingGroepId)
+    .neq("status", "klaar");
 
   if (error) return { error: error.message };
 
