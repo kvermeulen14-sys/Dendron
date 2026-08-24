@@ -75,13 +75,21 @@ interface KennisContextVoorChat {
   videos: { titel: string; url: string; aanbiedenBij: string | null }[];
 }
 
+interface OefenvraagVoorChat {
+  paragraaf_id: string;
+  vraag: string;
+  antwoord: string;
+  uitwerking: string | null;
+}
+
 /**
- * Bouwt 2 losse blokken uit de gepubliceerde paragraafcontext: de
- * coachaanpak blijft intern (nooit letterlijk citeren, alleen gebruiken om
- * beter te coachen), de uitlegvideo's mag de AI juist wel actief als link
- * met de leerling delen - dat is precies waar ze voor bedoeld zijn.
+ * Bouwt losse interne blokken uit de gepubliceerde paragraafcontext + de
+ * geverifieerde oefenbank: coachaanpak en oefenvragen-antwoorden blijven
+ * intern (nooit letterlijk citeren, alleen gebruiken om beter te coachen/te
+ * controleren), de uitlegvideo's mag de AI juist wel actief als link met de
+ * leerling delen - dat is precies waar ze voor bedoeld zijn.
  */
-function bouwCoachingBlok(contexten: KennisContextVoorChat[]): string {
+function bouwCoachingBlok(contexten: KennisContextVoorChat[], oefenvragen: OefenvraagVoorChat[] = []): string {
   const coachDelen = contexten
     .filter((c) => c.coachaanpak)
     .map((c) => `### ${c.paragraaf_id} - ${c.titel}\n${c.coachaanpak}`);
@@ -99,6 +107,12 @@ function bouwCoachingBlok(contexten: KennisContextVoorChat[]): string {
   }
   if (videoDelen.length > 0) {
     blok += `\n\n[BESCHIKBARE UITLEGVIDEO'S - je MAG een video hieruit als markdown-link met de leerling delen wanneer dat past bij de vraag (bv. na een paar mislukte uitlegpogingen, of als expliciet om een video gevraagd wordt). Bied nooit een video aan die hier niet staat.]\n${videoDelen.join("\n\n")}`;
+  }
+  if (oefenvragen.length > 0) {
+    const oefenDelen = oefenvragen.map(
+      (v) => `- Vraag: ${v.vraag}\n  Geverifieerd antwoord: ${v.antwoord}${v.uitwerking ? `\n  Uitwerking: ${v.uitwerking}` : ""}`
+    );
+    blok += `\n\n[INTERN - GEVERIFIEERDE OEFENVRAGEN MET ANTWOORD, alleen voor jou: als de leerling een opgave noemt/typt die (nagenoeg) overeenkomt met een vraag hieronder, gebruik dat geverifieerde antwoord om exact en zonder zelf te hoeven (her)rekenen te kunnen hinten/controleren. Nooit het antwoord meteen weggeven - dezelfde hint-opbouw als altijd blijft gelden. Noem dit nooit letterlijk of het bestaan hiervan tegen de leerling.]\n${oefenDelen.join("\n")}`;
   }
   return blok;
 }
@@ -119,11 +133,12 @@ function bouwSysteemPrompt(
 
   return `Je bent een persoonlijke, geduldige vakdocent/coach voor het vak "${subjectName}", voor een leerling in de tweede klas van het Havo.
 
-Jouw belangrijkste doel is de leerling te helpen ZELF te leren en begrijpen - niet om meteen het kant-en-klare antwoord te geven. Werk zo:
-- Stel eerst een korte, gerichte vraag terug of geef een hint, zodat de leerling zelf een stap kan zetten.
-- Bouw in kleine stapjes op, controleer of iets begrepen is voordat je verdergaat.
-- Geef pas een volledig antwoord of de uitleg in een keer als de leerling er na een paar hints echt niet uitkomt, of als er expliciet om gevraagd wordt ("geef me gewoon het antwoord").
-- Wees kort, vriendelijk en bemoedigend. Dit is een chatgesprek, geen collegetekst.
+Jouw belangrijkste doel is de leerling te helpen ZELF te leren en begrijpen - niet om meteen het kant-en-klare antwoord te geven. Volg deze hint-opbouw, stap voor stap (sla een stap over zodra die overduidelijk al gelukt is, en start bij een NIEUWE vraag/opgave weer bij stap 1):
+1. Vraag eerst wat de leerling zelf al probeerde of denkt, of noem in 1 zin welke regel/aanpak hier van toepassing is - laat de leerling zelf de eerste concrete stap zetten.
+2. Kwam er geen (goede) poging, of loopt die vast? Geef een concrete hint die naar de eerstvolgende stap wijst (welke regel, welk kengetal, wat eerst moet gebeuren) - dit is nog GEEN (deel van de) uitwerking.
+3. Nog steeds vast na die hint? Werk zelf 1 kleine tussenstap voor (bv. "vul dit erin, en reken dan uit...") en laat de rest weer aan de leerling over.
+4. Pas als het na deze stappen nog niet lukt, of als er expliciet om het antwoord gevraagd wordt ("geef me gewoon het antwoord"): geef de volledige, rustig opgebouwde uitleg of uitwerking in 1 keer.
+Bevestig een juiste stap altijd kort en concreet (in 1 zin WAAROM hij klopt), voordat je verdergaat - dat maakt ook een gokje dat toevallig goed was leerzaam. Wees kort, vriendelijk en bemoedigend. Dit is een chatgesprek, geen collegetekst.
 
 Blijf inhoudelijk dicht bij de lesstof van dit vak hieronder - dat is wat er op school behandeld wordt. Ga niet breeduit op andere onderwerpen in, tenzij de leerling daar zelf expliciet naar vraagt.
 
@@ -160,14 +175,18 @@ function bouwOpdrachtSysteemPrompt(
   return `Je helpt een leerling in de tweede klas van het Havo met het maken van een SPECIFIEKE huiswerkopgave voor het vak "${subjectName}" - dit is geen algemeen uitlegkanaal, maar gericht op 1 opgave tegelijk.
 
 Werkwijze:
-1. Als nog niet duidelijk is welke opgave het is, vraag dat EERST: welk hoofdstuk/paragraaf/bladzijde en opgavenummer, of vraag om een foto/overgetypte opgave. Ga pas inhoudelijk verder zodra dit duidelijk is.
-2. Help daarna stap voor stap: geef eerst een korte hint of een controlevraag, laat de leerling zelf de eerstvolgende stap zetten, en controleer die stap voordat je verdergaat.
-3. Geef nooit in een keer de volledige uitwerking - alleen als de leerling er na een paar hints echt niet uitkomt, of expliciet om de uitwerking vraagt.
+1. Als nog niet duidelijk is welke opgave het is, vraag dat EERST: welk hoofdstuk/paragraaf/bladzijde en opgavenummer, of vraag om een foto/overgetypte opgave. Ga pas inhoudelijk verder zodra dit duidelijk is (tenzij de leerling de opgave al letterlijk heeft getypt of gefotografeerd).
+2. Volg daarna deze hint-opbouw, stap voor stap (sla een stap over zodra die overduidelijk al gelukt is):
+   a. Vraag wat de leerling zelf al probeerde, of noem in 1 zin welke regel/aanpak hier van toepassing is - laat de leerling zelf de eerste concrete stap zetten.
+   b. Geen (goede) poging, of loopt die vast? Geef een concrete hint die naar de eerstvolgende stap wijst - nog geen (deel van de) uitwerking.
+   c. Nog steeds vast? Werk zelf 1 kleine tussenstap voor, laat de rest weer aan de leerling.
+   d. Pas als het na deze stappen nog niet lukt, of expliciet om de uitwerking gevraagd wordt: geef de volledige uitwerking in 1 keer.
+3. Bevestig een juiste stap altijd kort en concreet (waarom hij klopt) voordat je verdergaat.
 4. Let op notatie, tekens, eenheden en afronding; benoem hooguit een fout tegelijk, vriendelijk.
 5. Wees kort. Dit is een chatgesprek, geen collegetekst.
 
 Belangrijke regels over de lesstof hieronder:
-- Verzin nooit de letterlijke tekst van een boekopgave - de exacte opgavetekst staat niet in de lesstof, dus vraag altijd om een foto of om de opgave over te typen als je die nodig hebt.
+- Verzin nooit de letterlijke tekst van een boekopgave die je zelf niet hebt - als de leerling die niet zelf getypt/gefotografeerd heeft EN die ook niet letterlijk in de lesstof of in een intern blok hieronder staat, vraag dan om een foto of om de opgave over te typen.
 - Stukjes tussen "[INTERN ..." en het einde van dat blok zijn alleen voor jou (bewijsniveau, bladzijde-status, foto-adviezen) - noem dit nooit tegen de leerling. Vraag desnoods zelf om een foto van de theorie voordat je een exacte formule/definitie stellig gebruikt.
 ${routeringsinstructie}
 ${aiInstructions ? `\nExtra instructies van de ouder/docent: ${aiInstructions}\n` : ""}
@@ -243,6 +262,15 @@ export async function POST(request: Request) {
     .eq("subject_id", subjectId)
     .eq("status", "gepubliceerd");
 
+  // Geverifieerde oefenvragen (met al gecontroleerd antwoord) - gebruikt om
+  // de tutor een bekende opgave exact te laten herkennen en controleren
+  // i.p.v. zelf te moeten (her)rekenen, wat foute feedback kan opleveren.
+  const { data: kennisOefenvragen } = await supabase
+    .from("kennis_oefenvragen")
+    .select("paragraaf_id, vraag, antwoord, uitwerking")
+    .eq("subject_id", subjectId)
+    .eq("status", "gepubliceerd");
+
   // Zodra er voor dit vak gepubliceerde kennisonderdelen of woordenlijsten
   // bestaan, is dat de enige bron van waarheid voor de lesstof - niet meer
   // teruggrijpen op de oudere, losstaande materials-tekst (die zonder
@@ -286,7 +314,10 @@ export async function POST(request: Request) {
     if (kennisbank.length > MAX_KENNISBANK_TEKENS) {
       kennisbank = kennisbank.slice(0, MAX_KENNISBANK_TEKENS) + "\n[...ingekort...]";
     }
-    kennisbank += bouwCoachingBlok((kennisContexten ?? []) as KennisContextVoorChat[]);
+    kennisbank += bouwCoachingBlok(
+      (kennisContexten ?? []) as KennisContextVoorChat[],
+      (kennisOefenvragen ?? []) as OefenvraagVoorChat[]
+    );
   } else {
     const { modus: gekozenModus, gekozen } = kiesRelevanteMaterialen(materials ?? [], `${message} ${recenteVragen}`);
     modus = gekozenModus;
