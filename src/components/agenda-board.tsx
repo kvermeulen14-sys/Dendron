@@ -2242,8 +2242,8 @@ export function AgendaBoard({
                 lijstDoelIso === iso && "bg-accent-50 ring-2 ring-accent-400"
               )}
             >
-              <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
-                <p className="text-sm font-medium capitalize text-slate-500">{formatDatumLabel(iso)}</p>
+              <div className="mb-2.5 flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                <p className="text-lg font-bold capitalize text-slate-900">{formatDatumLabel(iso)}</p>
                 {eventMeta && jaarEvent && (
                   <span className={clsx("rounded px-1.5 py-0.5 text-[10px] font-medium", eventMeta.dayLabelClass)}>
                     {jaarEvent.titel}
@@ -2270,7 +2270,7 @@ export function AgendaBoard({
               </div>
 
               {roosterBlokken.length > 0 && (
-                <div className="mb-2 flex flex-col gap-1 rounded-xl border border-slate-100 bg-slate-50/60 p-2.5">
+                <div className="mb-3 flex flex-col gap-1.5 rounded-xl border border-slate-100 bg-slate-50/60 p-3">
                   {roosterBlokken.map((b, i) => {
                     const klikbaar = !b.isFietsen && Boolean(b.subjectId);
                     const deadlines = klikbaar
@@ -2285,24 +2285,24 @@ export function AgendaBoard({
                           klikbaar ? () => setDeadlineVak({ subjectId: b.subjectId!, titel: b.titel, datum: iso }) : undefined
                         }
                         className={clsx(
-                          "flex items-center gap-2 text-xs",
-                          b.isFietsen ? "text-slate-400" : "text-slate-600",
-                          klikbaar && "cursor-pointer rounded-lg px-1 py-0.5 hover:bg-accent-50 hover:text-accent-700",
+                          "flex items-center gap-2 text-sm",
+                          b.isFietsen ? "text-slate-400" : "text-slate-700",
+                          klikbaar && "cursor-pointer rounded-lg px-1.5 py-1 hover:bg-accent-50 hover:text-accent-700",
                           heeftDeadline && (heeftToets ? "bg-rose-50 text-rose-800" : "bg-amber-50 text-amber-800")
                         )}
                       >
-                        <Icon name={b.isFietsen ? "bike" : "school"} size={13} className="shrink-0" />
-                        {b.bron === "gewijzigd" && <Icon name="pencil-line" size={11} className="shrink-0 text-amber-500" />}
-                        <span className="font-medium">{b.tijd}</span>
+                        <Icon name={b.isFietsen ? "bike" : "school"} size={15} className="shrink-0" />
+                        {b.bron === "gewijzigd" && <Icon name="pencil-line" size={13} className="shrink-0 text-amber-500" />}
+                        <span className="font-semibold">{b.tijd}</span>
                         <span>{b.titel}</span>
                         {heeftDeadline && (
                           <Icon
                             name={heeftToets ? "alert-circle" : "book-open"}
-                            size={11}
+                            size={13}
                             className={clsx("shrink-0", heeftToets ? "text-rose-500" : "text-amber-500")}
                           />
                         )}
-                        {klikbaar && !heeftDeadline && <Icon name="plus" size={11} className="shrink-0 text-accent-500" />}
+                        {klikbaar && !heeftDeadline && <Icon name="plus" size={13} className="shrink-0 text-accent-500" />}
                       </div>
                     );
                   })}
@@ -2311,10 +2311,10 @@ export function AgendaBoard({
 
               {dagItems.length === 0 ? (
                 <Card className="py-3">
-                  <p className="text-sm text-slate-400">Niets gepland.</p>
+                  <p className="text-base text-slate-400">Niets gepland.</p>
                 </Card>
               ) : (
-                <div className="flex flex-col gap-2">
+                <div className="flex flex-col gap-2.5">
                   {dagItems.map((item) => {
                     const meta = PLANNING_TYPE_META[item.type];
                     const isVoorstel = item.status === "voorstel";
@@ -2324,7 +2324,7 @@ export function AgendaBoard({
                         key={item.id}
                         onClick={() => openDetail(item)}
                         className={clsx(
-                          "flex cursor-pointer items-center gap-3 py-3 transition-colors hover:border-accent-200",
+                          "flex cursor-pointer items-center gap-3 py-3.5 transition-colors hover:border-accent-200",
                           isKlaar
                             ? "border-emerald-200 bg-emerald-50/60"
                             : isVoorstel && "border-dashed"
@@ -2344,24 +2344,24 @@ export function AgendaBoard({
                               lijstSleep?.id === item.id && "text-accent-500"
                             )}
                           >
-                            <Icon name="grip" size={16} />
+                            <Icon name="grip" size={18} />
                           </span>
                         )}
 
                         <span
                           className={clsx(
-                            "flex h-9 w-9 shrink-0 items-center justify-center rounded-full border",
+                            "flex h-10 w-10 shrink-0 items-center justify-center rounded-full border",
                             isKlaar ? "border-emerald-200 bg-emerald-100 text-emerald-600" : meta.badgeClass
                           )}
                         >
-                          <Icon name={isKlaar ? "check" : meta.icon} size={16} />
+                          <Icon name={isKlaar ? "check" : meta.icon} size={18} />
                         </span>
 
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1.5">
                             <p
                               className={clsx(
-                                "truncate text-sm font-medium text-slate-800",
+                                "truncate text-base font-medium text-slate-800",
                                 isKlaar && "line-through"
                               )}
                             >
@@ -2374,7 +2374,7 @@ export function AgendaBoard({
                               </span>
                             )}
                           </div>
-                          <p className="truncate text-xs text-slate-500">
+                          <p className="truncate text-sm text-slate-500">
                             {[meta.label, !subjectCode(item.subject_id) ? subjectNaam(item.subject_id) : null]
                               .filter(Boolean)
                               .join(" - ")}
