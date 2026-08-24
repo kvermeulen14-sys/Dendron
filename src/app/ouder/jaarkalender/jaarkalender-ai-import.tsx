@@ -66,8 +66,12 @@ export function JaarkalenderAIImport() {
       setOpen(false);
       reset();
       router.refresh();
-    } catch {
-      setError("Opslaan is mislukt. Probeer het nog eens.");
+    } catch (e) {
+      // Gebeurt vooral als de pagina al open stond vóór een nieuwe deploy -
+      // de server kent de actie dan niet meer. De echte foutmelding erbij
+      // tonen (i.p.v. alleen de generieke tekst) maakt dat duidelijker.
+      const detail = e instanceof Error && e.message ? ` (${e.message})` : "";
+      setError(`Opslaan is mislukt.${detail} Ververs de pagina en probeer het opnieuw.`);
     } finally {
       setBezig(false);
     }
