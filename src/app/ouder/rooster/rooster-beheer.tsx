@@ -16,9 +16,12 @@ import {
   maakRoosterItem,
   bewerkRoosterItem,
   verwijderRoosterItem,
+  koppelRoosterItemsAutomatisch,
 } from "@/lib/actions/rooster";
+import { vindSubjectVoorTitel } from "@/lib/vak-matching";
 import type { RoosterItem, RoosterPeriode, Subject } from "@/lib/types";
 import { SomTodayUploader } from "./somtoday-uploader";
+import { HuiswerkKoppelenKnop } from "./huiswerk-koppelen-knop";
 
 const DAGEN = [
   { value: 1, label: "Maandag" },
@@ -85,6 +88,28 @@ export function RoosterBeheer({
   const [itemError, setItemError] = useState<string | null>(null);
   const [startTijd, setStartTijd] = useState("");
   const [eindTijd, setEindTijd] = useState("");
+  const [itemTitel, setItemTitel] = useState("");
+  const [itemSubjectId, setItemSubjectId] = useState("");
+  const [subjectHandmatigGekozen, setSubjectHandmatigGekozen] = useState(false);
+  const [koppelBezig, setKoppelBezig] = useState(false);
+  const [koppelResultaat, setKoppelResultaat] = useState<string | null>(null);
+
+  const aantalOngekoppeld = roosterItems.filter((i) => !i.subject_id).length;
+
+  async function koppelAutomatisch() {
+    setKoppelBezig(true);
+    setKoppelResultaat(null);
+    const res = await koppelRoosterItemsAutomatisch();
+    setKoppelBezig(false);
+    if (res.error) {
+      setKoppelResultaat(res.error);
+      return;
+    }
+    setKoppelResultaat(
+      res.aantal === 0 ? "Geen lesuren gevonden om te koppelen." : `${res.aantal} lesuren gekoppeld aan het juiste vak.`
+    );
+    router.refresh();
+  }
 
   const itemsVoorPeriode = useMemo(
     () => roosterItems.filter((i) => i.periode_id === selectedPeriodeId).sort((a, b) => a.start_tijd.localeCompare(b.start_tijd)),
@@ -132,6 +157,9 @@ export function RoosterBeheer({
     setBewerkId(null);
     setStartTijd("");
     setEindTijd("");
+    setItemTitel("");
+    setItemSubjectId("");
+    setSubjectHandmatigGekozen(false);
     setItemFormOpen(true);
   }
 
@@ -139,7 +167,20 @@ export function RoosterBeheer({
     setBewerkId(item.id);
     setStartTijd(item.start_tijd.slice(0, 5));
     setEindTijd(item.eind_tijd.slice(0, 5));
+    setItemTitel(item.titel);
+    setItemSubjectId(item.subject_id ?? "");
+    // Een al gekoppeld vak nooit stilzwijgend overschrijven terwijl de titel
+    // hier verder aangepast wordt - alleen bij een nog ongekoppeld lesuur
+    // blijft live meesuggereren zinvol.
+    setSubjectHandmatigGekozen(item.subject_id !== null);
     setItemFormOpen(false);
+  }
+
+  function titelGewijzigd(waarde: string) {
+    setItemTitel(waarde);
+    if (!subjectHandmatigGekozen) {
+      setItemSubjectId(vindSubjectVoorTitel(waarde, subjects) ?? "");
+    }
   }
 
   return (
@@ -263,12 +304,18 @@ export function RoosterBeheer({
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-base font-semibold text-slate-900">Lesuren</h2>
             <div className="flex flex-wrap gap-2">
-              <SomTodayUploader periodes={periodes} />
+              {aantalOngekoppeld > 0 && (
+                <Button size="md" variant="secondary" loading={koppelBezig} onClick={koppelAutomatisch} icon={<Icon name="sparkles" size={16} />}>
+                  Automatisch koppelen ({aantalOngekoppeld})
+                </Button>
+              )}
+              <SomTodayUploader periodes={periodes} subjects={subjects} />
               <Button size="md" icon={<Icon name="plus" size={16} />} onClick={openItemToevoegen}>
                 Lesuur toevoegen
               </Button>
             </div>
           </div>
+          {koppelResultaat && <p className="mb-3 text-xs text-slate-500">{koppelResultaat}</p>}
 
           <Modal open={itemModalOpen} onClose={sluitItemModal} title={bewerkItem ? "Lesuur bewerken" : "Lesuur toevoegen"}>
             <form
@@ -288,10 +335,25 @@ export function RoosterBeheer({
             >
               <input type="hidden" name="periodeId" value={selectedPeriodeId} />
               <div>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">Titel op rooster</label>
+                <input
+                  name="titel"
+                  required
+                  value={itemTitel}
+                  onChange={(e) => titelGewijzigd(e.target.value)}
+                  placeholder="bijv. Wiskunde"
+                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
+                />
+              </div>
+              <div>
                 <label className="mb-1.5 block text-sm font-medium text-slate-700">Vak</label>
                 <select
                   name="subjectId"
-                  defaultValue={bewerkItem?.subject_id ?? ""}
+                  value={itemSubjectId}
+                  onChange={(e) => {
+                    setSubjectHandmatigGekozen(true);
+                    setItemSubjectId(e.target.value);
+                  }}
                   className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
                 >
                   <option value="">Geen specifiek vak</option>
@@ -301,16 +363,9 @@ export function RoosterBeheer({
                     </option>
                   ))}
                 </select>
-              </div>
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-slate-700">Titel op rooster</label>
-                <input
-                  name="titel"
-                  required
-                  defaultValue={bewerkItem?.titel ?? ""}
-                  placeholder="bijv. Wiskunde"
-                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
-                />
+                {itemSubjectId && !subjectHandmatigGekozen && (
+                  <p className="mt-1 text-xs text-slate-400">Automatisch herkend op basis van de titel.</p>
+                )}
               </div>
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-slate-700">Dag</label>
@@ -424,6 +479,13 @@ export function RoosterBeheer({
                               {item.start_tijd.slice(0, 5)} - {item.eind_tijd.slice(0, 5)}
                             </p>
                           </div>
+                          {item.subject_id && (
+                            <HuiswerkKoppelenKnop
+                              titel={subjectNaam(item.subject_id) ?? item.titel}
+                              subjectId={item.subject_id}
+                              dagVanWeek={item.dag_van_week}
+                            />
+                          )}
                           <button
                             onClick={() => openItemBewerken(item)}
                             className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"

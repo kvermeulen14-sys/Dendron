@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { vindSubjectVoorTitel } from "@/lib/vak-matching";
 
 function revalidateRooster() {
   revalidatePath("/ouder/rooster");
@@ -104,7 +105,7 @@ export async function maakRoosterItem(formData: FormData) {
   const dagVanWeek = Number(formData.get("dagVanWeek") || 0);
   const startTijd = String(formData.get("startTijd") || "");
   const eindTijd = String(formData.get("eindTijd") || "");
-  const subjectId = String(formData.get("subjectId") || "") || null;
+  let subjectId = String(formData.get("subjectId") || "") || null;
   const titel = String(formData.get("titel") || "").trim();
 
   if (!periodeId || !dagVanWeek || !startTijd || !eindTijd || !titel) {
@@ -112,6 +113,11 @@ export async function maakRoosterItem(formData: FormData) {
   }
   if (eindTijd <= startTijd) {
     return { error: "De eindtijd moet na de begintijd liggen." };
+  }
+
+  if (!subjectId) {
+    const { data: subjects } = await supabase.from("subjects").select("id, name").eq("family_id", profile.family_id);
+    if (subjects) subjectId = vindSubjectVoorTitel(titel, subjects);
   }
 
   const { error } = await supabase.from("rooster_items").insert({
@@ -171,6 +177,36 @@ export async function verwijderRoosterItem(id: string) {
   revalidateRooster();
 }
 
+// Koppelt bestaande lesuren zonder vak (subject_id null) alsnog aan het
+// juiste vak, op basis van de titel - eenmalige opschoonactie voor lesuren
+// die handmatig of via de screenshot-import zijn toegevoegd voordat er
+// automatisch gekoppeld werd.
+export async function koppelRoosterItemsAutomatisch(): Promise<
+  { error: string; aantal?: undefined } | { error?: undefined; aantal: number }
+> {
+  const ctx = await vereistOuder();
+  if ("error" in ctx) return { error: ctx.error ?? "Onbekende fout." };
+  const { supabase, profile } = ctx;
+
+  const [{ data: subjects }, { data: items }] = await Promise.all([
+    supabase.from("subjects").select("id, name").eq("family_id", profile.family_id),
+    supabase.from("rooster_items").select("id, titel").eq("family_id", profile.family_id).is("subject_id", null),
+  ]);
+  if (!subjects || subjects.length === 0 || !items || items.length === 0) return { aantal: 0 };
+
+  let aantal = 0;
+  for (const item of items) {
+    const subjectId = vindSubjectVoorTitel(item.titel, subjects);
+    if (!subjectId) continue;
+    const { error } = await supabase.from("rooster_items").update({ subject_id: subjectId }).eq("id", item.id);
+    if (error) return { error: error.message };
+    aantal++;
+  }
+
+  revalidateRooster();
+  return { aantal };
+}
+
 export async function maakRoosterItemsBulk(
   periodeId: string,
   items: { dagVanWeek: number; startTijd: string; eindTijd: string; titel: string; subjectId?: string | null }[]
@@ -184,11 +220,13 @@ export async function maakRoosterItemsBulk(
   );
   if (geldig.length === 0) return { error: "Geen geldige lesuren om op te slaan." };
 
+  const { data: subjects } = await supabase.from("subjects").select("id, name").eq("family_id", profile.family_id);
+
   const { error } = await supabase.from("rooster_items").insert(
     geldig.map((i) => ({
       family_id: profile.family_id,
       periode_id: periodeId,
-      subject_id: i.subjectId || null,
+      subject_id: i.subjectId || (subjects ? vindSubjectVoorTitel(i.titel, subjects) : null),
       dag_van_week: i.dagVanWeek,
       start_tijd: i.startTijd,
       eind_tijd: i.eindTijd,

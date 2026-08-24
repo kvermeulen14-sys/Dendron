@@ -8,7 +8,8 @@ import { TijdSelect } from "@/components/ui/tijd-select";
 import { Icon } from "@/components/icon";
 import { TekstOfBestandInvoer } from "@/components/tekst-of-bestand-invoer";
 import { maakRoosterItemsBulk } from "@/lib/actions/rooster";
-import type { RoosterPeriode } from "@/lib/types";
+import { vindSubjectVoorTitel } from "@/lib/vak-matching";
+import type { RoosterPeriode, Subject } from "@/lib/types";
 
 const DAGEN = [
   { value: 1, label: "Maandag" },
@@ -25,9 +26,10 @@ interface Regel {
   startTijd: string;
   eindTijd: string;
   titel: string;
+  subjectId: string | null;
 }
 
-export function SomTodayUploader({ periodes }: { periodes: RoosterPeriode[] }) {
+export function SomTodayUploader({ periodes, subjects }: { periodes: RoosterPeriode[]; subjects: Subject[] }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [bezig, setBezig] = useState(false);
@@ -48,7 +50,8 @@ export function SomTodayUploader({ periodes }: { periodes: RoosterPeriode[] }) {
       const res = await fetch("/api/rooster-upload", { method: "POST", body });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Verwerken mislukt.");
-      setRegels(data.regels);
+      const regelsData: { dagVanWeek: number; startTijd: string; eindTijd: string; titel: string }[] = data.regels;
+      setRegels(regelsData.map((r) => ({ ...r, subjectId: vindSubjectVoorTitel(r.titel, subjects) })));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Verwerken mislukt.");
     } finally {
@@ -58,7 +61,13 @@ export function SomTodayUploader({ periodes }: { periodes: RoosterPeriode[] }) {
 
   function bijwerken(index: number, veld: keyof Regel, waarde: string) {
     setRegels((prev) =>
-      prev ? prev.map((r, i) => (i === index ? { ...r, [veld]: veld === "dagVanWeek" ? Number(waarde) : waarde } : r)) : prev
+      prev
+        ? prev.map((r, i) =>
+            i === index
+              ? { ...r, [veld]: veld === "dagVanWeek" ? Number(waarde) : veld === "subjectId" ? waarde || null : waarde }
+              : r
+          )
+        : prev
     );
   }
 
@@ -67,7 +76,7 @@ export function SomTodayUploader({ periodes }: { periodes: RoosterPeriode[] }) {
   }
 
   function voegRegelToe() {
-    setRegels((prev) => [...(prev ?? []), { dagVanWeek: 1, startTijd: "", eindTijd: "", titel: "" }]);
+    setRegels((prev) => [...(prev ?? []), { dagVanWeek: 1, startTijd: "", eindTijd: "", titel: "", subjectId: null }]);
   }
 
   async function opslaan() {
@@ -132,7 +141,7 @@ export function SomTodayUploader({ periodes }: { periodes: RoosterPeriode[] }) {
             {regels.length === 0 && <p className="text-sm text-slate-500">Niets herkend. Probeer het opnieuw.</p>}
             <div className="flex flex-col gap-2">
               {regels.map((regel, i) => (
-                <div key={i} className="grid grid-cols-[1fr_auto_auto_1fr_auto] items-center gap-1.5">
+                <div key={i} className="grid grid-cols-[1fr_auto_auto_1fr_1fr_auto] items-center gap-1.5">
                   <select
                     value={regel.dagVanWeek}
                     onChange={(e) => bijwerken(i, "dagVanWeek", e.target.value)}
@@ -159,9 +168,21 @@ export function SomTodayUploader({ periodes }: { periodes: RoosterPeriode[] }) {
                   <input
                     value={regel.titel}
                     onChange={(e) => bijwerken(i, "titel", e.target.value)}
-                    placeholder="Vak"
+                    placeholder="Titel"
                     className="rounded-lg border border-slate-200 px-2 py-1.5 text-xs"
                   />
+                  <select
+                    value={regel.subjectId ?? ""}
+                    onChange={(e) => bijwerken(i, "subjectId", e.target.value)}
+                    className="rounded-lg border border-slate-200 px-2 py-1.5 text-xs"
+                  >
+                    <option value="">Geen specifiek vak</option>
+                    {subjects.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.code ? `${s.code} - ${s.name}` : s.name}
+                      </option>
+                    ))}
+                  </select>
                   <button
                     onClick={() => verwijderRegel(i)}
                     className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
