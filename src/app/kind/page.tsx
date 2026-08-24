@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/card";
 import { Icon } from "@/components/icon";
+import { StickerHeart, StickerSpark, StickerStarOutline } from "@/components/sticker";
 import { KindVandaagLijst } from "@/components/kind-vandaag-lijst";
 import { WeekTerugblikVraag } from "@/components/week-terugblik-vraag";
 import { TweeMinutenOefenen } from "@/components/twee-minuten-oefenen";
@@ -111,11 +112,14 @@ export default async function KindOverzicht() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-xl font-semibold text-slate-900">
-          Hoi {profile?.full_name?.split(" ")[0] || ""}
-        </h1>
-        <p className="mt-1 text-sm text-slate-500">Dit staat er voor je klaar.</p>
+      <div className="relative overflow-hidden rounded-[28px] bg-gradient-to-br from-violet-500 via-violet-500 to-fuchsia-500 px-5 py-6 text-white shadow-[0_12px_30px_-12px_rgba(124,58,237,0.55)]">
+        <StickerStarOutline className="pointer-events-none absolute -right-1 top-3 h-9 w-9 text-white/35" />
+        <StickerSpark className="pointer-events-none absolute right-16 top-9 h-4 w-4 text-white/70" />
+        <StickerHeart className="pointer-events-none absolute -bottom-1 right-7 h-7 w-7 -rotate-6 text-white/25" />
+        <p className="font-heading text-2xl font-bold">
+          Hoi {profile?.full_name?.split(" ")[0] || ""}!
+        </p>
+        <p className="mt-1 text-sm text-white/85">Dit staat er voor je klaar vandaag.</p>
       </div>
 
       {!heeftTerugblikDezeWeek && <WeekTerugblikVraag />}

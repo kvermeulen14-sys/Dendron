@@ -21,7 +21,7 @@ const sizeClasses: Record<Size, string> = {
 };
 
 const base =
-  "inline-flex items-center justify-center rounded-2xl font-medium transition-colors disabled:opacity-50 disabled:pointer-events-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-600";
+  "inline-flex items-center justify-center rounded-full font-medium transition-colors disabled:opacity-50 disabled:pointer-events-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-600";
 
 interface CommonProps {
   variant?: Variant;

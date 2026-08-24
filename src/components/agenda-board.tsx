@@ -17,6 +17,8 @@ import { Button, LinkButton } from "@/components/ui/button";
 import { PlanningshulpKnop } from "@/components/planningshulp-knop";
 import { RoosterVakDeadlineModal } from "@/components/rooster-vak-deadline-modal";
 import { NuEnStraks } from "@/components/nu-en-straks";
+import { CapaciteitRing } from "@/components/capaciteit-ring";
+import { vakKleur } from "@/lib/vak-kleur";
 import { kiesKlaarLabel, kiesVierTekst } from "@/lib/motiverend";
 import { useKlaarBevestiging } from "@/lib/use-klaar-bevestiging";
 import { DuurTerugblik } from "@/components/duur-terugblik";
@@ -358,7 +360,12 @@ export function AgendaBoard({
 }) {
   const router = useRouter();
   const [formOpen, setFormOpen] = useState(false);
-  const [kiesModusOpen, setKiesModusOpen] = useState(false);
+  // Opent meteen als je via de ronde +-knop in de onderste navigatiebalk komt
+  // (?nieuw=1) - puur client-side gelezen, zodat er geen Suspense-boundary
+  // nodig is zoals bij next/navigation's useSearchParams.
+  const [kiesModusOpen, setKiesModusOpen] = useState(
+    () => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("nieuw") === "1"
+  );
   const huiswerkAIImportRef = useRef<HuiswerkAIImportHandle>(null);
 
   function openHandmatigFormulier() {
@@ -2214,6 +2221,34 @@ export function AgendaBoard({
         </div>
       </div>
 
+      {/* Dag-kiezer: springt naar een dag verderop in de lijst hieronder -
+          de dag van vandaag springt eruit, net als in een gewone planner-app. */}
+      <div className={clsx("-mx-1 flex gap-2 overflow-x-auto px-1 pb-1", weergave === "rooster" && "md:hidden")}>
+        {weekDagen.map((dag) => {
+          const iso = naarIsoDatum(dag);
+          const isVandaag = iso === vandaagIso;
+          return (
+            <button
+              key={iso}
+              onClick={() =>
+                document.querySelector(`[data-dag-iso="${iso}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" })
+              }
+              className={clsx(
+                "flex shrink-0 flex-col items-center gap-0.5 rounded-2xl px-3.5 py-2 transition-colors",
+                isVandaag
+                  ? "bg-violet-600 text-white shadow-sm"
+                  : "bg-white text-slate-500 ring-1 ring-slate-900/5 hover:bg-violet-50 hover:text-violet-700"
+              )}
+            >
+              <span className="text-[11px] font-semibold uppercase tracking-wide opacity-80">
+                {dag.toLocaleDateString("nl-NL", { weekday: "short" })}
+              </span>
+              <span className="font-heading text-lg font-bold leading-none">{dag.getDate()}</span>
+            </button>
+          );
+        })}
+      </div>
+
       {/* Lijstweergave: dagen onder elkaar - altijd op mobiel, en op elk formaat als 'Lijst' gekozen is */}
       <div className={clsx("flex flex-col gap-4", weergave === "rooster" && "md:hidden")}>
         {weekDagen.map((dag) => {
@@ -2239,13 +2274,13 @@ export function AgendaBoard({
               key={iso}
               data-dag-iso={iso}
               className={clsx(
-                "rounded-2xl p-2 transition-colors",
+                "scroll-mt-4 rounded-3xl p-2 transition-colors",
                 eventMeta?.dayTintClass,
                 lijstDoelIso === iso && "bg-accent-50 ring-2 ring-accent-400"
               )}
             >
               <div className="mb-2.5 flex flex-wrap items-center gap-x-2.5 gap-y-1">
-                <p className="text-lg font-bold capitalize text-slate-900">{formatDatumLabel(iso)}</p>
+                <p className="font-heading text-lg font-bold capitalize text-slate-900">{formatDatumLabel(iso)}</p>
                 {eventMeta && jaarEvent && (
                   <span className={clsx("rounded px-1.5 py-0.5 text-[10px] font-medium", eventMeta.dayLabelClass)}>
                     {jaarEvent.titel}
@@ -2254,25 +2289,12 @@ export function AgendaBoard({
                 {(() => {
                   const cap = capaciteitPerDag.get(iso);
                   if (!cap || cap.niveau === "leeg") return null;
-                  const capMeta = CAPACITEIT_META[cap.niveau];
-                  return (
-                    <span className="flex items-center gap-1.5">
-                      <span className="flex h-1.5 w-14 overflow-hidden rounded-full bg-slate-100">
-                        <span
-                          className={clsx("h-full", capMeta.barClass)}
-                          style={{ width: `${Math.min(100, Math.round(cap.percentage * 100))}%` }}
-                        />
-                      </span>
-                      <span className={clsx("text-[11px] font-semibold", capMeta.textClass)}>
-                        {capaciteitTekst(cap)}
-                      </span>
-                    </span>
-                  );
+                  return <CapaciteitRing percentage={cap.percentage} tekst={capaciteitTekst(cap)} toonKleur={cap.niveau} />;
                 })()}
               </div>
 
               {roosterBlokken.length > 0 && (
-                <div className="mb-3 flex flex-col gap-1.5 rounded-xl border border-slate-100 bg-slate-50/60 p-3">
+                <div className="mb-3 flex flex-col gap-1 rounded-3xl bg-white/70 p-2 ring-1 ring-slate-900/5">
                   {roosterBlokken.map((b, i) => {
                     const klikbaar = !b.isFietsen && Boolean(b.subjectId);
                     const deadlines = klikbaar
@@ -2280,6 +2302,8 @@ export function AgendaBoard({
                       : [];
                     const heeftToets = deadlines.some((d) => d.type === "toets");
                     const heeftDeadline = deadlines.length > 0;
+                    const vakSubject = b.subjectId ? subjects.find((s) => s.id === b.subjectId) : null;
+                    const kleur = vakKleur(b.subjectId);
                     return (
                       <div
                         key={i}
@@ -2287,24 +2311,36 @@ export function AgendaBoard({
                           klikbaar ? () => setDeadlineVak({ subjectId: b.subjectId!, titel: b.titel, datum: iso }) : undefined
                         }
                         className={clsx(
-                          "flex items-center gap-2 text-sm",
-                          b.isFietsen ? "text-slate-400" : "text-slate-700",
-                          klikbaar && "cursor-pointer rounded-lg px-1.5 py-1 hover:bg-accent-50 hover:text-accent-700",
-                          heeftDeadline && (heeftToets ? "bg-rose-50 text-rose-800" : "bg-amber-50 text-amber-800")
+                          "flex items-center gap-2.5 rounded-2xl px-1.5 py-1.5 text-sm transition-colors",
+                          klikbaar && "cursor-pointer hover:bg-violet-50/70",
+                          heeftDeadline &&
+                            (heeftToets
+                              ? "bg-rose-50 ring-1 ring-inset ring-rose-200"
+                              : "bg-amber-50 ring-1 ring-inset ring-amber-200")
                         )}
                       >
-                        <Icon name={b.isFietsen ? "bike" : "school"} size={15} className="shrink-0" />
+                        <span
+                          className={clsx(
+                            "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl",
+                            b.isFietsen ? "bg-slate-100 text-slate-400" : [kleur.bg, kleur.text]
+                          )}
+                        >
+                          <Icon name={b.isFietsen ? "bike" : (vakSubject?.icon ?? "school")} size={17} />
+                        </span>
+                        <span className="min-w-0 flex-1 truncate">
+                          <span className="font-semibold tabular-nums text-slate-400">{b.tijd}</span>{" "}
+                          <span className={b.isFietsen ? "text-slate-400" : "font-medium text-slate-800"}>{b.titel}</span>
+                        </span>
                         {b.bron === "gewijzigd" && <Icon name="pencil-line" size={13} className="shrink-0 text-amber-500" />}
-                        <span className="font-semibold">{b.tijd}</span>
-                        <span>{b.titel}</span>
-                        {heeftDeadline && (
+                        {heeftDeadline ? (
                           <Icon
                             name={heeftToets ? "alert-circle" : "book-open"}
-                            size={13}
+                            size={17}
                             className={clsx("shrink-0", heeftToets ? "text-rose-500" : "text-amber-500")}
                           />
+                        ) : (
+                          klikbaar && <Icon name="plus" size={15} className="shrink-0 text-violet-400" />
                         )}
-                        {klikbaar && !heeftDeadline && <Icon name="plus" size={13} className="shrink-0 text-accent-500" />}
                       </div>
                     );
                   })}

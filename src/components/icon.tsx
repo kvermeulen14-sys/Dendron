@@ -40,6 +40,8 @@ import {
   Meh,
   Eye,
   Menu,
+  Sun,
+  User,
   type LucideProps,
 } from "lucide-react";
 
@@ -85,6 +87,8 @@ export const ICONS = {
   eye: Eye,
   grip: GripVertical,
   menu: Menu,
+  sun: Sun,
+  user: User,
 } as const;
 
 export type IconName = keyof typeof ICONS;
