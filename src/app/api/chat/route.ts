@@ -117,6 +117,35 @@ function bouwCoachingBlok(contexten: KennisContextVoorChat[], oefenvragen: Oefen
   return blok;
 }
 
+interface OefenSessieVoorChat {
+  hoofdstuk: string | null;
+  transcript: { vraag: string; beoordeling: "goed" | "deels" | "fout" | "geen" }[] | null;
+}
+
+const MAX_RECENTE_STRUIKELVRAGEN = 8;
+
+/**
+ * Vragen die de leerling recent bij Oefenen nog niet (helemaal) goed had -
+ * i.t.t. de andere interne blokken hierboven mag de tutor dit best OPENLIJK
+ * gebruiken (bv. "dit kwam net ook bij het oefenen langs"), dat is precies
+ * het soort persoonlijke aanknopingspunt dat een chat-los-van-Oefenen mist.
+ */
+function bouwOefenGeschiedenisBlok(sessies: OefenSessieVoorChat[]): string {
+  const regels: { hoofdstuk: string | null; vraag: string }[] = [];
+  for (const sessie of sessies) {
+    for (const regel of sessie.transcript ?? []) {
+      if (regels.length >= MAX_RECENTE_STRUIKELVRAGEN) break;
+      if (regel.beoordeling === "fout" || regel.beoordeling === "deels") {
+        regels.push({ hoofdstuk: sessie.hoofdstuk, vraag: regel.vraag });
+      }
+    }
+  }
+  if (regels.length === 0) return "";
+
+  const lijst = regels.map((r) => `- ${r.hoofdstuk ? `[${r.hoofdstuk}] ` : ""}${r.vraag}`).join("\n");
+  return `\n\n[RECENTE OEFENGESCHIEDENIS - vragen die de leerling recent bij Oefenen nog niet (helemaal) goed had, nieuwste eerst. Gebruik dit om proactief te herkennen of de huidige vraag hiermee te maken heeft, en waar dat past kort en vriendelijk te verwijzen (bv. "dit kwam net ook bij het oefenen langs, hè?") - dwing dit niet geforceerd in elk antwoord, alleen als het echt relevant is.]\n${lijst}`;
+}
+
 function bouwSysteemPrompt(
   subjectName: string,
   aiInstructions: string,
@@ -271,6 +300,17 @@ export async function POST(request: Request) {
     .eq("subject_id", subjectId)
     .eq("status", "gepubliceerd");
 
+  // Recente Oefenen-sessies van deze leerling voor dit vak - zodat de tutor
+  // kan aanhaken op wat er net nog niet goed ging i.p.v. dat chat en Oefenen
+  // 2 losse, van elkaar onwetende kanalen blijven.
+  const { data: recenteOefenSessies } = await supabase
+    .from("overhoor_sessies")
+    .select("hoofdstuk, transcript")
+    .eq("subject_id", subjectId)
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false })
+    .limit(3);
+
   // Zodra er voor dit vak gepubliceerde kennisonderdelen of woordenlijsten
   // bestaan, is dat de enige bron van waarheid voor de lesstof - niet meer
   // teruggrijpen op de oudere, losstaande materials-tekst (die zonder
@@ -343,6 +383,13 @@ export async function POST(request: Request) {
     }
   }
 
+  // Alleen zinvol als er al inhoudelijk lesstof getoond wordt - bij een
+  // kale inhoudsopgave weet de tutor nog niet welk onderwerp het is, dan
+  // zou dit alleen ruis toevoegen.
+  if (modus !== "index") {
+    kennisbank += bouwOefenGeschiedenisBlok((recenteOefenSessies ?? []) as OefenSessieVoorChat[]);
+  }
+
   const historyVoorGemini = geschiedenisChronologisch.map((m) => ({
     role: (m.role === "model" ? "model" : "user") as "user" | "model",
     parts: [{ text: m.content }],
@@ -364,24 +411,28 @@ export async function POST(request: Request) {
   try {
     let response;
     try {
+      // De vakdocent-chat gebruikt altijd het zwaardere model (niet alleen
+      // bij een foto) - nauwkeuriger volgen van de hint-opbouw en scherpere
+      // uitleg wegen hier zwaarder dan de snelheid/kosten van het lichtere
+      // model, dat elders in de app (rooster/huiswerk/jaarkalender-import,
+      // Oefenen, Planningshulp) wel volstaat.
       response = await client.models.generateContent({
-        model: afbeeldingInvoer ? GEMINI_VISION_MODEL : GEMINI_MODEL,
+        model: GEMINI_VISION_MODEL,
         contents: contentsVoorGemini,
         config: {
           systemInstruction: systeemPrompt,
-          // Ruimer dan bij tekst-only: gemini-2.5-pro (bij een foto) denkt
+          // Ruimer dan het lichtere model elders: dit model denkt
           // uitgebreider na voordat het antwoord komt, en die interne
           // redenering telt mee in maxOutputTokens - te krap hier betekent
           // een leeg/afgekapt antwoord.
-          maxOutputTokens: afbeeldingInvoer ? 4096 : 2048,
+          maxOutputTokens: 4096,
         },
       });
-    } catch (visionFout) {
-      // Val terug op het standaardmodel als het (zwaardere) vision-model om
-      // wat voor reden dan ook faalt (quotum, tijdelijk niet beschikbaar) -
-      // beter een minder scherp gelezen antwoord dan helemaal geen reactie.
-      if (!afbeeldingInvoer) throw visionFout;
-      console.error("Chat: vision-model faalde, val terug op standaardmodel.", visionFout);
+    } catch (zwaarModelFout) {
+      // Val terug op het lichtere model als het zwaardere model om wat voor
+      // reden dan ook faalt (quotum, tijdelijk niet beschikbaar) - beter een
+      // minder scherp antwoord dan helemaal geen reactie.
+      console.error("Chat: hoofdmodel faalde, val terug op lichter model.", zwaarModelFout);
       response = await client.models.generateContent({
         model: GEMINI_MODEL,
         contents: contentsVoorGemini,
