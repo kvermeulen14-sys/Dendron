@@ -92,7 +92,11 @@ export function KennisOnderdelenBeheer({
         {toonIngebouwdePilot && "Voor hoofdstuk 1 (Rekenen met letters) kan de AI onderdelen voorstellen met de ingebouwde Getal & Ruimte-samenvatting, of "}
         Upload eigen .md-bestanden (1 tegelijk per paragraaf, of meerdere ineens) - de AI herkent zelf welke
         paragraaf elk bestand behandelt en welke structuur het gebruikt, dus dit werkt ook voor andere vakken.
-        Controleer en publiceer de voorstellen hieronder.
+        Controleer en publiceer de voorstellen hieronder.{" "}
+        <strong className="font-medium text-slate-600">
+          Bevat een bestand ook letterlijke woordenlijsten (Engels e.d.)? Gebruik dan niet deze knop maar de
+          taalvak-knop hieronder - die verwerkt het hele hoofdstuk/de hele unit in 1x.
+        </strong>
       </p>
 
       <BulkUpload subjectId={subjectId} />
@@ -293,9 +297,10 @@ function TaalvakUpload({ subjectId }: { subjectId: string }) {
   return (
     <div className="flex flex-col gap-2 rounded-xl border border-dashed border-slate-200 p-3">
       <p className="text-xs text-slate-500">
-        Voor taalvakken (Engels e.d.): herkent letterlijke woorden-/uitdrukkingentabellen apart en bewaart die
-        woord-voor-woord, i.p.v. door de AI te laten samenvatten. Grammatica-uitleg en oefenbank gaan gewoon via de
-        gebruikelijke verwerking hierboven.
+        Voor taalvakken (Engels e.d.): upload hier het HELE hoofdstuk-/unit-bestand in 1x (dus niet ook nog via de
+        knop hierboven). De woordenlijsten/uitdrukkingentabellen erin worden apart herkend en woord-voor-woord
+        bewaard, i.p.v. door de AI samengevat - de rest van hetzelfde bestand (grammatica-uitleg, oefenbank) wordt
+        automatisch meeverwerkt via de gebruikelijke verwerking, in dezelfde upload.
       </p>
       <Button
         variant="secondary"
