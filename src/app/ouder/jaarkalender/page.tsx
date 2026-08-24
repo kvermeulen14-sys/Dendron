@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import type { JaarEvent } from "@/lib/types";
 import { JaarOverzicht } from "@/components/jaar-overzicht";
-import { JaarkalenderBeheer } from "./jaarkalender-beheer";
+import { JaarkalenderToevoegKnop, JaarkalenderLijst } from "./jaarkalender-beheer";
 import { JaarkalenderAIImport } from "./jaarkalender-ai-import";
 
 export default async function JaarkalenderPage() {
@@ -32,11 +32,13 @@ export default async function JaarkalenderPage() {
         </div>
         <div className="flex gap-2">
           <JaarkalenderAIImport />
-          <JaarkalenderBeheer events={(events ?? []) as JaarEvent[]} />
+          <JaarkalenderToevoegKnop />
         </div>
       </div>
 
       <JaarOverzicht events={(events ?? []) as JaarEvent[]} />
+
+      <JaarkalenderLijst events={(events ?? []) as JaarEvent[]} />
     </div>
   );
 }
