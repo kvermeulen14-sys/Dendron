@@ -1,8 +1,10 @@
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { Card } from "@/components/ui/card";
 import { Icon } from "@/components/icon";
 import { ChatgeschiedenisOpschonenKnop } from "@/components/chatgeschiedenis-opschonen-knop";
 import { KindForm } from "./kind-form";
+import { KindBewerkKnop } from "./kind-bewerk-knop";
 
 export default async function KindAccountPage() {
   const supabase = await createClient();
@@ -22,6 +24,17 @@ export default async function KindAccountPage() {
     .eq("family_id", me!.family_id)
     .eq("role", "kind")
     .order("created_at", { ascending: true });
+
+  // E-mailadres staat niet in profiles (dat kent alleen auth.users) - alleen
+  // nodig om het bewerk-formulier voor te vullen, dus via de admin-client.
+  const emailPerKind = new Map<string, string>();
+  if (kinderen && kinderen.length > 0) {
+    const admin = createAdminClient();
+    const resultaten = await Promise.all(kinderen.map((k) => admin.auth.admin.getUserById(k.id)));
+    resultaten.forEach((res, i) => {
+      if (res.data.user?.email) emailPerKind.set(kinderen[i].id, res.data.user.email);
+    });
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -44,7 +57,13 @@ export default async function KindAccountPage() {
                 <div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
                   <Icon name="users" size={18} />
                 </div>
-                <span className="text-sm font-medium text-slate-800">{k.full_name}</span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-slate-800">{k.full_name}</p>
+                  {emailPerKind.get(k.id) && (
+                    <p className="truncate text-xs text-slate-500">{emailPerKind.get(k.id)}</p>
+                  )}
+                </div>
+                <KindBewerkKnop kindId={k.id} huidigeNaam={k.full_name} huidigeEmail={emailPerKind.get(k.id) ?? ""} />
               </li>
             ))}
           </ul>
