@@ -33,6 +33,17 @@ export default async function KindVakDetailPage({
     .eq("user_id", user!.id)
     .order("created_at", { ascending: true });
 
+  // Foto's die de leerling zelf in de chat heeft bijgevoegd (niet de
+  // AI-vakdocent-illustraties, dat gaat via `images` in de API-respons) -
+  // getekende URL erbij zodat ze na een refresh nog zichtbaar zijn.
+  const messagesMetFoto = await Promise.all(
+    (messages ?? []).map(async (m) => {
+      if (!m.image_path) return m;
+      const { data: signed } = await supabase.storage.from("lesstof").createSignedUrl(m.image_path, 3600);
+      return signed?.signedUrl ? { ...m, imageUrl: signed.signedUrl } : m;
+    })
+  );
+
   const { data: overhoorSessies } = await supabase
     .from("overhoor_sessies")
     .select("*")
@@ -69,13 +80,15 @@ export default async function KindVakDetailPage({
       <VakWerkruimte
         subjectId={id}
         subjectName={subject.name}
-        initialMessages={messages ?? []}
+        initialMessages={messagesMetFoto}
         initialModus={initialModus}
         hoofdstukken={hoofdstukken}
         beheerSectie={
           <div className="flex flex-col gap-3">
             <p className="text-sm text-slate-500">
-              Heb je een foto van je boek of aantekeningen die kunnen helpen? Voeg ze toe.
+              Voor een losse vraag over een opgave: gebruik het fotoknopje in de chat hierboven - dat blijft bij dat
+              ene gesprek. Gebruik dit hieronder alleen om lesstof blijvend toe te voegen (bv. een pagina uit je
+              boek), zodat de vakdocent dat voortaan bij elke vraag kan gebruiken.
             </p>
             <KennisbankUploader subjectId={id} />
             <div>

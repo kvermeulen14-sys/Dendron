@@ -152,6 +152,8 @@ export interface ChatMessage {
   user_id: string;
   role: "user" | "model";
   content: string;
+  /** Pad in de "lesstof"-bucket van een foto die bij dit bericht hoort (bv. een opgave) - alleen voor dit gesprek. */
+  image_path: string | null;
   created_at: string;
 }
 

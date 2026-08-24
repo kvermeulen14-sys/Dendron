@@ -10,7 +10,13 @@ import { VisualWeergave } from "@/components/visuals/visual-weergave";
 import { extraheerVisuals } from "@/lib/visuals";
 import type { ChatMessage } from "@/lib/types";
 
-type WeergaveBericht = ChatMessage & { images?: { url: string; title: string }[] };
+type WeergaveBericht = ChatMessage & {
+  images?: { url: string; title: string }[];
+  /** Alleen voor een net-verstuurd bericht in deze sessie: lokale voorvertoning van de bijgevoegde foto. */
+  previewImageUrl?: string;
+  /** Voor eerder opgeslagen berichten (na een refresh): getekende URL, opgelost bij het laden van de pagina. */
+  imageUrl?: string;
+};
 type Modus = "algemeen" | "opdracht";
 
 const MODUS_TEKST: Record<
@@ -34,6 +40,22 @@ const MODUS_TEKST: Record<
   },
 };
 
+const TOEGESTANE_FOTO_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/heic", "image/heif"];
+const MAX_FOTO_BYTES = 8 * 1024 * 1024;
+
+function leesAlsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      // dataURL heeft de vorm "data:<mime>;base64,<data>" - alleen het deel na de komma versturen.
+      resolve(result.split(",")[1] ?? "");
+    };
+    reader.onerror = () => reject(new Error("Foto inlezen mislukt."));
+    reader.readAsDataURL(file);
+  });
+}
+
 export function ChatPanel({
   subjectId,
   subjectName,
@@ -49,15 +71,38 @@ export function ChatPanel({
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [foto, setFoto] = useState<{ previewUrl: string; base64: string; mimeType: string } | null>(null);
+  const fotoInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const tekst = MODUS_TEKST[modus];
 
+  async function fotoGekozen(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+
+    setError(null);
+    if (!TOEGESTANE_FOTO_TYPES.includes(file.type)) {
+      setError("Alleen JPEG/PNG/WebP/HEIC-foto's worden ondersteund.");
+      return;
+    }
+    if (file.size > MAX_FOTO_BYTES) {
+      setError("Deze foto is te groot (max 8MB).");
+      return;
+    }
+
+    const base64 = await leesAlsBase64(file);
+    setFoto({ previewUrl: URL.createObjectURL(file), base64, mimeType: file.type });
+  }
+
   async function verstuur() {
-    const bericht = input.trim();
+    const bericht = input.trim() || (foto ? "Kun je me hierbij helpen?" : "");
     if (!bericht || sending) return;
 
     setError(null);
     setInput("");
+    const bijgevoegdeFoto = foto;
+    setFoto(null);
     setSending(true);
     const huidigeMessages = messages;
     setMessages((prev) => [
@@ -69,7 +114,9 @@ export function ChatPanel({
         user_id: "",
         role: "user",
         content: bericht,
+        image_path: null,
         created_at: new Date().toISOString(),
+        previewImageUrl: bijgevoegdeFoto?.previewUrl,
       },
     ]);
 
@@ -81,6 +128,7 @@ export function ChatPanel({
           subjectId,
           message: bericht,
           gespreksmodus: modus,
+          ...(bijgevoegdeFoto ? { image: { mimeType: bijgevoegdeFoto.mimeType, data: bijgevoegdeFoto.base64 } } : {}),
           ...(modus === "opdracht"
             ? { opdrachtGeschiedenis: huidigeMessages.map((m) => ({ role: m.role, content: m.content })) }
             : {}),
@@ -98,6 +146,7 @@ export function ChatPanel({
           user_id: "",
           role: "model",
           content: data.reply,
+          image_path: null,
           created_at: new Date().toISOString(),
           images: data.images,
         },
@@ -129,11 +178,16 @@ export function ChatPanel({
         <div className="flex flex-col gap-3">
           {messages.map((m) => {
             const { tekst: schoneTekst, visuals } = m.role === "model" ? extraheerVisuals(m.content) : { tekst: m.content, visuals: [] };
+            const eigenFotoUrl = m.previewImageUrl ?? m.imageUrl;
             return (
             <div
               key={m.id}
               className={clsx("flex flex-col", m.role === "user" ? "items-end" : "items-start")}
             >
+              {m.role === "user" && eigenFotoUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={eigenFotoUrl} alt="Bijgevoegde foto" className="mb-1 h-32 w-auto rounded-xl border border-slate-200 object-cover" />
+              )}
               <div
                 className={clsx(
                   "max-w-[80%] rounded-2xl px-4 py-2.5",
@@ -183,6 +237,24 @@ export function ChatPanel({
 
       {error && <p className="px-5 pb-1 text-sm text-rose-600">{error}</p>}
 
+      {foto && (
+        <div className="flex items-center gap-2 border-t border-slate-100 px-3 pt-3">
+          <div className="relative">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={foto.previewUrl} alt="Te versturen foto" className="h-14 w-14 rounded-lg border border-slate-200 object-cover" />
+            <button
+              type="button"
+              onClick={() => setFoto(null)}
+              className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-slate-700 text-white"
+              aria-label="Foto verwijderen"
+            >
+              <Icon name="close" size={12} />
+            </button>
+          </div>
+          <p className="text-xs text-slate-500">Deze foto wordt alleen voor dit bericht gebruikt, niet aan de lesstof toegevoegd.</p>
+        </div>
+      )}
+
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -190,6 +262,15 @@ export function ChatPanel({
         }}
         className="flex items-end gap-2 border-t border-slate-100 p-3"
       >
+        <button
+          type="button"
+          onClick={() => fotoInputRef.current?.click()}
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50"
+          aria-label="Foto toevoegen aan dit bericht"
+        >
+          <Icon name="image" size={18} />
+        </button>
+        <input ref={fotoInputRef} type="file" accept="image/*" className="hidden" onChange={fotoGekozen} />
         <ChatInvoer
           value={input}
           onChange={setInput}
@@ -197,7 +278,7 @@ export function ChatPanel({
           placeholder={tekst.placeholder}
           focusClassName="focus:border-emerald-500 focus:ring-emerald-100"
         />
-        <Button type="submit" loading={sending} disabled={!input.trim()} className="shrink-0">
+        <Button type="submit" loading={sending} disabled={!input.trim() && !foto} className="shrink-0">
           Versturen
         </Button>
       </form>

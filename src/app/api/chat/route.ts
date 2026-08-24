@@ -1,7 +1,16 @@
 import { NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
 import { createClient } from "@/lib/supabase/server";
 import { createGeminiClient, vereistGeminiKey, GEMINI_MODEL } from "@/lib/gemini";
 import { kiesRelevanteMaterialen, bouwKennisbankUitOnderdelen, type KennisOnderdeelRij, type KennisParagraafContextRij } from "@/lib/kennisbank";
+
+const MAX_AFBEELDING_BYTES = 8 * 1024 * 1024; // 8MB (ruim voor een foto, zonder de request onnodig groot te maken)
+const TOEGESTANE_AFBEELDING_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/heic", "image/heif"];
+
+function extensieVoorMimeType(mimeType: string) {
+  const na_slash = mimeType.split("/")[1] || "jpg";
+  return na_slash === "jpeg" ? "jpg" : na_slash;
+}
 
 const MAX_GESCHIEDENIS = 20;
 const MAX_KENNISBANK_TEKENS = 14000;
@@ -173,11 +182,23 @@ export async function POST(request: Request) {
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Niet ingelogd." }, { status: 401 });
 
-  const { subjectId, message, gespreksmodus, opdrachtGeschiedenis } = await request.json();
+  const { subjectId, message, gespreksmodus, opdrachtGeschiedenis, image } = await request.json();
   if (!subjectId || !message || typeof message !== "string") {
     return NextResponse.json({ error: "subjectId en message zijn verplicht." }, { status: 400 });
   }
   const isOpdrachtModus = gespreksmodus === "opdracht";
+
+  let afbeeldingInvoer: { mimeType: string; data: string } | null = null;
+  if (image && typeof image === "object" && typeof image.mimeType === "string" && typeof image.data === "string") {
+    if (!TOEGESTANE_AFBEELDING_TYPES.includes(image.mimeType)) {
+      return NextResponse.json({ error: "Alleen JPEG/PNG/WebP/HEIC-foto's worden ondersteund." }, { status: 400 });
+    }
+    if (image.data.length > MAX_AFBEELDING_BYTES * 1.4) {
+      // base64 is ~33% groter dan de brondata; ruime marge om vroeg te weigeren.
+      return NextResponse.json({ error: "De foto is te groot (max 8MB)." }, { status: 400 });
+    }
+    afbeeldingInvoer = { mimeType: image.mimeType, data: image.data };
+  }
 
   const { data: subject } = await supabase
     .from("subjects")
@@ -289,11 +310,16 @@ export async function POST(request: Request) {
     ? bouwOpdrachtSysteemPrompt(subject.name, subject.ai_instructions ?? "", kennisbank, modus)
     : bouwSysteemPrompt(subject.name, subject.ai_instructions ?? "", kennisbank, modus);
 
+  const huidigeBeurtParts: ({ text: string } | { inlineData: { mimeType: string; data: string } })[] = [{ text: message }];
+  if (afbeeldingInvoer) {
+    huidigeBeurtParts.push({ inlineData: { mimeType: afbeeldingInvoer.mimeType, data: afbeeldingInvoer.data } });
+  }
+
   let antwoord: string;
   try {
     const response = await client.models.generateContent({
       model: GEMINI_MODEL,
-      contents: [...historyVoorGemini, { role: "user", parts: [{ text: message }] }],
+      contents: [...historyVoorGemini, { role: "user", parts: huidigeBeurtParts }],
       config: {
         systemInstruction: systeemPrompt,
         maxOutputTokens: 2048,
@@ -307,9 +333,28 @@ export async function POST(request: Request) {
     );
   }
 
+  // De foto wordt WEL opgeslagen bij dit ene chatbericht (zodat het gesprek
+  // bij een refresh klopt), maar NIET toegevoegd aan materials/de kennisbank
+  // van het vak - dit is een losse vraag, geen permanente lesstof.
+  let afbeeldingPad: string | null = null;
+  if (afbeeldingInvoer) {
+    const pad = `${subject.family_id}/chat/${subjectId}/${randomUUID()}.${extensieVoorMimeType(afbeeldingInvoer.mimeType)}`;
+    const { error: uploadError } = await supabase.storage
+      .from("lesstof")
+      .upload(pad, Buffer.from(afbeeldingInvoer.data, "base64"), { contentType: afbeeldingInvoer.mimeType, upsert: false });
+    if (!uploadError) afbeeldingPad = pad;
+  }
+
   const berichtenTabel = isOpdrachtModus ? "opdracht_berichten" : "chat_messages";
   await supabase.from(berichtenTabel).insert([
-    { family_id: subject.family_id, subject_id: subjectId, user_id: user.id, role: "user", content: message },
+    {
+      family_id: subject.family_id,
+      subject_id: subjectId,
+      user_id: user.id,
+      role: "user",
+      content: message,
+      image_path: afbeeldingPad,
+    },
     { family_id: subject.family_id, subject_id: subjectId, user_id: user.id, role: "model", content: antwoord },
   ]);
 
