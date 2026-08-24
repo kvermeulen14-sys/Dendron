@@ -24,6 +24,7 @@ import {
   zetKennisOefenvraagStatus,
   verwijderKennisOefenvraag,
   publiceerParagraaf,
+  verwijderParagraaf,
 } from "@/lib/actions/kennis-bron-import";
 import type { KennisOnderdeel, KennisOefenvraag, KennisParagraafContext } from "@/lib/types";
 
@@ -263,6 +264,18 @@ function ParagraafRij({
     });
   }
 
+  function alleenVerwijderen() {
+    if (!confirm(`Alle kennisonderdelen, context en oefenvragen van "${paragraafId} - ${titel}" verwijderen? Dit geldt ook voor al gepubliceerde onderdelen.`)) {
+      return;
+    }
+    setError(null);
+    startTransition(async () => {
+      const res = await verwijderParagraaf(subjectId, paragraafId);
+      if (res.error) setError(res.error);
+      router.refresh();
+    });
+  }
+
   function genereer() {
     setError(null);
     startTransition(async () => {
@@ -396,6 +409,18 @@ function ParagraafRij({
                 Alles publiceren ({totaalConcept})
               </Button>
             )}
+            {(onderdelen.length > 0 || oefenvragen.length > 0 || context) && (
+              <Button
+                variant="secondary"
+                size="md"
+                icon={<Icon name="trash" size={15} />}
+                onClick={alleenVerwijderen}
+                disabled={pending}
+                className="!text-rose-600 hover:!bg-rose-50"
+              >
+                Deze paragraaf verwijderen
+              </Button>
+            )}
             {uitIngebouwdeDataset && (
               <Button
                 variant="secondary"
@@ -496,7 +521,7 @@ function ContextKaart({ subjectId, context }: { subjectId: string; context: Kenn
           .map((v) => (
             <div key={v.label}>
               <dt className="text-[11px] font-medium uppercase tracking-wide text-slate-400">{v.label}</dt>
-              <dd className="text-xs text-slate-700">{v.waarde && normaliseerWiskundeNotatie(v.waarde)}</dd>
+              <dd className="whitespace-pre-wrap text-xs text-slate-700">{v.waarde && normaliseerWiskundeNotatie(v.waarde)}</dd>
             </div>
           ))}
       </dl>
@@ -625,10 +650,10 @@ function OefenvraagKaart({ subjectId, oefenvraag }: { subjectId: string; oefenvr
         </div>
       </div>
 
-      <p className="mt-1.5 text-sm text-slate-800">{normaliseerWiskundeNotatie(oefenvraag.vraag)}</p>
-      <p className="mt-1 font-mono text-xs text-emerald-700">{normaliseerWiskundeNotatie(oefenvraag.antwoord)}</p>
+      <p className="mt-1.5 whitespace-pre-wrap text-sm text-slate-800">{normaliseerWiskundeNotatie(oefenvraag.vraag)}</p>
+      <p className="mt-1 whitespace-pre-wrap font-mono text-xs text-emerald-700">{normaliseerWiskundeNotatie(oefenvraag.antwoord)}</p>
       {oefenvraag.uitwerking && (
-        <p className="mt-1 text-xs text-slate-500">{normaliseerWiskundeNotatie(oefenvraag.uitwerking)}</p>
+        <p className="mt-1 whitespace-pre-wrap text-xs text-slate-500">{normaliseerWiskundeNotatie(oefenvraag.uitwerking)}</p>
       )}
 
       <div className="mt-2.5">
@@ -751,31 +776,31 @@ function OnderdeelKaart({ subjectId, onderdeel }: { subjectId: string; onderdeel
         </div>
       </div>
 
-      <p className="mt-1.5 text-sm text-slate-700">{normaliseerWiskundeNotatie(onderdeel.regel)}</p>
+      <p className="mt-1.5 whitespace-pre-wrap text-sm text-slate-700">{normaliseerWiskundeNotatie(onderdeel.regel)}</p>
 
       <ul className="mt-1.5 flex flex-col gap-0.5 text-xs text-slate-600">
         {onderdeel.voorbeelden.map((v, i) => (
-          <li key={i} className="font-mono">
+          <li key={i} className="whitespace-pre-wrap font-mono">
             {normaliseerWiskundeNotatie(v)}
           </li>
         ))}
       </ul>
 
       {onderdeel.gecombineerd_voorbeeld && (
-        <p className="mt-1.5 font-mono text-xs text-slate-600">{normaliseerWiskundeNotatie(onderdeel.gecombineerd_voorbeeld)}</p>
+        <p className="mt-1.5 whitespace-pre-wrap font-mono text-xs text-slate-600">{normaliseerWiskundeNotatie(onderdeel.gecombineerd_voorbeeld)}</p>
       )}
       {onderdeel.tip && (
-        <p className="mt-2 rounded-lg bg-sky-50 px-2.5 py-1.5 text-xs text-sky-800">
+        <p className="mt-2 whitespace-pre-wrap rounded-lg bg-sky-50 px-2.5 py-1.5 text-xs text-sky-800">
           Tip: {normaliseerWiskundeNotatie(onderdeel.tip)}
         </p>
       )}
       {onderdeel.uitzondering && (
-        <p className="mt-1.5 rounded-lg bg-amber-50 px-2.5 py-1.5 text-xs text-amber-800">
+        <p className="mt-1.5 whitespace-pre-wrap rounded-lg bg-amber-50 px-2.5 py-1.5 text-xs text-amber-800">
           Let op: {normaliseerWiskundeNotatie(onderdeel.uitzondering)}
         </p>
       )}
       {onderdeel.fout_voorbeeld && (
-        <p className="mt-1.5 rounded-lg bg-rose-50 px-2.5 py-1.5 text-xs text-rose-800">
+        <p className="mt-1.5 whitespace-pre-wrap rounded-lg bg-rose-50 px-2.5 py-1.5 text-xs text-rose-800">
           {normaliseerWiskundeNotatie(onderdeel.fout_voorbeeld)}
         </p>
       )}

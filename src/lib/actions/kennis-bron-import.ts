@@ -26,12 +26,31 @@ const MetaSchema = z.object({
     .describe("Paragraaf- of unitnummer zoals in de tekst genoemd (bv '1.2' of gewoon '4' bij units), of null."),
   paragraafTitel: z.string().nullable().describe("Titel van de paragraaf, of null."),
   hoofdstukLabel: z.string().nullable().describe("Leesbaar hoofdstuklabel, of null."),
-  leerdoelen: z.string().nullable().describe("Leerdoelen als platte tekst, of null."),
-  voorkennis: z.string().nullable().describe("Benodigde voorkennis, platte tekst, of null."),
-  kernbegrippen: z.string().nullable().describe("Belangrijkste begrippen + korte omschrijving, platte tekst, of null."),
-  oplossingsroute: z.string().nullable().describe("Vaste oplossingsstappen, platte tekst, of null."),
+  leerdoelen: z
+    .string()
+    .nullable()
+    .describe("Leerdoelen, 1 per regel met een '- ' ervoor (opsomming met echte newlines, geen aaneengeschreven tekst), of null."),
+  voorkennis: z
+    .string()
+    .nullable()
+    .describe("Benodigde voorkennis, 1 per regel met een '- ' ervoor (opsomming met echte newlines), of null."),
+  kernbegrippen: z
+    .string()
+    .nullable()
+    .describe(
+      "Belangrijkste begrippen + korte omschrijving, 1 begrip per regel als '- Begrip: omschrijving' (opsomming met echte newlines), of null."
+    ),
+  oplossingsroute: z
+    .string()
+    .nullable()
+    .describe("Vaste oplossingsstappen, genummerd 1 stap per regel als '1. ...' (met echte newlines), of null."),
   beheersingscriterium: z.string().nullable().describe("Beheersingscriterium, of null."),
-  coachaanpak: z.string().nullable().describe("Coachtips voor een AI-tutor: fouten+coachvraag/hint, kort samengevat, of null."),
+  coachaanpak: z
+    .string()
+    .nullable()
+    .describe(
+      "Coachtips voor een AI-tutor: fouten+coachvraag/hint, kort samengevat, 1 per regel met een '- ' ervoor (echte newlines), of null."
+    ),
   videos: z.array(z.object({ titel: z.string(), url: z.string(), aanbiedenBij: z.string().nullable() })).max(5),
   onderdelen: z.array(OnderdeelSchema).max(8),
 });
@@ -392,6 +411,29 @@ export async function publiceerParagraaf(subjectId: string, paragraafId: string)
       .eq("subject_id", subjectId)
       .eq("paragraaf_id", paragraafId)
       .eq("status", "concept"),
+  ]);
+  const fout = onderdelenRes.error || contextRes.error || oefenvragenRes.error;
+  if (fout) return { error: fout.message };
+
+  revalidateVak(subjectId);
+  return { success: true };
+}
+
+/**
+ * Verwijdert in 1 keer alle kennisonderdelen, de paragraafcontext en alle
+ * oefenvragen van 1 paragraaf (concept EN gepubliceerd) - handig om een
+ * mislukte/rommelige upload in 1 keer weg te halen i.p.v. elk kaartje apart
+ * te moeten verwijderen.
+ */
+export async function verwijderParagraaf(subjectId: string, paragraafId: string) {
+  const ouder = await ouderProfiel();
+  if ("error" in ouder) return { error: ouder.error };
+  const { supabase } = ouder;
+
+  const [onderdelenRes, contextRes, oefenvragenRes] = await Promise.all([
+    supabase.from("kennis_onderdelen").delete().eq("subject_id", subjectId).eq("paragraaf_id", paragraafId),
+    supabase.from("kennis_paragraaf_context").delete().eq("subject_id", subjectId).eq("paragraaf_id", paragraafId),
+    supabase.from("kennis_oefenvragen").delete().eq("subject_id", subjectId).eq("paragraaf_id", paragraafId),
   ]);
   const fout = onderdelenRes.error || contextRes.error || oefenvragenRes.error;
   if (fout) return { error: fout.message };
