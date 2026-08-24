@@ -19,6 +19,20 @@ const OefenvraagSchema = z.object({
   uitwerking: z.string().nullable().describe("De tussenstappen/kernuitwerking uit de bron, indien aanwezig, anders null."),
 });
 
+const VideoSchema = z.object({
+  titel: z.string().describe("Titel van de aanbevolen uitlegvideo."),
+  url: z.string().describe("De directe link naar de video."),
+  aanbiedenBij: z
+    .string()
+    .nullable()
+    .describe("Wanneer/bij welk type vraag de tutor deze video zou moeten aanbieden, indien de bron dat aangeeft, anders null."),
+});
+
+// Let op: dit schema bewust PLAT houden (geen nullable object binnen een
+// object) - een genest "context: {...}.nullable()"-veld bleek in de praktijk
+// bij Gemini's structured output nooit een geldig resultaat op te leveren
+// (alle bestanden faalden identiek, bij elke poging). Losse nullable
+// strings/arrays op het top-niveau werken wel betrouwbaar.
 const BrontekstExtractieSchema = z.object({
   isParagraafBestand: z
     .boolean()
@@ -31,19 +45,30 @@ const BrontekstExtractieSchema = z.object({
     .string()
     .nullable()
     .describe("Een leesbaar hoofdstuklabel zoals in de bron gebruikt (bv 'Hoofdstuk 1 - Rekenen met letters'), of null."),
-  context: z
-    .object({
-      leerdoelen: z.string().nullable().describe("Leerdoelen als lopende tekst of met regeleinden tussen punten, zonder markdown-koppen."),
-      voorkennis: z.string().nullable(),
-      kernbegrippen: z.string().nullable().describe("De belangrijkste begrippen met een korte omschrijving, als platte tekst."),
-      oplossingsroute: z.string().nullable().describe("De vaste stappen/aanpak om dit type opgave op te lossen, als platte tekst."),
-      beheersingscriterium: z
-        .string()
-        .nullable()
-        .describe("Het criterium waaraan te zien is dat de leerling deze paragraaf beheerst, indien in de bron aanwezig."),
-    })
+  leerdoelen: z
+    .string()
     .nullable()
-    .describe("Null als het bestand geen van deze paragraafbrede informatie bevat."),
+    .describe("Leerdoelen als lopende tekst of met regeleinden tussen punten, zonder markdown-koppen, of null als niet aanwezig."),
+  voorkennis: z.string().nullable().describe("Benodigde voorkennis, als platte tekst, of null als niet aanwezig."),
+  kernbegrippen: z.string().nullable().describe("De belangrijkste begrippen met een korte omschrijving, als platte tekst, of null."),
+  oplossingsroute: z
+    .string()
+    .nullable()
+    .describe("De vaste stappen/aanpak om dit type opgave op te lossen, als platte tekst, of null."),
+  beheersingscriterium: z
+    .string()
+    .nullable()
+    .describe("Het criterium waaraan te zien is dat de leerling deze paragraaf beheerst, indien in de bron aanwezig, anders null."),
+  coachaanpak: z
+    .string()
+    .nullable()
+    .describe(
+      "Praktische coachaanpak voor een AI-tutor bij deze paragraaf, als lopende tekst: veelgemaakte fouten met een kort signaal en welke coachvraag/hint daarbij hoort, plus algemene diagnostische/coach-instructies uit de bron. Negeer bronvermeldingen. Null als de bron dit niet bevat."
+    ),
+  videos: z
+    .array(VideoSchema)
+    .max(5)
+    .describe("Aanbevolen uitlegvideo's uit de bron met hun link, indien aanwezig - anders een lege array."),
   onderdelen: z
     .array(OnderdeelSchema)
     .max(8)
@@ -66,9 +91,11 @@ function bouwExtractiePrompt(bestandsnaam: string, brontekst: string): string {
     "",
     "Instructies:",
     "- Bepaal eerst of dit bestand de lesstof van 1 specifieke paragraaf bevat (isParagraafBestand=true), of een hoofdstukindex/dekkingsrapport/ander overzicht zonder eigen paragraaflesstof (isParagraafBestand=false, laat dan de overige velden leeg/leeg array).",
-    "- Negeer bronvermeldingen, links naar video's, en interne kwaliteitslabels zoals [N-structuur]/[Schooldoel]/[Didactische synthese] - die zijn niet relevant voor de leerling.",
+    "- Negeer bronvermeldingen en interne kwaliteitslabels zoals [N-structuur]/[Schooldoel]/[Didactische synthese] - die zijn niet relevant voor de leerling.",
     "- Voor 'onderdelen': splits de regels/theorie op in losse, benoemde deelvaardigheden met voorbeelden, tip, uitzondering en foutvoorbeeld, gebaseerd op wat in de tekst staat (regels/uitzonderingen, uitgewerkte voorbeelden, veelgemaakte fouten). Gebruik uitsluitend de wiskundige inhoud uit de tekst.",
     "- Voor 'oefenvragen': neem vraag/antwoord/uitwerking zo veel mogelijk LETTERLIJK over uit een eventuele oefenbank/opgavenlijst met antwoorden - dit zijn al gecontroleerde antwoorden, verzin niets nieuws en wijzig geen getallen.",
+    "- Voor 'coachaanpak': vat een eventuele tabel met veelgemaakte fouten (signaal, oorzaak, coachvraag, hint) en algemene diagnostische/coach-instructies samen als korte, praktische lopende tekst voor een AI-tutor - geen tabel, geen markdown.",
+    "- Voor 'videos': neem elke aanbevolen uitlegvideo over met zijn titel, de directe link, en wanneer die aangeboden zou moeten worden (indien aangegeven). Alleen bestaande links uit de tekst, verzin er geen.",
     "- Gebruik ^ voor machten (bv a^2) en / voor breuken in platte tekst; gebruik geen LaTeX en geen markdown-koppen (#, ##) in de tekstvelden.",
   ].join("\n");
 }
@@ -120,7 +147,12 @@ export async function verwerkKennisBrontekst(
   let resultaat: z.infer<typeof BrontekstExtractieSchema>;
   try {
     const client = createGeminiClient();
-    resultaat = await genereerGestructureerd(client, BrontekstExtractieSchema, bouwExtractiePrompt(bestandsnaam, tekst));
+    resultaat = await genereerGestructureerd(
+      client,
+      BrontekstExtractieSchema,
+      bouwExtractiePrompt(bestandsnaam, tekst),
+      32_768
+    );
   } catch (e) {
     return { error: e instanceof Error ? e.message : "AI-verwerking mislukt." };
   }
@@ -154,8 +186,16 @@ export async function verwerkKennisBrontekst(
   );
   if ("error" in onderdelenRes) return { error: onderdelenRes.error };
 
+  const contextVelden = [
+    resultaat.leerdoelen,
+    resultaat.voorkennis,
+    resultaat.kernbegrippen,
+    resultaat.oplossingsroute,
+    resultaat.beheersingscriterium,
+    resultaat.coachaanpak,
+  ];
   let contextOpgeslagen = false;
-  if (resultaat.context && Object.values(resultaat.context).some((v) => v)) {
+  if (contextVelden.some(Boolean) || resultaat.videos.length > 0) {
     const { error: contextError } = await supabase.from("kennis_paragraaf_context").upsert(
       {
         family_id: familyId,
@@ -163,11 +203,13 @@ export async function verwerkKennisBrontekst(
         hoofdstuk,
         paragraaf_id: paragraafId,
         titel,
-        leerdoelen: resultaat.context.leerdoelen,
-        voorkennis: resultaat.context.voorkennis,
-        kernbegrippen: resultaat.context.kernbegrippen,
-        oplossingsroute: resultaat.context.oplossingsroute,
-        beheersingscriterium: resultaat.context.beheersingscriterium,
+        leerdoelen: resultaat.leerdoelen,
+        voorkennis: resultaat.voorkennis,
+        kernbegrippen: resultaat.kernbegrippen,
+        oplossingsroute: resultaat.oplossingsroute,
+        beheersingscriterium: resultaat.beheersingscriterium,
+        coachaanpak: resultaat.coachaanpak,
+        videos: resultaat.videos,
         status: "concept" as const,
         created_by: user.id,
         updated_at: new Date().toISOString(),
@@ -214,6 +256,16 @@ export async function bewerkKennisParagraafContext(id: string, subjectId: string
 
   const veld = (naam: string) => String(formData.get(naam) || "").trim() || null;
 
+  const videos = String(formData.get("videos") || "")
+    .split("\n")
+    .map((regel) => regel.trim())
+    .filter(Boolean)
+    .map((regel) => {
+      const [titel, url, aanbiedenBij] = regel.split("|").map((deel) => deel.trim());
+      return { titel: titel || url, url, aanbiedenBij: aanbiedenBij || null };
+    })
+    .filter((v) => v.url);
+
   const { error } = await supabase
     .from("kennis_paragraaf_context")
     .update({
@@ -222,6 +274,8 @@ export async function bewerkKennisParagraafContext(id: string, subjectId: string
       kernbegrippen: veld("kernbegrippen"),
       oplossingsroute: veld("oplossingsroute"),
       beheersingscriterium: veld("beheersingscriterium"),
+      coachaanpak: veld("coachaanpak"),
+      videos,
       updated_at: new Date().toISOString(),
     })
     .eq("id", id);

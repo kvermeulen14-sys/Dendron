@@ -177,6 +177,12 @@ export interface KennisOnderdeel {
   updated_at: string;
 }
 
+export interface KennisVideo {
+  titel: string;
+  url: string;
+  aanbiedenBij: string | null;
+}
+
 export interface KennisParagraafContext {
   id: string;
   family_id: string;
@@ -189,6 +195,8 @@ export interface KennisParagraafContext {
   kernbegrippen: string | null;
   oplossingsroute: string | null;
   beheersingscriterium: string | null;
+  coachaanpak: string | null;
+  videos: KennisVideo[];
   status: KennisOnderdeelStatus;
   created_by: string;
   created_at: string;

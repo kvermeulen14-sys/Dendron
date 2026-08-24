@@ -396,6 +396,7 @@ function ContextKaart({ subjectId, context }: { subjectId: string; context: Kenn
     { label: "Kernbegrippen", waarde: context.kernbegrippen },
     { label: "Oplossingsroute", waarde: context.oplossingsroute },
     { label: "Beheersingscriterium", waarde: context.beheersingscriterium },
+    { label: "Coachaanpak (voor de AI-tutor)", waarde: context.coachaanpak },
   ];
 
   return (
@@ -432,6 +433,22 @@ function ContextKaart({ subjectId, context }: { subjectId: string; context: Kenn
           ))}
       </dl>
 
+      {context.videos.length > 0 && (
+        <div className="mt-2">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">Uitlegvideo&apos;s</p>
+          <ul className="mt-0.5 flex flex-col gap-0.5">
+            {context.videos.map((v, i) => (
+              <li key={i} className="text-xs">
+                <a href={v.url} target="_blank" rel="noreferrer" className="text-accent-600 underline">
+                  {v.titel}
+                </a>
+                {v.aanbiedenBij && <span className="text-slate-500"> — {v.aanbiedenBij}</span>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <div className="mt-2.5">
         <StatusKnop status={context.status} bezig={pending} onWissel={wisselStatus} />
       </div>
@@ -447,17 +464,30 @@ function ContextKaart({ subjectId, context }: { subjectId: string; context: Kenn
           }}
           className="flex flex-col gap-3"
         >
-          {(["leerdoelen", "voorkennis", "kernbegrippen", "oplossingsroute", "beheersingscriterium"] as const).map((veld) => (
-            <div key={veld}>
-              <label className="mb-1.5 block text-sm font-medium capitalize text-slate-700">{veld}</label>
-              <textarea
-                name={veld}
-                rows={2}
-                defaultValue={context[veld] ?? ""}
-                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
-              />
-            </div>
-          ))}
+          {(["leerdoelen", "voorkennis", "kernbegrippen", "oplossingsroute", "beheersingscriterium", "coachaanpak"] as const).map(
+            (veld) => (
+              <div key={veld}>
+                <label className="mb-1.5 block text-sm font-medium capitalize text-slate-700">{veld}</label>
+                <textarea
+                  name={veld}
+                  rows={2}
+                  defaultValue={context[veld] ?? ""}
+                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
+                />
+              </div>
+            )
+          )}
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700">
+              Uitlegvideo&apos;s (1 per regel: titel | link | wanneer aanbieden)
+            </label>
+            <textarea
+              name="videos"
+              rows={3}
+              defaultValue={context.videos.map((v) => `${v.titel} | ${v.url} | ${v.aanbiedenBij ?? ""}`).join("\n")}
+              className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs font-mono focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
+            />
+          </div>
           <div className="flex gap-2">
             <SubmitButton>Wijzigingen opslaan</SubmitButton>
             <Button type="button" variant="secondary" onClick={() => setBewerken(false)}>

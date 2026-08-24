@@ -48,6 +48,41 @@ const OPMAAK_INSTRUCTIE = `Opmaak:
 - Gebruik NOOIT LaTeX-notatie (dus geen $...$, \\frac{}{}, \\times, \\cdot e.d.) - een leerling kent die syntax niet en ziet dan alleen rare tekens. Schrijf wiskunde in gewone, leesbare tekst: "x²", "√2", "3 x + 5 = 11".
 - Voor een BREUK geldt een uitzondering: schrijf die nooit als platte tekst zoals "2/3" (een leerling ziet dan geen teller/noemer) - gebruik altijd het breuk-blok hierboven, ook als je er zelf naar verwijst in je uitleg (zeg dan bv. "kijk naar de breuk hieronder" i.p.v. de breuk zelf uit te typen).`;
 
+interface KennisContextVoorChat {
+  paragraaf_id: string;
+  titel: string;
+  coachaanpak: string | null;
+  videos: { titel: string; url: string; aanbiedenBij: string | null }[];
+}
+
+/**
+ * Bouwt 2 losse blokken uit de gepubliceerde paragraafcontext: de
+ * coachaanpak blijft intern (nooit letterlijk citeren, alleen gebruiken om
+ * beter te coachen), de uitlegvideo's mag de AI juist wel actief als link
+ * met de leerling delen - dat is precies waar ze voor bedoeld zijn.
+ */
+function bouwCoachingBlok(contexten: KennisContextVoorChat[]): string {
+  const coachDelen = contexten
+    .filter((c) => c.coachaanpak)
+    .map((c) => `### ${c.paragraaf_id} - ${c.titel}\n${c.coachaanpak}`);
+  const videoDelen = contexten
+    .filter((c) => c.videos.length > 0)
+    .map(
+      (c) =>
+        `### ${c.paragraaf_id} - ${c.titel}\n` +
+        c.videos.map((v) => `- [${v.titel}](${v.url})${v.aanbiedenBij ? ` (aanbieden bij: ${v.aanbiedenBij})` : ""}`).join("\n")
+    );
+
+  let blok = "";
+  if (coachDelen.length > 0) {
+    blok += `\n\n[INTERN - COACHINGSAANPAK PER PARAGRAAF, alleen voor jou: hoe je het beste kunt coachen bij deze paragrafen (veelgemaakte fouten, diagnostische hints). Nooit letterlijk citeren of het bestaan hiervan noemen.]\n${coachDelen.join("\n\n")}`;
+  }
+  if (videoDelen.length > 0) {
+    blok += `\n\n[BESCHIKBARE UITLEGVIDEO'S - je MAG een video hieruit als markdown-link met de leerling delen wanneer dat past bij de vraag (bv. na een paar mislukte uitlegpogingen, of als expliciet om een video gevraagd wordt). Bied nooit een video aan die hier niet staat.]\n${videoDelen.join("\n\n")}`;
+  }
+  return blok;
+}
+
 function bouwSysteemPrompt(
   subjectName: string,
   aiInstructions: string,
@@ -153,6 +188,12 @@ export async function POST(request: Request) {
     .select("id, title, content, hoofdstuk, image_path")
     .eq("subject_id", subjectId);
 
+  const { data: kennisContexten } = await supabase
+    .from("kennis_paragraaf_context")
+    .select("paragraaf_id, titel, coachaanpak, videos")
+    .eq("subject_id", subjectId)
+    .eq("status", "gepubliceerd");
+
   // Opdrachten-maken-modus is net als overhoren niet-persistent (aparte
   // sessie per keer openen); de client stuurt zijn eigen berichtgeschiedenis
   // mee (oudste eerst) in plaats van dat de server chat_messages leest/schrijft.
@@ -191,6 +232,7 @@ export async function POST(request: Request) {
     if (kennisbank.length > MAX_KENNISBANK_TEKENS) {
       kennisbank = kennisbank.slice(0, MAX_KENNISBANK_TEKENS) + "\n[...ingekort...]";
     }
+    kennisbank += bouwCoachingBlok((kennisContexten ?? []) as KennisContextVoorChat[]);
   }
 
   // Afbeeldingen die bij de gekozen lesstof horen, zodat de leerling ze
