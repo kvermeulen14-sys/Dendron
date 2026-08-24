@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { Modal } from "@/components/ui/modal";
+import { TijdSelect } from "@/components/ui/tijd-select";
 import { PlanningHulpChat } from "@/components/planning-hulp-chat";
 import { maakPlanningItem } from "@/lib/actions/planning";
 import type { PlanningItem } from "@/lib/types";
@@ -25,6 +26,7 @@ export function RoosterBlokHuiswerkModal({
   titel,
   subjectId,
   standaardDatum,
+  standaardTijd,
   items,
 }: {
   open: boolean;
@@ -32,6 +34,7 @@ export function RoosterBlokHuiswerkModal({
   titel: string;
   subjectId: string;
   standaardDatum: string;
+  standaardTijd: string;
   items: PlanningItem[];
 }) {
   const router = useRouter();
@@ -63,9 +66,9 @@ export function RoosterBlokHuiswerkModal({
           <input type="hidden" name="type" value="huiswerk" />
           <input type="hidden" name="subjectId" value={subjectId} />
           <p className="text-xs text-slate-500">
-            Voegt los huiswerk toe voor {titel} - het rooster zelf blijft ongewijzigd. Zet hieronder duidelijk wanneer
-            het af moet zijn; daarna helpt de Planningshulp meteen mee bepalen wanneer er echt aan gewerkt kan
-            worden.
+            Voegt los huiswerk toe voor {titel} - het rooster zelf blijft ongewijzigd. Dit lesuur is de deadline: de
+            datum en het tijdstip hieronder staan al op dit lesuur ingesteld (pas aan indien nodig). Daarna helpt de
+            Planningshulp meteen mee bepalen wanneer er echt aan gewerkt kan worden.
           </p>
           <div>
             <label className="mb-1.5 block text-sm font-medium text-slate-700">Titel</label>
@@ -85,6 +88,10 @@ export function RoosterBlokHuiswerkModal({
               defaultValue={standaardDatum}
               className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
             />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700">Bij dit lesuur (tijdstip)</label>
+            <TijdSelect name="startTime" defaultValue={standaardTijd} />
           </div>
           <div>
             <label className="mb-1.5 block text-sm font-medium text-slate-700">Omschrijving (optioneel)</label>

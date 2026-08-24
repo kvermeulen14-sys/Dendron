@@ -401,7 +401,9 @@ export function AgendaBoard({
   const [weergave, setWeergave] = useState<"rooster" | "lijst">("rooster");
   // Klik-op-vak-in-het-rooster -> snel huiswerk toevoegen (ouder en kind,
   // zie RoosterBlokHuiswerkModal).
-  const [huiswerkBlok, setHuiswerkBlok] = useState<{ subjectId: string; titel: string; datum: string } | null>(null);
+  const [huiswerkBlok, setHuiswerkBlok] = useState<{ subjectId: string; titel: string; datum: string; tijd: string } | null>(
+    null
+  );
   // Waar het kaartje zou landen als je nu loslaat - als kwartier-lijn zichtbaar.
   const [dropMinuut, setDropMinuut] = useState<number | null>(null);
   const [resizeDuur, setResizeDuur] = useState<{ id: string; duur: number } | null>(null);
@@ -2051,7 +2053,7 @@ export function AgendaBoard({
                       title={klikbaar ? `${b.tijd} ${b.titel} - klik om huiswerk toe te voegen` : `${b.tijd} ${b.titel}`}
                       onClick={
                         klikbaar
-                          ? () => setHuiswerkBlok({ subjectId: b.subjectId!, titel: b.titel, datum: iso })
+                          ? () => setHuiswerkBlok({ subjectId: b.subjectId!, titel: b.titel, datum: iso, tijd: b.tijd.split("-")[0] })
                           : undefined
                       }
                       style={{ top: topVoorMinuut(b.startMinuten), height: hoogteVoorDuur(b.duurMinuten) }}
@@ -2257,7 +2259,7 @@ export function AgendaBoard({
                         key={i}
                         onClick={
                           klikbaar
-                            ? () => setHuiswerkBlok({ subjectId: b.subjectId!, titel: b.titel, datum: iso })
+                            ? () => setHuiswerkBlok({ subjectId: b.subjectId!, titel: b.titel, datum: iso, tijd: b.tijd.split("-")[0] })
                             : undefined
                         }
                         className={clsx(
@@ -2504,6 +2506,7 @@ export function AgendaBoard({
           titel={huiswerkBlok.titel}
           subjectId={huiswerkBlok.subjectId}
           standaardDatum={huiswerkBlok.datum}
+          standaardTijd={huiswerkBlok.tijd}
           items={items}
         />
       )}
