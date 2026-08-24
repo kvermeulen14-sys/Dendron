@@ -51,8 +51,57 @@ const OPMAAK_INSTRUCTIE = `Opmaak:
 interface KennisContextVoorChat {
   paragraaf_id: string;
   titel: string;
+  leerdoelen?: string | null;
+  voorkennis?: string | null;
+  kernbegrippen?: string | null;
   coachaanpak: string | null;
   videos: { titel: string; url: string; aanbiedenBij: string | null }[];
+}
+
+interface KennisOnderdeelVoorChat {
+  paragraaf_id: string;
+  naam: string;
+  regel: string;
+  voorbeelden: string[];
+  gecombineerd_voorbeeld: string | null;
+  tip: string | null;
+  uitzondering: string | null;
+  fout_voorbeeld: string | null;
+}
+
+/**
+ * Bouwt de LESSTOF-tekst rechtstreeks uit de gepubliceerde kennisonderdelen
+ * + paragraafcontext, i.p.v. uit materials - gebruikt zodra een vak naar de
+ * regel-niveau kennisbank gemigreerd is (zie heeftKennisOnderdelen).
+ */
+function bouwKennisbankUitOnderdelen(onderdelen: KennisOnderdeelVoorChat[], contexten: KennisContextVoorChat[]): string {
+  const paragraafIds = Array.from(new Set([...onderdelen.map((o) => o.paragraaf_id), ...contexten.map((c) => c.paragraaf_id)])).sort(
+    (a, b) => a.localeCompare(b, undefined, { numeric: true })
+  );
+
+  return paragraafIds
+    .map((pid) => {
+      const context = contexten.find((c) => c.paragraaf_id === pid);
+      const onderdelenVanParagraaf = onderdelen.filter((o) => o.paragraaf_id === pid);
+      const titel = context?.titel ?? onderdelenVanParagraaf[0]?.naam ?? pid;
+
+      const regels = [`## ${pid} - ${titel}`];
+      if (context?.leerdoelen) regels.push(`Leerdoelen: ${context.leerdoelen}`);
+      if (context?.voorkennis) regels.push(`Voorkennis: ${context.voorkennis}`);
+      if (context?.kernbegrippen) regels.push(`Kernbegrippen: ${context.kernbegrippen}`);
+
+      for (const o of onderdelenVanParagraaf) {
+        regels.push(`\n### ${o.naam}`);
+        regels.push(o.regel);
+        regels.push(`Voorbeelden: ${o.voorbeelden.join("; ")}`);
+        if (o.gecombineerd_voorbeeld) regels.push(`Gecombineerd voorbeeld: ${o.gecombineerd_voorbeeld}`);
+        if (o.tip) regels.push(`Tip: ${o.tip}`);
+        if (o.uitzondering) regels.push(`Let op: ${o.uitzondering}`);
+        if (o.fout_voorbeeld) regels.push(`Veelgemaakte fout: ${o.fout_voorbeeld}`);
+      }
+      return regels.join("\n");
+    })
+    .join("\n\n");
 }
 
 /**
@@ -190,9 +239,21 @@ export async function POST(request: Request) {
 
   const { data: kennisContexten } = await supabase
     .from("kennis_paragraaf_context")
-    .select("paragraaf_id, titel, coachaanpak, videos")
+    .select("paragraaf_id, titel, leerdoelen, voorkennis, kernbegrippen, coachaanpak, videos")
     .eq("subject_id", subjectId)
     .eq("status", "gepubliceerd");
+
+  const { data: kennisOnderdelen } = await supabase
+    .from("kennis_onderdelen")
+    .select("paragraaf_id, naam, regel, voorbeelden, gecombineerd_voorbeeld, tip, uitzondering, fout_voorbeeld")
+    .eq("subject_id", subjectId)
+    .eq("status", "gepubliceerd");
+
+  // Zodra er voor dit vak gepubliceerde kennisonderdelen bestaan, is dat de
+  // enige bron van waarheid voor de lesstof - niet meer teruggrijpen op de
+  // oudere, losstaande materials-tekst (die zonder handmatige actie stil uit
+  // sync kan raken met wat in de kennisonderdelen is bijgewerkt).
+  const heeftKennisOnderdelen = (kennisOnderdelen?.length ?? 0) > 0;
 
   // Opdrachten-maken-modus is net als overhoren niet-persistent (aparte
   // sessie per keer openen); de client stuurt zijn eigen berichtgeschiedenis
@@ -220,29 +281,48 @@ export async function POST(request: Request) {
     .slice(-4)
     .map((m) => m.content)
     .join(" ");
-  const { modus, gekozen } = kiesRelevanteMaterialen(materials ?? [], `${message} ${recenteVragen}`);
-
+  let modus: "alles" | "selectie" | "index";
   let kennisbank: string;
-  if (modus === "index") {
-    kennisbank = (materials ?? [])
-      .map((m) => `- ${m.title}${m.hoofdstuk ? ` (${m.hoofdstuk})` : ""}`)
-      .join("\n");
-  } else {
-    kennisbank = gekozen.map((m) => `## ${m.title}\n${m.content}`).join("\n\n");
+  const afbeeldingen: { url: string; title: string }[] = [];
+
+  if (heeftKennisOnderdelen) {
+    // 1 bron van waarheid zodra dit vak naar kennisonderdelen gemigreerd is
+    // - de oudere materials-tekst wordt dan niet meer gebruikt, zodat een
+    // update in de kennisonderdelen niet stil uit sync kan raken met wat de
+    // tutor nog als lesstof gebruikt. Geen materials -> ook geen bijhorende
+    // foto's om te tonen.
+    modus = "alles";
+    kennisbank = bouwKennisbankUitOnderdelen(
+      (kennisOnderdelen ?? []) as KennisOnderdeelVoorChat[],
+      (kennisContexten ?? []) as KennisContextVoorChat[]
+    );
     if (kennisbank.length > MAX_KENNISBANK_TEKENS) {
       kennisbank = kennisbank.slice(0, MAX_KENNISBANK_TEKENS) + "\n[...ingekort...]";
     }
     kennisbank += bouwCoachingBlok((kennisContexten ?? []) as KennisContextVoorChat[]);
-  }
+  } else {
+    const { modus: gekozenModus, gekozen } = kiesRelevanteMaterialen(materials ?? [], `${message} ${recenteVragen}`);
+    modus = gekozenModus;
+    if (modus === "index") {
+      kennisbank = (materials ?? [])
+        .map((m) => `- ${m.title}${m.hoofdstuk ? ` (${m.hoofdstuk})` : ""}`)
+        .join("\n");
+    } else {
+      kennisbank = gekozen.map((m) => `## ${m.title}\n${m.content}`).join("\n\n");
+      if (kennisbank.length > MAX_KENNISBANK_TEKENS) {
+        kennisbank = kennisbank.slice(0, MAX_KENNISBANK_TEKENS) + "\n[...ingekort...]";
+      }
+      kennisbank += bouwCoachingBlok((kennisContexten ?? []) as KennisContextVoorChat[]);
+    }
 
-  // Afbeeldingen die bij de gekozen lesstof horen, zodat de leerling ze
-  // opnieuw kan zien bij de uitleg.
-  const afbeeldingen: { url: string; title: string }[] = [];
-  const materialsMetAfbeelding = gekozen.filter((m) => m.image_path);
-  for (const m of materialsMetAfbeelding.slice(0, MAX_AFBEELDINGEN)) {
-    if (!m.image_path) continue;
-    const { data: signed } = await supabase.storage.from("lesstof").createSignedUrl(m.image_path, 3600);
-    if (signed?.signedUrl) afbeeldingen.push({ url: signed.signedUrl, title: m.title });
+    // Afbeeldingen die bij de gekozen lesstof horen, zodat de leerling ze
+    // opnieuw kan zien bij de uitleg.
+    const materialsMetAfbeelding = gekozen.filter((m) => m.image_path);
+    for (const m of materialsMetAfbeelding.slice(0, MAX_AFBEELDINGEN)) {
+      if (!m.image_path) continue;
+      const { data: signed } = await supabase.storage.from("lesstof").createSignedUrl(m.image_path, 3600);
+      if (signed?.signedUrl) afbeeldingen.push({ url: signed.signedUrl, title: m.title });
+    }
   }
 
   const historyVoorGemini = geschiedenisChronologisch.map((m) => ({

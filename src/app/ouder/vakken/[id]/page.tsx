@@ -4,6 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Icon } from "@/components/icon";
 import { VerwijderMateriaalKnop } from "@/components/verwijder-materiaal-knop";
 import { MateriaalForm } from "@/components/materiaal-form";
+import { LesstofOpschonenKnop } from "@/components/lesstof-opschonen-knop";
 import { MateriaalBewerkForm } from "@/components/materiaal-bewerk-form";
 import { KennisbankUploader } from "@/components/kennisbank-uploader";
 import { OverhoorResultaten } from "@/components/overhoor-resultaten";
@@ -106,7 +107,10 @@ export default async function VakDetailPage({
       </div>
 
       <div>
-        <h2 className="mb-3 text-base font-semibold text-slate-900">Lesstof</h2>
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <h2 className="text-base font-semibold text-slate-900">Lesstof</h2>
+          {heeftKennisbank && <LesstofOpschonenKnop subjectId={id} />}
+        </div>
 
         {(!materials || materials.length === 0) && (
           <Card>
