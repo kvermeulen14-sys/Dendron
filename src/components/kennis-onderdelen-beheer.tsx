@@ -101,6 +101,33 @@ export function KennisOnderdelenBeheer({
   );
 }
 
+// Netlify's serverfuncties (waar deze AI-verwerking op draait) breken vanzelf
+// af na een kort ingebouwd maximum (in de orde van seconden, geen minuten).
+// Als die afbreking niet netjes als fout terugkomt (bv. een verbroken
+// verbinding i.p.v. een nette foutrespons) zou "await" hier voor altijd
+// blijven hangen zonder deze cliëntzijdige noodrem - dan blijft de UI oneindig
+// "Bezig..." tonen in plaats van een foutmelding.
+const VERWERK_TIMEOUT_MS = 55_000;
+
+function metTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`Duurde langer dan ${Math.round(ms / 1000)} seconden - waarschijnlijk vastgelopen. Probeer het opnieuw.`)),
+      ms
+    );
+    promise.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(timer);
+        reject(e);
+      }
+    );
+  });
+}
+
 type BestandStatus = { naam: string; status: "bezig" | "klaar" | "overgeslagen" | "fout"; bericht: string };
 
 function BulkUpload({ subjectId }: { subjectId: string }) {
@@ -117,28 +144,33 @@ function BulkUpload({ subjectId }: { subjectId: string }) {
     setBezig(true);
     setResultaten(files.map((f) => ({ naam: f.name, status: "bezig", bericht: "" })));
 
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const tekst = await file.text();
-      const res = await verwerkKennisBrontekst(subjectId, tekst, file.name);
-
-      let uitkomst: BestandStatus;
-      if ("error" in res && res.error) {
-        uitkomst = { naam: file.name, status: "fout", bericht: res.error };
-      } else if ("overgeslagen" in res && res.overgeslagen) {
-        uitkomst = { naam: file.name, status: "overgeslagen", bericht: res.reden };
-      } else {
-        uitkomst = {
-          naam: file.name,
-          status: "klaar",
-          bericht: `${res.paragraafId} - ${res.aantalOnderdelen} onderdelen, ${res.aantalOefenvragen} oefenvragen`,
-        };
+    try {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        let uitkomst: BestandStatus;
+        try {
+          const tekst = await file.text();
+          const res = await metTimeout(verwerkKennisBrontekst(subjectId, tekst, file.name), VERWERK_TIMEOUT_MS);
+          if ("error" in res && res.error) {
+            uitkomst = { naam: file.name, status: "fout", bericht: res.error };
+          } else if ("overgeslagen" in res && res.overgeslagen) {
+            uitkomst = { naam: file.name, status: "overgeslagen", bericht: res.reden };
+          } else {
+            uitkomst = {
+              naam: file.name,
+              status: "klaar",
+              bericht: `${res.paragraafId} - ${res.aantalOnderdelen} onderdelen, ${res.aantalOefenvragen} oefenvragen`,
+            };
+          }
+        } catch (e) {
+          uitkomst = { naam: file.name, status: "fout", bericht: e instanceof Error ? e.message : "Verwerken mislukt." };
+        }
+        setResultaten((prev) => prev.map((r, idx) => (idx === i ? uitkomst : r)));
       }
-      setResultaten((prev) => prev.map((r, idx) => (idx === i ? uitkomst : r)));
+    } finally {
+      setBezig(false);
+      router.refresh();
     }
-
-    setBezig(false);
-    router.refresh();
   }
 
   return (
@@ -233,7 +265,13 @@ function ParagraafRij({
     setError(null);
     const brontekst = await file.text();
     startTransition(async () => {
-      const res = await verwerkKennisBrontekst(subjectId, brontekst, file.name, paragraafId);
+      let res;
+      try {
+        res = await metTimeout(verwerkKennisBrontekst(subjectId, brontekst, file.name, paragraafId), VERWERK_TIMEOUT_MS);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Verwerken mislukt.");
+        return;
+      }
       if ("error" in res && res.error) {
         setError(res.error);
         return;
