@@ -21,7 +21,7 @@ export function VakWerkruimte({
   initialMessages,
   initialOpdrachtMessages = [],
   initialModus = "chat",
-  hoofdstukken = [],
+  hoofdstukStructuur = [],
   overhoorSessies = [],
 }: {
   subjectId: string;
@@ -29,7 +29,7 @@ export function VakWerkruimte({
   initialMessages: ChatMessage[];
   initialOpdrachtMessages?: ChatMessage[];
   initialModus?: (typeof TABS)[number]["modus"];
-  hoofdstukken?: string[];
+  hoofdstukStructuur?: { hoofdstuk: string; onderwerpen: { paragraafId: string; titel: string }[] }[];
   overhoorSessies?: OverhoorSessie[];
 }) {
   const [modus, setModus] = useState<(typeof TABS)[number]["modus"]>(initialModus);
@@ -66,7 +66,7 @@ export function VakWerkruimte({
           <OverhoorPanel
             subjectId={subjectId}
             subjectName={subjectName}
-            hoofdstukken={hoofdstukken}
+            hoofdstukStructuur={hoofdstukStructuur}
             sessieActiefChange={setOefenSessieActief}
           />
           {!oefenSessieActief && overhoorSessies.length > 0 && (

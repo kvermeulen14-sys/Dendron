@@ -62,12 +62,40 @@ export default async function KindVakDetailPage({
     .order("created_at", { ascending: false })
     .limit(10);
 
-  const { data: materialsHoofdstukken } = await supabase
-    .from("materials")
-    .select("hoofdstuk")
+  // Voor Oefenen: hoofdstuk -> onderwerpen (paragrafen), zodat een leerling
+  // precies kan kiezen WAT geoefend wordt i.p.v. alleen "heel hoofdstuk" of
+  // "alle lesstof" - zelfde structuur als de kennisbank-beheerpagina.
+  const { data: kennisContexten } = await supabase
+    .from("kennis_paragraaf_context")
+    .select("paragraaf_id, hoofdstuk, titel")
     .eq("subject_id", id)
-    .not("hoofdstuk", "is", null);
-  const hoofdstukken = Array.from(new Set((materialsHoofdstukken ?? []).map((m) => m.hoofdstuk).filter(Boolean))) as string[];
+    .eq("status", "gepubliceerd");
+
+  let hoofdstukStructuur: { hoofdstuk: string; onderwerpen: { paragraafId: string; titel: string }[] }[] = [];
+  if (kennisContexten && kennisContexten.length > 0) {
+    const perHoofdstuk = new Map<string, { paragraafId: string; titel: string }[]>();
+    for (const c of kennisContexten) {
+      const lijst = perHoofdstuk.get(c.hoofdstuk) ?? [];
+      lijst.push({ paragraafId: c.paragraaf_id, titel: c.titel });
+      perHoofdstuk.set(c.hoofdstuk, lijst);
+    }
+    hoofdstukStructuur = Array.from(perHoofdstuk.entries())
+      .map(([hoofdstuk, onderwerpen]) => ({
+        hoofdstuk,
+        onderwerpen: onderwerpen.sort((a, b) => a.paragraafId.localeCompare(b.paragraafId, undefined, { numeric: true })),
+      }))
+      .sort((a, b) => a.hoofdstuk.localeCompare(b.hoofdstuk, undefined, { numeric: true }));
+  } else {
+    // Vak nog niet gemigreerd naar de kennisbank - terugvallen op de oudere,
+    // platte hoofdstuk-lijst uit materials (geen onderwerp-niveau daarbinnen).
+    const { data: materialsHoofdstukken } = await supabase
+      .from("materials")
+      .select("hoofdstuk")
+      .eq("subject_id", id)
+      .not("hoofdstuk", "is", null);
+    const hoofdstukken = Array.from(new Set((materialsHoofdstukken ?? []).map((m) => m.hoofdstuk).filter(Boolean))) as string[];
+    hoofdstukStructuur = hoofdstukken.map((h) => ({ hoofdstuk: h, onderwerpen: [] }));
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -87,7 +115,7 @@ export default async function KindVakDetailPage({
         initialMessages={messagesMetFoto}
         initialOpdrachtMessages={opdrachtMessagesMetFoto}
         initialModus={initialModus}
-        hoofdstukken={hoofdstukken}
+        hoofdstukStructuur={hoofdstukStructuur}
         overhoorSessies={(overhoorSessies ?? []) as OverhoorSessie[]}
       />
     </div>
