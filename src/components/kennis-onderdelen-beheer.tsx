@@ -9,6 +9,7 @@ import { SubmitButton } from "@/components/ui/submit-button";
 import { Modal } from "@/components/ui/modal";
 import { Icon } from "@/components/icon";
 import { GETAL_EN_RUIMTE_2HV13 } from "@/lib/data/getal-en-ruimte-2hv13";
+import { normaliseerWiskundeNotatie } from "@/lib/tekst";
 import {
   genereerKennisOnderdelenVoorParagraaf,
   bewerkKennisOnderdeel,
@@ -495,7 +496,7 @@ function ContextKaart({ subjectId, context }: { subjectId: string; context: Kenn
           .map((v) => (
             <div key={v.label}>
               <dt className="text-[11px] font-medium uppercase tracking-wide text-slate-400">{v.label}</dt>
-              <dd className="text-xs text-slate-700">{v.waarde}</dd>
+              <dd className="text-xs text-slate-700">{v.waarde && normaliseerWiskundeNotatie(v.waarde)}</dd>
             </div>
           ))}
       </dl>
@@ -624,9 +625,11 @@ function OefenvraagKaart({ subjectId, oefenvraag }: { subjectId: string; oefenvr
         </div>
       </div>
 
-      <p className="mt-1.5 text-sm text-slate-800">{oefenvraag.vraag}</p>
-      <p className="mt-1 font-mono text-xs text-emerald-700">{oefenvraag.antwoord}</p>
-      {oefenvraag.uitwerking && <p className="mt-1 text-xs text-slate-500">{oefenvraag.uitwerking}</p>}
+      <p className="mt-1.5 text-sm text-slate-800">{normaliseerWiskundeNotatie(oefenvraag.vraag)}</p>
+      <p className="mt-1 font-mono text-xs text-emerald-700">{normaliseerWiskundeNotatie(oefenvraag.antwoord)}</p>
+      {oefenvraag.uitwerking && (
+        <p className="mt-1 text-xs text-slate-500">{normaliseerWiskundeNotatie(oefenvraag.uitwerking)}</p>
+      )}
 
       <div className="mt-2.5">
         <StatusKnop status={oefenvraag.status} bezig={pending} onWissel={wisselStatus} />
@@ -748,29 +751,33 @@ function OnderdeelKaart({ subjectId, onderdeel }: { subjectId: string; onderdeel
         </div>
       </div>
 
-      <p className="mt-1.5 text-sm text-slate-700">{onderdeel.regel}</p>
+      <p className="mt-1.5 text-sm text-slate-700">{normaliseerWiskundeNotatie(onderdeel.regel)}</p>
 
       <ul className="mt-1.5 flex flex-col gap-0.5 text-xs text-slate-600">
         {onderdeel.voorbeelden.map((v, i) => (
           <li key={i} className="font-mono">
-            {v}
+            {normaliseerWiskundeNotatie(v)}
           </li>
         ))}
       </ul>
 
       {onderdeel.gecombineerd_voorbeeld && (
-        <p className="mt-1.5 font-mono text-xs text-slate-600">{onderdeel.gecombineerd_voorbeeld}</p>
+        <p className="mt-1.5 font-mono text-xs text-slate-600">{normaliseerWiskundeNotatie(onderdeel.gecombineerd_voorbeeld)}</p>
       )}
       {onderdeel.tip && (
-        <p className="mt-2 rounded-lg bg-sky-50 px-2.5 py-1.5 text-xs text-sky-800">Tip: {onderdeel.tip}</p>
+        <p className="mt-2 rounded-lg bg-sky-50 px-2.5 py-1.5 text-xs text-sky-800">
+          Tip: {normaliseerWiskundeNotatie(onderdeel.tip)}
+        </p>
       )}
       {onderdeel.uitzondering && (
         <p className="mt-1.5 rounded-lg bg-amber-50 px-2.5 py-1.5 text-xs text-amber-800">
-          Let op: {onderdeel.uitzondering}
+          Let op: {normaliseerWiskundeNotatie(onderdeel.uitzondering)}
         </p>
       )}
       {onderdeel.fout_voorbeeld && (
-        <p className="mt-1.5 rounded-lg bg-rose-50 px-2.5 py-1.5 text-xs text-rose-800">{onderdeel.fout_voorbeeld}</p>
+        <p className="mt-1.5 rounded-lg bg-rose-50 px-2.5 py-1.5 text-xs text-rose-800">
+          {normaliseerWiskundeNotatie(onderdeel.fout_voorbeeld)}
+        </p>
       )}
 
       <div className="mt-2.5">

@@ -60,7 +60,7 @@ function bouwMetaPrompt(bestandsnaam: string, brontekst: string): string {
     "- Voor 'onderdelen': splits de regels/theorie op in losse, benoemde deelvaardigheden met voorbeelden/tip/uitzondering/foutvoorbeeld, gebaseerd op de tekst. Gebruik alleen de wiskundige inhoud uit de tekst zelf.",
     "- Voor 'coachaanpak': vat een eventuele fouten-tabel en coach-/diagnostische instructies samen als korte lopende tekst, geen tabel/markdown.",
     "- Voor 'videos': alleen bestaande links uit de tekst met titel en (indien aangegeven) wanneer aan te bieden.",
-    "- Gebruik ^ voor machten en / voor breuken in platte tekst, geen LaTeX, geen markdown-koppen in tekstvelden.",
+    "- Gebruik ECHTE Unicode-machttekens voor machten (² ³ ⁴ ⁵ ⁶ ⁷ ⁸ ⁹, dus \"x²\" en \"(2x²)³\"), NOOIT een ^ (dat is een programmeerteken, geen wiskundenotatie, en wordt letterlijk als ^ getoond). Schrijf een breuk als platte tekst \"teller/noemer\" (bv. \"2/3\"). Geen LaTeX, geen markdown-koppen in tekstvelden.",
   ].join("\n");
 }
 
@@ -78,7 +78,7 @@ function bouwOefenvragenPrompt(bestandsnaam: string, brontekst: string): string 
     "- Neem vraag/antwoord/uitwerking zo veel mogelijk LETTERLIJK over - dit zijn al gecontroleerde antwoorden, verzin niets nieuws en wijzig geen getallen.",
     "- Geen oefenbank gevonden? Geef een lege array terug.",
     "- Meer dan 24 vragen? Neem de eerste 24.",
-    "- Gebruik ^ voor machten en / voor breuken in platte tekst, geen LaTeX.",
+    "- Gebruik ECHTE Unicode-machttekens voor machten (² ³ ⁴ ⁵ ⁶ ⁷ ⁸ ⁹), NOOIT een ^. Schrijf een breuk als platte tekst \"teller/noemer\". Geen LaTeX.",
   ].join("\n");
 }
 

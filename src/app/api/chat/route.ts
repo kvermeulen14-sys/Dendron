@@ -321,18 +321,40 @@ export async function POST(request: Request) {
     huidigeBeurtParts.push({ inlineData: { mimeType: afbeeldingInvoer.mimeType, data: afbeeldingInvoer.data } });
   }
 
+  const contentsVoorGemini = [...historyVoorGemini, { role: "user" as const, parts: huidigeBeurtParts }];
+
   let antwoord: string;
   try {
-    const response = await client.models.generateContent({
-      model: afbeeldingInvoer ? GEMINI_VISION_MODEL : GEMINI_MODEL,
-      contents: [...historyVoorGemini, { role: "user", parts: huidigeBeurtParts }],
-      config: {
-        systemInstruction: systeemPrompt,
-        maxOutputTokens: 2048,
-      },
-    });
+    let response;
+    try {
+      response = await client.models.generateContent({
+        model: afbeeldingInvoer ? GEMINI_VISION_MODEL : GEMINI_MODEL,
+        contents: contentsVoorGemini,
+        config: {
+          systemInstruction: systeemPrompt,
+          // Ruimer dan bij tekst-only: gemini-2.5-pro (bij een foto) denkt
+          // uitgebreider na voordat het antwoord komt, en die interne
+          // redenering telt mee in maxOutputTokens - te krap hier betekent
+          // een leeg/afgekapt antwoord.
+          maxOutputTokens: afbeeldingInvoer ? 4096 : 2048,
+        },
+      });
+    } catch (visionFout) {
+      // Val terug op het standaardmodel als het (zwaardere) vision-model om
+      // wat voor reden dan ook faalt (quotum, tijdelijk niet beschikbaar) -
+      // beter een minder scherp gelezen antwoord dan helemaal geen reactie.
+      if (!afbeeldingInvoer) throw visionFout;
+      console.error("Chat: vision-model faalde, val terug op standaardmodel.", visionFout);
+      response = await client.models.generateContent({
+        model: GEMINI_MODEL,
+        contents: contentsVoorGemini,
+        config: { systemInstruction: systeemPrompt, maxOutputTokens: 2048 },
+      });
+    }
     antwoord = response.text ?? "";
-  } catch {
+    if (!antwoord.trim()) throw new Error(`Leeg antwoord van de AI (finishReason: ${response.candidates?.[0]?.finishReason})`);
+  } catch (e) {
+    console.error("Chat: AI-verwerking mislukt.", e);
     return NextResponse.json(
       { error: "De AI-vakdocent reageert nu niet. Probeer het straks nog eens." },
       { status: 502 }

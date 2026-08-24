@@ -8,7 +8,7 @@ import { Icon } from "@/components/icon";
 import { MarkdownTekst } from "@/components/markdown-tekst";
 import { VisualWeergave } from "@/components/visuals/visual-weergave";
 import { slaOverhoorResultaatOp, type OverhoorTranscriptRegel } from "@/lib/actions/overhoor";
-import { eenRegel } from "@/lib/tekst";
+import { eenRegel, normaliseerWiskundeNotatie } from "@/lib/tekst";
 import { extraheerVisuals, type VisualSpec } from "@/lib/visuals";
 
 type Leerfase = "eerste" | "tussentijds" | "laatste";
@@ -599,7 +599,7 @@ export function OverhoorPanel({
                           <Icon name="book-open" size={13} />
                           Uit je lesstof - {lesstofFragment.titel}
                         </p>
-                        <p className="whitespace-pre-wrap">{lesstofFragment.tekst}</p>
+                        <p className="whitespace-pre-wrap">{normaliseerWiskundeNotatie(lesstofFragment.tekst)}</p>
                       </div>
                     )}
                     <Button loading={bezig} onClick={volgendeVraag} icon={<Icon name="chevron-right" size={16} />}>

@@ -22,7 +22,7 @@ function bouwPrompt(paragraaf: ParagraafRecord): string {
     "Maak per losse regel in 'Begrippen/regels' 1 onderdeel (meestal 1-4 onderdelen per paragraaf, bij een korte paragraaf soms maar 1).",
     "Gebruik uitsluitend de wiskundige inhoud die hierboven gegeven is - verzin geen nieuwe wiskundige feiten of regels die niet uit deze gegevens volgen.",
     "Je mag wel zelf simpele, eigen rekenvoorbeelden verzinnen om de regel te illustreren (dat zijn geen boekopgaven, dus dat mag).",
-    "Gebruik ^ voor machten (bv a^2) en / voor breuken in platte tekst; gebruik geen LaTeX.",
+    "Gebruik ECHTE Unicode-machttekens voor machten (² ³ ⁴ ⁵ ⁶ ⁷ ⁸ ⁹, bv \"a²\"), NOOIT een ^. Schrijf een breuk als platte tekst \"teller/noemer\". Geen LaTeX.",
   ]
     .filter(Boolean)
     .join("\n");
