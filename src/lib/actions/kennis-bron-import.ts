@@ -20,7 +20,10 @@ const MAX_BRONTEKST_LENGTE = 60_000;
 // blijven daar ruim onder.
 const MetaSchema = z.object({
   isParagraafBestand: z.boolean().describe("True = bevat lesstof van 1 paragraaf. False = index/rapport zonder eigen lesstof."),
-  paragraafId: z.string().nullable().describe("Paragraafnummer, bv '1.2', of null."),
+  paragraafId: z
+    .string()
+    .nullable()
+    .describe("Paragraaf- of unitnummer zoals in de tekst genoemd (bv '1.2' of gewoon '4' bij units), of null."),
   paragraafTitel: z.string().nullable().describe("Titel van de paragraaf, of null."),
   hoofdstukLabel: z.string().nullable().describe("Leesbaar hoofdstuklabel, of null."),
   leerdoelen: z.string().nullable().describe("Leerdoelen als platte tekst, of null."),
@@ -141,11 +144,15 @@ export async function verwerkKennisBrontekst(
     return { overgeslagen: true, reden: "Geen paragraaf-lesstof herkend (waarschijnlijk een index-/overzichtsbestand)." };
   }
 
-  const bestandsnaamMatch = bestandsnaam.match(/^(\d+\.\d+)/);
+  // Niet elke methode werkt met een hoofdstuk.paragraaf-decimaal (bv "1.2") -
+  // een op units gestructureerde methode (Engels e.d.) heeft vaak alleen een
+  // los volgnummer per bestand (bv "04_Unit_4_..."). Beide accepteren als
+  // fallback wanneer de AI zelf niks in de tekst kon vinden.
+  const bestandsnaamMatch = bestandsnaam.match(/^(\d+(?:\.\d+)?)/);
   const paragraafId = verwachteParagraafId || meta.paragraafId || bestandsnaamMatch?.[1];
   if (!paragraafId) {
     return {
-      error: `Kon geen paragraafnummer herkennen in "${bestandsnaam}". Hernoem het bestand zodat het begint met het paragraafnummer (bv "1.2_...") of upload het via de knop bij de juiste paragraaf.`,
+      error: `Kon geen paragraafnummer herkennen in "${bestandsnaam}". Hernoem het bestand zodat het begint met een nummer (bv "1.2_..." of gewoon "4_...") of upload het via de knop bij de juiste paragraaf.`,
     };
   }
 
