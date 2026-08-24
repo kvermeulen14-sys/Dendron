@@ -8,6 +8,7 @@ import { TweeMinutenOefenen } from "@/components/twee-minuten-oefenen";
 import { WerkdrukWeek } from "@/components/werkdruk-week";
 import { PlanningshulpKnop } from "@/components/planningshulp-knop";
 import { huidigeWeekMaandag } from "@/lib/week";
+import { bepaalLaatsteOnderwerpPerVak } from "@/lib/onderwerp";
 import type { PlanningItem, Subject } from "@/lib/types";
 
 export default async function KindOverzicht() {
@@ -38,6 +39,7 @@ export default async function KindOverzicht() {
     { data: materialsData },
     { data: weekData },
     { data: openItemsData },
+    { data: overhoorSessiesData },
   ] = await Promise.all([
     supabase
       .from("planning_items")
@@ -72,7 +74,7 @@ export default async function KindOverzicht() {
       .eq("user_id", user!.id)
       .eq("week_start", weekMaandag)
       .maybeSingle(),
-    supabase.from("materials").select("subject_id").eq("family_id", profile!.family_id),
+    supabase.from("materials").select("subject_id, hoofdstuk, created_at").eq("family_id", profile!.family_id),
     supabase
       .from("planning_items")
       .select("*")
@@ -80,6 +82,13 @@ export default async function KindOverzicht() {
       .gte("due_date", weekMaandag)
       .lte("due_date", weekZondag),
     supabase.from("planning_items").select("*").eq("family_id", profile!.family_id).neq("status", "klaar"),
+    supabase
+      .from("overhoor_sessies")
+      .select("subject_id, hoofdstuk, created_at")
+      .eq("user_id", user!.id)
+      .not("hoofdstuk", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(100),
   ]);
 
   const vandaagItems = (vandaagData ?? []) as PlanningItem[];
@@ -91,6 +100,7 @@ export default async function KindOverzicht() {
 
   const subjectIdsMetLesstof = new Set((materialsData ?? []).map((m) => m.subject_id));
   const subjectsMetLesstof = subjects.filter((s) => subjectIdsMetLesstof.has(s.id));
+  const laatsteOnderwerpPerVak = bepaalLaatsteOnderwerpPerVak(materialsData ?? [], overhoorSessiesData ?? []);
   const weekItems = (weekData ?? []) as PlanningItem[];
   const openItems = (openItemsData ?? []) as PlanningItem[];
 
@@ -167,7 +177,7 @@ export default async function KindOverzicht() {
         <WerkdrukWeek items={weekItems} weekMaandagIso={weekMaandag} vandaagIso={vandaag} />
       </Card>
 
-      <TweeMinutenOefenen subjects={subjectsMetLesstof} />
+      <TweeMinutenOefenen subjects={subjectsMetLesstof} laatsteOnderwerpPerVak={laatsteOnderwerpPerVak} />
 
       <PlanningshulpKnop items={openItems} />
 

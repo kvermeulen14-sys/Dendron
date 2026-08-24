@@ -164,6 +164,8 @@ export interface OverhoorSessie {
   aantal_goed: number;
   aantal_deels: number;
   aantal_fout: number;
+  /** Het gekozen hoofdstuk bij het starten (via de wizard); null bij "alle lesstof". */
+  hoofdstuk: string | null;
   created_at: string;
 }
 

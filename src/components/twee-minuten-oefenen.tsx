@@ -39,7 +39,14 @@ const BEOORDELING_STIJL: Record<Beoordeling, string> = {
  * zodat de rest van het scherm wegvalt en er focus is op de vraag - net
  * genoeg voor een moment tussendoor, niet een volledige overhoorsessie.
  */
-export function TweeMinutenOefenen({ subjects }: { subjects: Subject[] }) {
+export function TweeMinutenOefenen({
+  subjects,
+  laatsteOnderwerpPerVak,
+}: {
+  subjects: Subject[];
+  /** Hoofdstuk per vak-id om de vragen op te richten, zodat er niet zomaar uit de hele lesstof geput wordt. */
+  laatsteOnderwerpPerVak?: Map<string, string>;
+}) {
   const [open, setOpen] = useState(false);
   const [fase, setFase] = useState<Fase>("kies");
   const [subject, setSubject] = useState<Subject | null>(null);
@@ -57,6 +64,7 @@ export function TweeMinutenOefenen({ subjects }: { subjects: Subject[] }) {
   const [uitleg, setUitleg] = useState<string | null>(null);
   const [uitlegBezig, setUitlegBezig] = useState(false);
   const [gesteldeVragen, setGesteldeVragen] = useState<string[]>([]);
+  const [scopeInstructie, setScopeInstructie] = useState<string | undefined>(undefined);
   const [transcript, setTranscript] = useState<OverhoorTranscriptRegel[]>([]);
   const [score, setScore] = useState({ goed: 0, deels: 0, fout: 0 });
   const [bezig, setBezig] = useState(false);
@@ -79,6 +87,7 @@ export function TweeMinutenOefenen({ subjects }: { subjects: Subject[] }) {
     setLesstofFragment(null);
     setUitleg(null);
     setGesteldeVragen([]);
+    setScopeInstructie(undefined);
     setTranscript([]);
     setScore({ goed: 0, deels: 0, fout: 0 });
     setError(null);
@@ -92,11 +101,24 @@ export function TweeMinutenOefenen({ subjects }: { subjects: Subject[] }) {
   async function start(s: Subject) {
     setError(null);
     setBezig(true);
+    // Zonder dit scopet de AI zelf maar wat uit de hele lesstof - met alle
+    // kans op een vraag over stof die nog lang niet behandeld is. Met het
+    // laatst geoefende (of laatst toegevoegde) hoofdstuk sluit dit aan bij
+    // waar de leerling nu mee bezig is.
+    const onderwerp = laatsteOnderwerpPerVak?.get(s.id);
+    const scope = onderwerp ? `Onderwerp: "${onderwerp}". Vraagstijl: mix van open en meerkeuze vragen.` : undefined;
+    setScopeInstructie(scope);
     try {
       const res = await fetch("/api/overhoor", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subjectId: s.id, leerfase: "tussentijds", spellingStrict: false, gesteldeVragen: [] }),
+        body: JSON.stringify({
+          subjectId: s.id,
+          leerfase: "tussentijds",
+          spellingStrict: false,
+          gesteldeVragen: [],
+          scopeInstructie: scope,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Kon geen vraag ophalen.");
@@ -133,6 +155,7 @@ export function TweeMinutenOefenen({ subjects }: { subjects: Subject[] }) {
           gesteldeVragen,
           vorigeVraag: vraag,
           vorigAntwoord: antwoordTeControleren,
+          scopeInstructie,
         }),
       });
       const data = await res.json();
@@ -263,6 +286,9 @@ export function TweeMinutenOefenen({ subjects }: { subjects: Subject[] }) {
             <div className="flex flex-col gap-3">
               <p className="text-xs font-medium text-slate-500">
                 {subject.name} - vraag {vraagNr} van {AANTAL_VRAGEN}
+                {laatsteOnderwerpPerVak?.get(subject.id) && (
+                  <span className="font-normal text-slate-400"> · over {laatsteOnderwerpPerVak.get(subject.id)}</span>
+                )}
               </p>
               <div className="rounded-xl bg-slate-50 p-3 font-medium text-slate-800">
                 <MarkdownTekst>{eenRegel(vraag ?? "")}</MarkdownTekst>

@@ -21,7 +21,8 @@ export async function slaOverhoorResultaatOp(
   subjectId: string,
   leerfase: Leerfase,
   score: { goed: number; deels: number; fout: number },
-  transcript: OverhoorTranscriptRegel[] = []
+  transcript: OverhoorTranscriptRegel[] = [],
+  hoofdstuk: string | null = null
 ) {
   const totaal = score.goed + score.deels + score.fout;
   if (totaal === 0) return;
@@ -48,6 +49,7 @@ export async function slaOverhoorResultaatOp(
     aantal_deels: score.deels,
     aantal_fout: score.fout,
     transcript,
+    hoofdstuk,
   });
 
   revalidatePath(`/kind/vakken/${subjectId}`);

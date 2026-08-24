@@ -222,7 +222,7 @@ export function OverhoorPanel({
   function volgendeVraag() {
     if (maxVragen !== null && vraagIndex >= maxVragen) {
       if (score.goed + score.deels + score.fout > 0) {
-        void slaOverhoorResultaatOp(subjectId, leerfase, score, transcript);
+        void slaOverhoorResultaatOp(subjectId, leerfase, score, transcript, gekozenHoofdstuk);
       }
       setFase("klaar");
       return;
@@ -243,7 +243,7 @@ export function OverhoorPanel({
 
   function stop() {
     if (score.goed + score.deels + score.fout > 0) {
-      void slaOverhoorResultaatOp(subjectId, leerfase, score, transcript);
+      void slaOverhoorResultaatOp(subjectId, leerfase, score, transcript, gekozenHoofdstuk);
     }
     setGestart(false);
     meldSessieStatus(false);
