@@ -10,6 +10,7 @@ import {
   onderdelenAlsMateriaalRijen,
   type KennisOnderdeelRij,
   type KennisParagraafContextRij,
+  type KennisWoordenlijstRij,
   type MateriaalRij,
 } from "@/lib/kennisbank";
 
@@ -145,11 +146,16 @@ export async function POST(request: Request) {
     .select("paragraaf_id, titel, leerdoelen, voorkennis, kernbegrippen")
     .eq("subject_id", subjectId)
     .eq("status", "gepubliceerd");
+  const { data: kennisWoordenlijsten } = await supabase
+    .from("kennis_woordenlijsten")
+    .select("paragraaf_id, titel, woorden")
+    .eq("subject_id", subjectId)
+    .eq("status", "gepubliceerd");
 
   // Zelfde "1 bron van waarheid"-regel als de vakdocent-chat: zodra dit vak
-  // gepubliceerde kennisonderdelen heeft, gebruikt Oefenen die - niet meer
-  // de oudere materials-tekst.
-  const heeftKennisOnderdelen = (kennisOnderdelen?.length ?? 0) > 0;
+  // gepubliceerde kennisonderdelen of woordenlijsten heeft, gebruikt Oefenen
+  // die - niet meer de oudere materials-tekst.
+  const heeftKennisOnderdelen = (kennisOnderdelen?.length ?? 0) > 0 || (kennisWoordenlijsten?.length ?? 0) > 0;
 
   if (!heeftKennisOnderdelen && (!materials || materials.length === 0)) {
     return NextResponse.json(
@@ -177,7 +183,8 @@ export async function POST(request: Request) {
     if (heeftKennisOnderdelen) {
       kennisbankUitleg = bouwKennisbankUitOnderdelen(
         (kennisOnderdelen ?? []) as KennisOnderdeelRij[],
-        (kennisContexten ?? []) as KennisParagraafContextRij[]
+        (kennisContexten ?? []) as KennisParagraafContextRij[],
+        (kennisWoordenlijsten ?? []) as KennisWoordenlijstRij[]
       );
     } else {
       const materialenLijst = materials ?? [];
@@ -218,7 +225,8 @@ ${kennisbankUitleg}`;
   if (heeftKennisOnderdelen) {
     kennisbank = bouwKennisbankUitOnderdelen(
       (kennisOnderdelen ?? []) as KennisOnderdeelRij[],
-      (kennisContexten ?? []) as KennisParagraafContextRij[]
+      (kennisContexten ?? []) as KennisParagraafContextRij[],
+      (kennisWoordenlijsten ?? []) as KennisWoordenlijstRij[]
     );
   } else {
     const materialenLijst = materials ?? [];

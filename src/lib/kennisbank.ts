@@ -140,17 +140,28 @@ export interface KennisParagraafContextRij {
   kernbegrippen?: string | null;
 }
 
-/** Bouwt leesbare lesstof-tekst uit de gepubliceerde kennisonderdelen + paragraafcontext. */
-export function bouwKennisbankUitOnderdelen(onderdelen: KennisOnderdeelRij[], contexten: KennisParagraafContextRij[]): string {
-  const paragraafIds = Array.from(new Set([...onderdelen.map((o) => o.paragraaf_id), ...contexten.map((c) => c.paragraaf_id)])).sort(
-    (a, b) => a.localeCompare(b, undefined, { numeric: true })
-  );
+export interface KennisWoordenlijstRij {
+  paragraaf_id: string;
+  titel: string;
+  woorden: { bron: string; doel: string; voorbeeldzin: string | null }[];
+}
+
+/** Bouwt leesbare lesstof-tekst uit de gepubliceerde kennisonderdelen + paragraafcontext (+ evt. woordenlijsten voor taalvakken). */
+export function bouwKennisbankUitOnderdelen(
+  onderdelen: KennisOnderdeelRij[],
+  contexten: KennisParagraafContextRij[],
+  woordenlijsten: KennisWoordenlijstRij[] = []
+): string {
+  const paragraafIds = Array.from(
+    new Set([...onderdelen.map((o) => o.paragraaf_id), ...contexten.map((c) => c.paragraaf_id), ...woordenlijsten.map((w) => w.paragraaf_id)])
+  ).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
   return paragraafIds
     .map((pid) => {
       const context = contexten.find((c) => c.paragraaf_id === pid);
       const onderdelenVanParagraaf = onderdelen.filter((o) => o.paragraaf_id === pid);
-      const titel = context?.titel ?? onderdelenVanParagraaf[0]?.naam ?? pid;
+      const woordenlijstenVanParagraaf = woordenlijsten.filter((w) => w.paragraaf_id === pid);
+      const titel = context?.titel ?? onderdelenVanParagraaf[0]?.naam ?? woordenlijstenVanParagraaf[0]?.titel ?? pid;
 
       const regels = [`## ${pid} - ${titel}`];
       if (context?.leerdoelen) regels.push(`Leerdoelen: ${context.leerdoelen}`);
@@ -165,6 +176,17 @@ export function bouwKennisbankUitOnderdelen(onderdelen: KennisOnderdeelRij[], co
         if (o.tip) regels.push(`Tip: ${o.tip}`);
         if (o.uitzondering) regels.push(`Let op: ${o.uitzondering}`);
         if (o.fout_voorbeeld) regels.push(`Veelgemaakte fout: ${o.fout_voorbeeld}`);
+      }
+
+      // Woordenlijsten letterlijk als tabel meegeven - niet parafraseren, dit
+      // zijn de exact overgenomen officiële woordparen uit de bron.
+      for (const w of woordenlijstenVanParagraaf) {
+        regels.push(`\n### Woordenlijst: ${w.titel}`);
+        regels.push("| Bron | Doel | Voorbeeldzin |");
+        regels.push("| --- | --- | --- |");
+        for (const woord of w.woorden) {
+          regels.push(`| ${woord.bron} | ${woord.doel} | ${woord.voorbeeldzin ?? ""} |`);
+        }
       }
       return regels.join("\n");
     })

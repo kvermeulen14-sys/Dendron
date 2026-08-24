@@ -2,7 +2,13 @@ import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { createClient } from "@/lib/supabase/server";
 import { createGeminiClient, vereistGeminiKey, GEMINI_MODEL, GEMINI_VISION_MODEL } from "@/lib/gemini";
-import { kiesRelevanteMaterialen, bouwKennisbankUitOnderdelen, type KennisOnderdeelRij, type KennisParagraafContextRij } from "@/lib/kennisbank";
+import {
+  kiesRelevanteMaterialen,
+  bouwKennisbankUitOnderdelen,
+  type KennisOnderdeelRij,
+  type KennisParagraafContextRij,
+  type KennisWoordenlijstRij,
+} from "@/lib/kennisbank";
 
 const MAX_AFBEELDING_BYTES = 8 * 1024 * 1024; // 8MB (ruim voor een foto, zonder de request onnodig groot te maken)
 const TOEGESTANE_AFBEELDING_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/heic", "image/heif"];
@@ -231,11 +237,17 @@ export async function POST(request: Request) {
     .eq("subject_id", subjectId)
     .eq("status", "gepubliceerd");
 
-  // Zodra er voor dit vak gepubliceerde kennisonderdelen bestaan, is dat de
-  // enige bron van waarheid voor de lesstof - niet meer teruggrijpen op de
-  // oudere, losstaande materials-tekst (die zonder handmatige actie stil uit
-  // sync kan raken met wat in de kennisonderdelen is bijgewerkt).
-  const heeftKennisOnderdelen = (kennisOnderdelen?.length ?? 0) > 0;
+  const { data: kennisWoordenlijsten } = await supabase
+    .from("kennis_woordenlijsten")
+    .select("paragraaf_id, titel, woorden")
+    .eq("subject_id", subjectId)
+    .eq("status", "gepubliceerd");
+
+  // Zodra er voor dit vak gepubliceerde kennisonderdelen of woordenlijsten
+  // bestaan, is dat de enige bron van waarheid voor de lesstof - niet meer
+  // teruggrijpen op de oudere, losstaande materials-tekst (die zonder
+  // handmatige actie stil uit sync kan raken met wat hier is bijgewerkt).
+  const heeftKennisOnderdelen = (kennisOnderdelen?.length ?? 0) > 0 || (kennisWoordenlijsten?.length ?? 0) > 0;
 
   // Opdrachten-maken-modus wordt, net als de gewone chat, blijvend bewaard
   // per vak (opdracht_berichten i.p.v. chat_messages) - zelfde leespatroon.
@@ -268,7 +280,8 @@ export async function POST(request: Request) {
     modus = "alles";
     kennisbank = bouwKennisbankUitOnderdelen(
       (kennisOnderdelen ?? []) as KennisOnderdeelRij[],
-      (kennisContexten ?? []) as KennisParagraafContextRij[]
+      (kennisContexten ?? []) as KennisParagraafContextRij[],
+      (kennisWoordenlijsten ?? []) as KennisWoordenlijstRij[]
     );
     if (kennisbank.length > MAX_KENNISBANK_TEKENS) {
       kennisbank = kennisbank.slice(0, MAX_KENNISBANK_TEKENS) + "\n[...ingekort...]";

@@ -223,6 +223,30 @@ export interface KennisOefenvraag {
   updated_at: string;
 }
 
+export type KennisWoordenlijstRichting = "bron_naar_doel" | "doel_naar_bron" | "gemengd";
+
+export interface KennisWoord {
+  bron: string;
+  doel: string;
+  voorbeeldzin: string | null;
+}
+
+export interface KennisWoordenlijst {
+  id: string;
+  family_id: string;
+  subject_id: string;
+  hoofdstuk: string;
+  paragraaf_id: string;
+  titel: string;
+  richting: KennisWoordenlijstRichting;
+  woorden: KennisWoord[];
+  volgorde: number;
+  status: KennisOnderdeelStatus;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export type Leerfase = "eerste" | "tussentijds" | "laatste";
 
 export interface OverhoorSessie {

@@ -5,7 +5,7 @@ import { z } from "zod";
 import { createGeminiClient, genereerGestructureerd } from "@/lib/gemini";
 import { GETAL_EN_RUIMTE_2HV13, hoofdstukLabel } from "@/lib/data/getal-en-ruimte-2hv13";
 import { ouderProfiel, revalidateVak, slaGegenereerdeOnderdelenOp, OnderdeelSchema } from "@/lib/kennis-onderdelen-shared";
-import type { KennisOnderdeelStatus } from "@/lib/types";
+import type { KennisOnderdeelStatus, KennisWoord } from "@/lib/types";
 
 const MAX_BRONTEKST_LENGTE = 60_000;
 
@@ -62,6 +62,22 @@ const OefenvraagSchema = z.object({
   uitwerking: z.string().nullable().describe("Kernuitwerking, of null."),
 });
 
+// Klein, goedkoop classificatie-schema voor de taalvak-import hieronder: de
+// AI ziet hier ALLEEN de koppen, nooit de tabelinhoud zelf - de daadwerkelijke
+// woordparen worden puur met stringmanipulatie geparst (zie parseWoordenTabel),
+// zodat een officiële boekformulering nooit via een AI-parafrase kan
+// veranderen.
+const BlokClassificatieSchema = z.object({
+  blokken: z
+    .array(
+      z.object({
+        index: z.number(),
+        type: z.enum(["woordenlijst", "overig"]).describe("'woordenlijst' = tabel met letterlijke woord-/uitdrukkingparen, anders 'overig'."),
+      })
+    )
+    .max(80),
+});
+
 const OefenvragenSchema = z.object({
   oefenvragen: z.array(OefenvraagSchema).max(24),
 });
@@ -110,6 +126,237 @@ function afgeleideTitelVanBestandsnaam(bestandsnaam: string): string {
     .replace(/^\d+(\.\d+)*[_\s-]*/, "")
     .replace(/[_-]+/g, " ")
     .trim() || bestandsnaam;
+}
+
+// ---------------------------------------------------------------------------
+// Taalvak-import: aparte pipeline voor kennisbestanden van taalvakken
+// (Engels e.d.). Zulke bestanden bevatten naast grammatica-uitleg en een
+// oefenbank (die prima passen in de bestaande verwerkKennisBrontekst-pipeline
+// hierboven) ook grote, letterlijke woorden-/uitdrukkingentabellen. Die
+// tabellen (a) horen qua vorm niet bij het "regel + voorbeelden"-model van
+// kennis_onderdelen, (b) zijn vaak met 15-20+ losse lijsten per unit te veel
+// voor de 8-onderdelen-cap per AI-aanroep, en (c) moeten LETTERLIJK
+// (niet-geparafraseerd) bewaard blijven. Daarom: de AI classificeert alleen
+// WELKE koppen een woordenlijst zijn (ziet de tabelinhoud niet inhoudelijk
+// hoeven te herschrijven), en de tabellen zelf worden met gewone
+// stringmanipulatie geparst - geen AI-parafrase mogelijk. Wat overblijft na
+// het wegknippen van de woordenlijst-secties gaat als (veel kleinere) tekst
+// alsnog door de bestaande verwerkKennisBrontekst-pipeline voor grammatica +
+// oefenbank.
+// ---------------------------------------------------------------------------
+
+interface Taalvakblok {
+  heading: string;
+  body: string;
+  raw: string;
+}
+
+function splitsInBlokken(tekst: string): Taalvakblok[] {
+  const koppenRegex = /^##\s+(.+)$/gm;
+  const matches = [...tekst.matchAll(koppenRegex)];
+  if (matches.length === 0) return [];
+
+  return matches.map((match, i) => {
+    const start = match.index ?? 0;
+    const eind = i + 1 < matches.length ? (matches[i + 1].index ?? tekst.length) : tekst.length;
+    const raw = tekst.slice(start, eind);
+    return { heading: match[1].trim(), body: raw.slice(match[0].length), raw };
+  });
+}
+
+/** Zoekt de eerste markdown-tabel in een blok en geeft de datarijen terug (header + scheidingsregel eruit gefilterd). */
+function parseWoordenTabel(body: string): string[][] | null {
+  const regels = body.split("\n").map((r) => r.trim());
+  const tabelRegels: string[] = [];
+  let inTabel = false;
+  for (const regel of regels) {
+    const isTabelRegel = regel.startsWith("|") && regel.endsWith("|") && regel.length > 1;
+    if (isTabelRegel) {
+      inTabel = true;
+      tabelRegels.push(regel);
+    } else if (inTabel) {
+      break;
+    }
+  }
+  if (tabelRegels.length < 2) return null;
+
+  const isScheidingsregel = (r: string) => /^\|[\s:-]+(\|[\s:-]+)*\|$/.test(r.replace(/[^\S\n]/g, ""));
+  const cellsVan = (regel: string) => regel.slice(1, -1).split("|").map((c) => c.trim());
+
+  return tabelRegels
+    .slice(1) // header eruit
+    .filter((r) => !isScheidingsregel(r))
+    .map(cellsVan);
+}
+
+function bouwClassificatiePrompt(koppen: { index: number; heading: string }[]): string {
+  return [
+    "Dit zijn de koppen (headings) van 1 kennisbank-bestand voor een taalvak (bv Engels/Frans/Duits), lesstof voor een leerling van 2 havo.",
+    "Classificeer per kop of de bijbehorende sectie een LETTERLIJKE woorden-/uitdrukkingenlijst is: een tabel met woordparen brontaal <-> doeltaal (evt. met een voorbeeldzin) - type 'woordenlijst'.",
+    "Alle andere secties (grammatica-uitleg, oefenbank/opgaven met antwoorden, leesteksten, inleidingen, coachregels e.d.) zijn 'overig'.",
+    "",
+    koppen.map((k) => `${k.index}. ${k.heading}`).join("\n"),
+  ].join("\n");
+}
+
+/**
+ * Verwerkt 1 geuploade .md-bron van een taalvak. Splitst het bestand op
+ * koppen, laat de AI alleen classificeren welke koppen een letterlijke
+ * woordenlijst-tabel zijn (nooit de tabelinhoud), parst die tabellen
+ * deterministisch naar `kennis_woordenlijsten`, en stuurt de resterende
+ * (veel kleinere) tekst - grammatica + oefenbank - alsnog door de bestaande
+ * verwerkKennisBrontekst-pipeline.
+ *
+ * Zelfde vervang-bij-herhaalde-upload-gedrag als verwerkKennisBrontekst: de
+ * woordenlijsten van deze paragraaf worden eerst gewist voor er nieuwe
+ * worden opgeslagen.
+ */
+export async function verwerkTaalvakBrontekst(
+  subjectId: string,
+  brontekst: string,
+  bestandsnaam: string,
+  verwachteParagraafId?: string
+) {
+  const ouder = await ouderProfiel();
+  if ("error" in ouder) return { error: ouder.error };
+  const { supabase, user, familyId } = ouder;
+
+  const tekst = brontekst.trim();
+  if (!tekst) return { error: "Het bestand lijkt leeg te zijn." };
+  if (tekst.length > MAX_BRONTEKST_LENGTE) {
+    return { error: `Het bestand is te lang (max ${MAX_BRONTEKST_LENGTE.toLocaleString("nl-NL")} tekens per bestand).` };
+  }
+
+  const { data: subject } = await supabase.from("subjects").select("id, family_id").eq("id", subjectId).single();
+  if (!subject || subject.family_id !== familyId) return { error: "Vak niet gevonden." };
+
+  const bestandsnaamMatch = bestandsnaam.match(/^(\d+(?:\.\d+)?)/);
+  const paragraafId = verwachteParagraafId || bestandsnaamMatch?.[1];
+  if (!paragraafId) {
+    return {
+      error: `Kon geen unit-/paragraafnummer herkennen in "${bestandsnaam}". Hernoem het bestand zodat het begint met een nummer (bv "1_..." of "1.2_...") of upload het via de knop bij de juiste paragraaf.`,
+    };
+  }
+  const hoofdstuk = `Hoofdstuk ${paragraafId.split(".")[0]}`;
+
+  const blokken = splitsInBlokken(tekst);
+  const woordenlijstIndices = new Set<number>();
+  if (blokken.length > 0) {
+    try {
+      const client = createGeminiClient();
+      const classificatie = await genereerGestructureerd(
+        client,
+        BlokClassificatieSchema,
+        bouwClassificatiePrompt(blokken.map((b, i) => ({ index: i, heading: b.heading }))),
+        4096
+      );
+      for (const b of classificatie.blokken) {
+        if (b.type === "woordenlijst") woordenlijstIndices.add(b.index);
+      }
+    } catch {
+      // Classificatie mislukt: geen blokken als woordenlijst behandelen, de
+      // hele tekst gaat dan gewoon door de gewone grammatica/oefenbank-pipeline.
+    }
+  }
+
+  await supabase.from("kennis_woordenlijsten").delete().eq("subject_id", subjectId).eq("paragraaf_id", paragraafId);
+
+  let strippedTekst = tekst;
+  let aantalWoordenlijsten = 0;
+  let aantalWoorden = 0;
+  let volgorde = 0;
+  for (const idx of woordenlijstIndices) {
+    const blok = blokken[idx];
+    const rijen = parseWoordenTabel(blok.body);
+    if (!rijen || rijen.length === 0) continue;
+
+    const woorden: KennisWoord[] = rijen
+      .map((r) => ({ bron: r[0]?.trim() ?? "", doel: r[1]?.trim() ?? "", voorbeeldzin: r[2]?.trim() || null }))
+      .filter((w) => w.bron && w.doel);
+    if (woorden.length === 0) continue;
+
+    const { error: woordenError } = await supabase.from("kennis_woordenlijsten").insert({
+      family_id: familyId,
+      subject_id: subjectId,
+      hoofdstuk,
+      paragraaf_id: paragraafId,
+      titel: blok.heading,
+      richting: "gemengd" as const,
+      woorden,
+      volgorde: volgorde++,
+      status: "concept" as const,
+      created_by: user.id,
+    });
+    if (woordenError) return { error: woordenError.message };
+
+    aantalWoordenlijsten++;
+    aantalWoorden += woorden.length;
+    strippedTekst = strippedTekst.replace(blok.raw, `## ${blok.heading}\n[Woordenlijst apart opgeslagen - ${woorden.length} woorden]\n`);
+  }
+
+  revalidateVak(subjectId);
+
+  // Grammatica-uitleg en oefenbank: hergebruik de bestaande, beproefde
+  // pipeline op de kleinere, van woordenlijsten ontdane tekst.
+  const restResultaat = await verwerkKennisBrontekst(subjectId, strippedTekst, bestandsnaam, paragraafId);
+
+  return { ...restResultaat, paragraafId, aantalWoordenlijsten, aantalWoorden };
+}
+
+export async function bewerkKennisWoordenlijst(id: string, subjectId: string, formData: FormData) {
+  const ouder = await ouderProfiel();
+  if ("error" in ouder) return { error: ouder.error };
+  const { supabase } = ouder;
+
+  const titel = String(formData.get("titel") || "").trim();
+  const woordenRuw = String(formData.get("woorden") || "");
+  const woorden: KennisWoord[] = woordenRuw
+    .split("\n")
+    .map((r) => r.trim())
+    .filter(Boolean)
+    .map((regel) => {
+      const [bron, doel, voorbeeldzin] = regel.split("|").map((d) => d.trim());
+      return { bron: bron ?? "", doel: doel ?? "", voorbeeldzin: voorbeeldzin || null };
+    })
+    .filter((w) => w.bron && w.doel);
+
+  if (!titel || woorden.length === 0) return { error: "Vul in elk geval een titel en minstens 1 woordpaar in." };
+
+  const { error } = await supabase
+    .from("kennis_woordenlijsten")
+    .update({ titel, woorden, updated_at: new Date().toISOString() })
+    .eq("id", id);
+  if (error) return { error: error.message };
+
+  revalidateVak(subjectId);
+  return { success: true };
+}
+
+export async function zetKennisWoordenlijstStatus(id: string, subjectId: string, status: KennisOnderdeelStatus) {
+  const ouder = await ouderProfiel();
+  if ("error" in ouder) return { error: ouder.error };
+  const { supabase } = ouder;
+
+  const { error } = await supabase
+    .from("kennis_woordenlijsten")
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq("id", id);
+  if (error) return { error: error.message };
+
+  revalidateVak(subjectId);
+  return { success: true };
+}
+
+export async function verwijderKennisWoordenlijst(id: string, subjectId: string) {
+  const ouder = await ouderProfiel();
+  if ("error" in ouder) return { error: ouder.error };
+  const { supabase } = ouder;
+
+  const { error } = await supabase.from("kennis_woordenlijsten").delete().eq("id", id);
+  if (error) return { error: error.message };
+
+  revalidateVak(subjectId);
+  return { success: true };
 }
 
 /**
@@ -392,7 +639,7 @@ export async function publiceerParagraaf(subjectId: string, paragraafId: string)
   const { supabase } = ouder;
 
   const nu = new Date().toISOString();
-  const [onderdelenRes, contextRes, oefenvragenRes] = await Promise.all([
+  const [onderdelenRes, contextRes, oefenvragenRes, woordenlijstenRes] = await Promise.all([
     supabase
       .from("kennis_onderdelen")
       .update({ status: "gepubliceerd", updated_at: nu })
@@ -411,8 +658,14 @@ export async function publiceerParagraaf(subjectId: string, paragraafId: string)
       .eq("subject_id", subjectId)
       .eq("paragraaf_id", paragraafId)
       .eq("status", "concept"),
+    supabase
+      .from("kennis_woordenlijsten")
+      .update({ status: "gepubliceerd", updated_at: nu })
+      .eq("subject_id", subjectId)
+      .eq("paragraaf_id", paragraafId)
+      .eq("status", "concept"),
   ]);
-  const fout = onderdelenRes.error || contextRes.error || oefenvragenRes.error;
+  const fout = onderdelenRes.error || contextRes.error || oefenvragenRes.error || woordenlijstenRes.error;
   if (fout) return { error: fout.message };
 
   revalidateVak(subjectId);
@@ -430,12 +683,13 @@ export async function verwijderParagraaf(subjectId: string, paragraafId: string)
   if ("error" in ouder) return { error: ouder.error };
   const { supabase } = ouder;
 
-  const [onderdelenRes, contextRes, oefenvragenRes] = await Promise.all([
+  const [onderdelenRes, contextRes, oefenvragenRes, woordenlijstenRes] = await Promise.all([
     supabase.from("kennis_onderdelen").delete().eq("subject_id", subjectId).eq("paragraaf_id", paragraafId),
     supabase.from("kennis_paragraaf_context").delete().eq("subject_id", subjectId).eq("paragraaf_id", paragraafId),
     supabase.from("kennis_oefenvragen").delete().eq("subject_id", subjectId).eq("paragraaf_id", paragraafId),
+    supabase.from("kennis_woordenlijsten").delete().eq("subject_id", subjectId).eq("paragraaf_id", paragraafId),
   ]);
-  const fout = onderdelenRes.error || contextRes.error || oefenvragenRes.error;
+  const fout = onderdelenRes.error || contextRes.error || oefenvragenRes.error || woordenlijstenRes.error;
   if (fout) return { error: fout.message };
 
   revalidateVak(subjectId);
