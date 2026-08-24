@@ -11,41 +11,177 @@ import { Icon } from "@/components/icon";
 import { GETAL_EN_RUIMTE_2HV13 } from "@/lib/data/getal-en-ruimte-2hv13";
 import {
   genereerKennisOnderdelenVoorParagraaf,
-  genereerKennisOnderdelenVanBrontekst,
   bewerkKennisOnderdeel,
   zetKennisOnderdeelStatus,
   verwijderKennisOnderdeel,
 } from "@/lib/actions/kennis-onderdelen";
-import type { KennisOnderdeel } from "@/lib/types";
+import {
+  verwerkKennisBrontekst,
+  bewerkKennisParagraafContext,
+  zetKennisParagraafContextStatus,
+  bewerkKennisOefenvraag,
+  zetKennisOefenvraagStatus,
+  verwijderKennisOefenvraag,
+} from "@/lib/actions/kennis-bron-import";
+import type { KennisOnderdeel, KennisOefenvraag, KennisParagraafContext } from "@/lib/types";
 
-const HOOFDSTUK_1_PARAGRAFEN = GETAL_EN_RUIMTE_2HV13.filter((p) => p.hoofdstukNr === 1);
+const INGEBOUWD_HOOFDSTUK_1 = GETAL_EN_RUIMTE_2HV13.filter((p) => p.hoofdstukNr === 1);
+
+interface ParagraafRijData {
+  paragraafId: string;
+  titel: string;
+  uitIngebouwdeDataset: boolean;
+}
 
 export function KennisOnderdelenBeheer({
   subjectId,
   onderdelen,
+  contexten,
+  oefenvragen,
+  toonIngebouwdePilot = false,
 }: {
   subjectId: string;
   onderdelen: KennisOnderdeel[];
+  contexten: KennisParagraafContext[];
+  oefenvragen: KennisOefenvraag[];
+  toonIngebouwdePilot?: boolean;
 }) {
+  const rijen = new Map<string, ParagraafRijData>();
+  if (toonIngebouwdePilot) {
+    for (const p of INGEBOUWD_HOOFDSTUK_1) {
+      rijen.set(p.id, { paragraafId: p.id, titel: p.titel, uitIngebouwdeDataset: true });
+    }
+  }
+  for (const c of contexten) {
+    if (!rijen.has(c.paragraaf_id)) rijen.set(c.paragraaf_id, { paragraafId: c.paragraaf_id, titel: c.titel, uitIngebouwdeDataset: false });
+  }
+  for (const o of onderdelen) {
+    if (!rijen.has(o.paragraaf_id ?? "")) {
+      rijen.set(o.paragraaf_id ?? "", { paragraafId: o.paragraaf_id ?? "", titel: `Paragraaf ${o.paragraaf_id}`, uitIngebouwdeDataset: false });
+    }
+  }
+  for (const v of oefenvragen) {
+    if (!rijen.has(v.paragraaf_id)) {
+      rijen.set(v.paragraaf_id, { paragraafId: v.paragraaf_id, titel: `Paragraaf ${v.paragraaf_id}`, uitIngebouwdeDataset: false });
+    }
+  }
+  const gesorteerdeRijen = Array.from(rijen.values()).sort((a, b) =>
+    a.paragraafId.localeCompare(b.paragraafId, undefined, { numeric: true })
+  );
+
   return (
     <div className="flex flex-col gap-3">
       <p className="text-xs text-slate-500">
-        Pilot: hoofdstuk 1 (Rekenen met letters) van Getal &amp; Ruimte, opgesplitst in losse regels met eigen
-        voorbeelden - zo kan Oefenen en Toets straks per regel bijhouden wat beheerst wordt, in plaats van per heel
-        hoofdstuk. Laat de AI per paragraaf onderdelen voorstellen met de ingebouwde samenvatting, of upload een eigen
-        .md-bestand per paragraaf als leidende bron. Controleer en publiceer de voorstellen hieronder.
+        Kennisbank op regel-niveau: losse regels met eigen voorbeelden, paragraafcontext (leerdoelen/voorkennis/
+        beheersingscriterium) en een oefenbank - zo kan Oefenen en Toets straks per regel bijhouden wat beheerst
+        wordt, in plaats van per heel hoofdstuk.{" "}
+        {toonIngebouwdePilot && "Voor hoofdstuk 1 (Rekenen met letters) kan de AI onderdelen voorstellen met de ingebouwde Getal & Ruimte-samenvatting, of "}
+        Upload eigen .md-bestanden (1 tegelijk per paragraaf, of meerdere ineens) - de AI herkent zelf welke
+        paragraaf elk bestand behandelt en welke structuur het gebruikt, dus dit werkt ook voor andere vakken.
+        Controleer en publiceer de voorstellen hieronder.
       </p>
+
+      <BulkUpload subjectId={subjectId} />
+
       <div className="flex flex-col gap-2">
-        {HOOFDSTUK_1_PARAGRAFEN.map((paragraaf) => (
+        {gesorteerdeRijen.map((rij) => (
           <ParagraafRij
-            key={paragraaf.id}
+            key={rij.paragraafId}
             subjectId={subjectId}
-            paragraafId={paragraaf.id}
-            titel={paragraaf.titel}
-            onderdelen={onderdelen.filter((o) => o.paragraaf_id === paragraaf.id)}
+            paragraafId={rij.paragraafId}
+            titel={rij.titel}
+            uitIngebouwdeDataset={rij.uitIngebouwdeDataset}
+            onderdelen={onderdelen.filter((o) => o.paragraaf_id === rij.paragraafId)}
+            context={contexten.find((c) => c.paragraaf_id === rij.paragraafId) ?? null}
+            oefenvragen={oefenvragen.filter((v) => v.paragraaf_id === rij.paragraafId)}
           />
         ))}
       </div>
+    </div>
+  );
+}
+
+type BestandStatus = { naam: string; status: "bezig" | "klaar" | "overgeslagen" | "fout"; bericht: string };
+
+function BulkUpload({ subjectId }: { subjectId: string }) {
+  const router = useRouter();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [bezig, setBezig] = useState(false);
+  const [resultaten, setResultaten] = useState<BestandStatus[]>([]);
+
+  async function bestandenGekozen(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = "";
+    if (files.length === 0) return;
+
+    setBezig(true);
+    setResultaten(files.map((f) => ({ naam: f.name, status: "bezig", bericht: "" })));
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const tekst = await file.text();
+      const res = await verwerkKennisBrontekst(subjectId, tekst, file.name);
+
+      let uitkomst: BestandStatus;
+      if ("error" in res && res.error) {
+        uitkomst = { naam: file.name, status: "fout", bericht: res.error };
+      } else if ("overgeslagen" in res && res.overgeslagen) {
+        uitkomst = { naam: file.name, status: "overgeslagen", bericht: res.reden };
+      } else {
+        uitkomst = {
+          naam: file.name,
+          status: "klaar",
+          bericht: `${res.paragraafId} - ${res.aantalOnderdelen} onderdelen, ${res.aantalOefenvragen} oefenvragen`,
+        };
+      }
+      setResultaten((prev) => prev.map((r, idx) => (idx === i ? uitkomst : r)));
+    }
+
+    setBezig(false);
+    router.refresh();
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <Button
+        variant="secondary"
+        size="md"
+        icon={<Icon name={bezig ? "loader" : "upload"} size={15} className={bezig ? "animate-spin" : undefined} />}
+        onClick={() => inputRef.current?.click()}
+        disabled={bezig}
+        className="self-start"
+      >
+        {bezig ? "Bezig met verwerken..." : "Upload meerdere .md-bestanden"}
+      </Button>
+      <input
+        ref={inputRef}
+        type="file"
+        multiple
+        accept=".md,.markdown,text/markdown,text/plain"
+        className="hidden"
+        onChange={bestandenGekozen}
+      />
+      {resultaten.length > 0 && (
+        <ul className="flex flex-col gap-1 rounded-xl border border-slate-200 p-2.5 text-xs">
+          {resultaten.map((r) => (
+            <li key={r.naam} className="flex items-start gap-2">
+              <span
+                className={clsx(
+                  "mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full",
+                  r.status === "bezig" && "animate-pulse bg-slate-300",
+                  r.status === "klaar" && "bg-emerald-500",
+                  r.status === "overgeslagen" && "bg-slate-300",
+                  r.status === "fout" && "bg-rose-500"
+                )}
+              />
+              <span className="text-slate-600">
+                <span className="font-medium text-slate-800">{r.naam}</span>
+                {r.bericht && <span className="text-slate-500"> — {r.bericht}</span>}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
@@ -54,19 +190,24 @@ function ParagraafRij({
   subjectId,
   paragraafId,
   titel,
+  uitIngebouwdeDataset,
   onderdelen,
+  context,
+  oefenvragen,
 }: {
   subjectId: string;
   paragraafId: string;
   titel: string;
+  uitIngebouwdeDataset: boolean;
   onderdelen: KennisOnderdeel[];
+  context: KennisParagraafContext | null;
+  oefenvragen: KennisOefenvraag[];
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const bestandInputRef = useRef<HTMLInputElement>(null);
-  const [bronNaam, setBronNaam] = useState<string | null>(null);
 
   const aantalGepubliceerd = onderdelen.filter((o) => o.status === "gepubliceerd").length;
   const aantalConcept = onderdelen.length - aantalGepubliceerd;
@@ -91,11 +232,14 @@ function ParagraafRij({
 
     setError(null);
     const brontekst = await file.text();
-    setBronNaam(file.name);
     startTransition(async () => {
-      const res = await genereerKennisOnderdelenVanBrontekst(subjectId, paragraafId, brontekst);
-      if (res.error) {
+      const res = await verwerkKennisBrontekst(subjectId, brontekst, file.name, paragraafId);
+      if ("error" in res && res.error) {
         setError(res.error);
+        return;
+      }
+      if ("overgeslagen" in res && res.overgeslagen) {
+        setError(res.reden);
         return;
       }
       setOpen(true);
@@ -117,6 +261,21 @@ function ParagraafRij({
         <span className="flex-1 text-sm font-medium text-slate-900">
           {paragraafId} - {titel}
         </span>
+        {context && (
+          <span
+            className={clsx(
+              "rounded-full px-2 py-0.5 text-[11px] font-medium",
+              context.status === "gepubliceerd" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
+            )}
+          >
+            context
+          </span>
+        )}
+        {oefenvragen.length > 0 && (
+          <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-medium text-sky-700">
+            {oefenvragen.length} oefenvragen
+          </span>
+        )}
         {aantalGepubliceerd > 0 && (
           <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
             {aantalGepubliceerd} gepubliceerd
@@ -127,35 +286,59 @@ function ParagraafRij({
             {aantalConcept} concept
           </span>
         )}
-        {onderdelen.length === 0 && <span className="text-[11px] text-slate-400">nog niets gegenereerd</span>}
+        {onderdelen.length === 0 && oefenvragen.length === 0 && !context && (
+          <span className="text-[11px] text-slate-400">nog niets gegenereerd</span>
+        )}
       </button>
 
       {open && (
-        <div className="flex flex-col gap-3 border-t border-slate-100 px-4 py-3">
-          {onderdelen.length === 0 && <p className="text-xs text-slate-500">Nog geen onderdelen voor deze paragraaf.</p>}
+        <div className="flex flex-col gap-4 border-t border-slate-100 px-4 py-3">
+          {context && <ContextKaart subjectId={subjectId} context={context} />}
 
-          {onderdelen
-            .slice()
-            .sort((a, b) => a.volgorde - b.volgorde)
-            .map((o) => (
-              <OnderdeelKaart key={o.id} subjectId={subjectId} onderdeel={o} />
-            ))}
-
-          {error && <p className="text-xs text-rose-600">{error}</p>}
-          {bronNaam && !pending && !error && (
-            <p className="text-xs text-slate-400">Laatst gebruikt: {bronNaam}</p>
+          {onderdelen.length > 0 && (
+            <div className="flex flex-col gap-2">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Kennisonderdelen</h3>
+              {onderdelen
+                .slice()
+                .sort((a, b) => a.volgorde - b.volgorde)
+                .map((o) => (
+                  <OnderdeelKaart key={o.id} subjectId={subjectId} onderdeel={o} />
+                ))}
+            </div>
           )}
 
+          {oefenvragen.length > 0 && (
+            <div className="flex flex-col gap-2">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                Oefenbank ({oefenvragen.length})
+              </h3>
+              {oefenvragen
+                .slice()
+                .sort((a, b) => a.volgorde - b.volgorde)
+                .map((v) => (
+                  <OefenvraagKaart key={v.id} subjectId={subjectId} oefenvraag={v} />
+                ))}
+            </div>
+          )}
+
+          {onderdelen.length === 0 && oefenvragen.length === 0 && !context && (
+            <p className="text-xs text-slate-500">Nog geen kennisbank voor deze paragraaf.</p>
+          )}
+
+          {error && <p className="text-xs text-rose-600">{error}</p>}
+
           <div className="flex flex-wrap gap-2">
-            <Button
-              variant="secondary"
-              size="md"
-              icon={<Icon name={pending ? "loader" : "sparkles"} size={15} className={pending ? "animate-spin" : undefined} />}
-              onClick={genereer}
-              disabled={pending}
-            >
-              {pending ? "Bezig..." : onderdelen.length === 0 ? "Genereer onderdelen met AI" : "Nog meer onderdelen genereren"}
-            </Button>
+            {uitIngebouwdeDataset && (
+              <Button
+                variant="secondary"
+                size="md"
+                icon={<Icon name={pending ? "loader" : "sparkles"} size={15} className={pending ? "animate-spin" : undefined} />}
+                onClick={genereer}
+                disabled={pending}
+              >
+                {pending ? "Bezig..." : onderdelen.length === 0 ? "Genereer onderdelen met AI" : "Nog meer onderdelen genereren"}
+              </Button>
+            )}
             <Button
               variant="secondary"
               size="md"
@@ -176,6 +359,238 @@ function ParagraafRij({
         </div>
       )}
     </Card>
+  );
+}
+
+function StatusKnop({
+  status,
+  bezig,
+  onWissel,
+}: {
+  status: "concept" | "gepubliceerd";
+  bezig: boolean;
+  onWissel: () => void;
+}) {
+  return (
+    <Button variant="secondary" size="md" onClick={onWissel} disabled={bezig} className="!px-3 !py-1.5 text-xs">
+      {status === "concept" ? "Publiceren" : "Terug naar concept"}
+    </Button>
+  );
+}
+
+function ContextKaart({ subjectId, context }: { subjectId: string; context: KennisParagraafContext }) {
+  const router = useRouter();
+  const [bewerken, setBewerken] = useState(false);
+  const [pending, startTransition] = useTransition();
+
+  function wisselStatus() {
+    startTransition(async () => {
+      await zetKennisParagraafContextStatus(context.id, subjectId, context.status === "concept" ? "gepubliceerd" : "concept");
+      router.refresh();
+    });
+  }
+
+  const velden: { label: string; waarde: string | null }[] = [
+    { label: "Leerdoelen", waarde: context.leerdoelen },
+    { label: "Voorkennis", waarde: context.voorkennis },
+    { label: "Kernbegrippen", waarde: context.kernbegrippen },
+    { label: "Oplossingsroute", waarde: context.oplossingsroute },
+    { label: "Beheersingscriterium", waarde: context.beheersingscriterium },
+  ];
+
+  return (
+    <div className="rounded-xl border border-slate-200 p-3">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <p className="text-sm font-semibold text-slate-900">Paragraafcontext</p>
+          <span
+            className={clsx(
+              "rounded-full px-2 py-0.5 text-[11px] font-medium",
+              context.status === "gepubliceerd" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
+            )}
+          >
+            {context.status === "gepubliceerd" ? "gepubliceerd" : "concept"}
+          </span>
+        </div>
+        <button
+          onClick={() => setBewerken(true)}
+          className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+          aria-label="Context bewerken"
+        >
+          <Icon name="pencil-line" size={14} />
+        </button>
+      </div>
+
+      <dl className="mt-2 flex flex-col gap-1.5">
+        {velden
+          .filter((v) => v.waarde)
+          .map((v) => (
+            <div key={v.label}>
+              <dt className="text-[11px] font-medium uppercase tracking-wide text-slate-400">{v.label}</dt>
+              <dd className="text-xs text-slate-700">{v.waarde}</dd>
+            </div>
+          ))}
+      </dl>
+
+      <div className="mt-2.5">
+        <StatusKnop status={context.status} bezig={pending} onWissel={wisselStatus} />
+      </div>
+
+      <Modal open={bewerken} onClose={() => setBewerken(false)} title="Paragraafcontext bewerken">
+        <form
+          action={async (formData) => {
+            const res = await bewerkKennisParagraafContext(context.id, subjectId, formData);
+            if (!res?.error) {
+              setBewerken(false);
+              router.refresh();
+            }
+          }}
+          className="flex flex-col gap-3"
+        >
+          {(["leerdoelen", "voorkennis", "kernbegrippen", "oplossingsroute", "beheersingscriterium"] as const).map((veld) => (
+            <div key={veld}>
+              <label className="mb-1.5 block text-sm font-medium capitalize text-slate-700">{veld}</label>
+              <textarea
+                name={veld}
+                rows={2}
+                defaultValue={context[veld] ?? ""}
+                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
+              />
+            </div>
+          ))}
+          <div className="flex gap-2">
+            <SubmitButton>Wijzigingen opslaan</SubmitButton>
+            <Button type="button" variant="secondary" onClick={() => setBewerken(false)}>
+              Annuleren
+            </Button>
+          </div>
+        </form>
+      </Modal>
+    </div>
+  );
+}
+
+function OefenvraagKaart({ subjectId, oefenvraag }: { subjectId: string; oefenvraag: KennisOefenvraag }) {
+  const router = useRouter();
+  const [bewerken, setBewerken] = useState(false);
+  const [pending, startTransition] = useTransition();
+
+  function wisselStatus() {
+    startTransition(async () => {
+      await zetKennisOefenvraagStatus(oefenvraag.id, subjectId, oefenvraag.status === "concept" ? "gepubliceerd" : "concept");
+      router.refresh();
+    });
+  }
+
+  function verwijder() {
+    if (!confirm("Deze oefenvraag verwijderen?")) return;
+    startTransition(async () => {
+      await verwijderKennisOefenvraag(oefenvraag.id, subjectId);
+      router.refresh();
+    });
+  }
+
+  return (
+    <div className="rounded-xl border border-slate-200 p-3">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {oefenvraag.niveau && (
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
+              niveau {oefenvraag.niveau}
+            </span>
+          )}
+          <span
+            className={clsx(
+              "rounded-full px-2 py-0.5 text-[11px] font-medium",
+              oefenvraag.status === "gepubliceerd" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
+            )}
+          >
+            {oefenvraag.status === "gepubliceerd" ? "gepubliceerd" : "concept"}
+          </span>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          <button
+            onClick={() => setBewerken(true)}
+            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            aria-label="Oefenvraag bewerken"
+          >
+            <Icon name="pencil-line" size={14} />
+          </button>
+          <button
+            onClick={verwijder}
+            disabled={pending}
+            className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+            aria-label="Oefenvraag verwijderen"
+          >
+            <Icon name="trash" size={14} />
+          </button>
+        </div>
+      </div>
+
+      <p className="mt-1.5 text-sm text-slate-800">{oefenvraag.vraag}</p>
+      <p className="mt-1 font-mono text-xs text-emerald-700">{oefenvraag.antwoord}</p>
+      {oefenvraag.uitwerking && <p className="mt-1 text-xs text-slate-500">{oefenvraag.uitwerking}</p>}
+
+      <div className="mt-2.5">
+        <StatusKnop status={oefenvraag.status} bezig={pending} onWissel={wisselStatus} />
+      </div>
+
+      <Modal open={bewerken} onClose={() => setBewerken(false)} title="Oefenvraag bewerken">
+        <form
+          action={async (formData) => {
+            const res = await bewerkKennisOefenvraag(oefenvraag.id, subjectId, formData);
+            if (!res?.error) {
+              setBewerken(false);
+              router.refresh();
+            }
+          }}
+          className="flex flex-col gap-3"
+        >
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700">Niveau (optioneel)</label>
+            <input
+              name="niveau"
+              defaultValue={oefenvraag.niveau ?? ""}
+              className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700">Vraag</label>
+            <textarea
+              name="vraag"
+              required
+              rows={2}
+              defaultValue={oefenvraag.vraag}
+              className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700">Antwoord</label>
+            <input
+              name="antwoord"
+              required
+              defaultValue={oefenvraag.antwoord}
+              className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm font-mono focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700">Uitwerking (optioneel)</label>
+            <textarea
+              name="uitwerking"
+              rows={2}
+              defaultValue={oefenvraag.uitwerking ?? ""}
+              className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
+            />
+          </div>
+          <div className="flex gap-2">
+            <SubmitButton>Wijzigingen opslaan</SubmitButton>
+            <Button type="button" variant="secondary" onClick={() => setBewerken(false)}>
+              Annuleren
+            </Button>
+          </div>
+        </form>
+      </Modal>
+    </div>
   );
 }
 
@@ -262,9 +677,7 @@ function OnderdeelKaart({ subjectId, onderdeel }: { subjectId: string; onderdeel
       )}
 
       <div className="mt-2.5">
-        <Button variant="secondary" size="md" onClick={wisselStatus} disabled={pending} className="!px-3 !py-1.5 text-xs">
-          {onderdeel.status === "concept" ? "Publiceren" : "Terug naar concept"}
-        </Button>
+        <StatusKnop status={onderdeel.status} bezig={pending} onWissel={wisselStatus} />
       </div>
 
       <Modal open={bewerken} onClose={() => setBewerken(false)} title="Kennisonderdeel bewerken">

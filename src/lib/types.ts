@@ -177,6 +177,42 @@ export interface KennisOnderdeel {
   updated_at: string;
 }
 
+export interface KennisParagraafContext {
+  id: string;
+  family_id: string;
+  subject_id: string;
+  hoofdstuk: string;
+  paragraaf_id: string;
+  titel: string;
+  leerdoelen: string | null;
+  voorkennis: string | null;
+  kernbegrippen: string | null;
+  oplossingsroute: string | null;
+  beheersingscriterium: string | null;
+  status: KennisOnderdeelStatus;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface KennisOefenvraag {
+  id: string;
+  family_id: string;
+  subject_id: string;
+  hoofdstuk: string;
+  paragraaf_id: string;
+  kennis_onderdeel_id: string | null;
+  niveau: string | null;
+  vraag: string;
+  antwoord: string;
+  uitwerking: string | null;
+  volgorde: number;
+  status: KennisOnderdeelStatus;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export type Leerfase = "eerste" | "tussentijds" | "laatste";
 
 export interface OverhoorSessie {

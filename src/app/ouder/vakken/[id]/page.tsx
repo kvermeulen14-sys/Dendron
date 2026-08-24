@@ -10,7 +10,7 @@ import { OverhoorResultaten } from "@/components/overhoor-resultaten";
 import { KennisOnderdelenBeheer } from "@/components/kennis-onderdelen-beheer";
 import { VakBewerkForm } from "./vak-bewerk-form";
 import { VerwijderVakKnop } from "./verwijder-vak-knop";
-import type { KennisOnderdeel, Material, OverhoorSessie, Subject } from "@/lib/types";
+import type { KennisOefenvraag, KennisOnderdeel, KennisParagraafContext, Material, OverhoorSessie, Subject } from "@/lib/types";
 
 const BRON_ICON: Record<string, string> = { tekst: "file", pdf: "file", foto: "image" };
 
@@ -39,9 +39,13 @@ export default async function VakDetailPage({
     .limit(10);
 
   const isWiskunde = subject.name.toLowerCase().includes("wiskunde");
-  const { data: kennisOnderdelen } = isWiskunde
-    ? await supabase.from("kennis_onderdelen").select("*").eq("subject_id", id)
-    : { data: null };
+  const [{ data: kennisOnderdelen }, { data: kennisContexten }, { data: kennisOefenvragen }] = await Promise.all([
+    supabase.from("kennis_onderdelen").select("*").eq("subject_id", id),
+    supabase.from("kennis_paragraaf_context").select("*").eq("subject_id", id),
+    supabase.from("kennis_oefenvragen").select("*").eq("subject_id", id),
+  ]);
+  const heeftKennisbank =
+    (kennisOnderdelen?.length ?? 0) > 0 || (kennisContexten?.length ?? 0) > 0 || (kennisOefenvragen?.length ?? 0) > 0;
 
   return (
     <div className="flex flex-col gap-6">
@@ -80,10 +84,16 @@ export default async function VakDetailPage({
         <OverhoorResultaten sessies={(overhoorSessies ?? []) as OverhoorSessie[]} />
       </Card>
 
-      {isWiskunde && (
+      {(isWiskunde || heeftKennisbank) && (
         <div>
           <h2 className="mb-3 text-base font-semibold text-slate-900">Kennisonderdelen (regel-niveau)</h2>
-          <KennisOnderdelenBeheer subjectId={id} onderdelen={(kennisOnderdelen ?? []) as KennisOnderdeel[]} />
+          <KennisOnderdelenBeheer
+            subjectId={id}
+            onderdelen={(kennisOnderdelen ?? []) as KennisOnderdeel[]}
+            contexten={(kennisContexten ?? []) as KennisParagraafContext[]}
+            oefenvragen={(kennisOefenvragen ?? []) as KennisOefenvraag[]}
+            toonIngebouwdePilot={isWiskunde}
+          />
         </div>
       )}
 
