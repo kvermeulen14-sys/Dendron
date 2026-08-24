@@ -155,6 +155,28 @@ export interface ChatMessage {
   created_at: string;
 }
 
+export type KennisOnderdeelStatus = "concept" | "gepubliceerd";
+
+export interface KennisOnderdeel {
+  id: string;
+  family_id: string;
+  subject_id: string;
+  hoofdstuk: string;
+  paragraaf_id: string | null;
+  naam: string;
+  volgorde: number;
+  regel: string;
+  voorbeelden: string[];
+  gecombineerd_voorbeeld: string | null;
+  tip: string | null;
+  uitzondering: string | null;
+  fout_voorbeeld: string | null;
+  status: KennisOnderdeelStatus;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export type Leerfase = "eerste" | "tussentijds" | "laatste";
 
 export interface OverhoorSessie {

@@ -7,9 +7,10 @@ import { MateriaalForm } from "@/components/materiaal-form";
 import { MateriaalBewerkForm } from "@/components/materiaal-bewerk-form";
 import { KennisbankUploader } from "@/components/kennisbank-uploader";
 import { OverhoorResultaten } from "@/components/overhoor-resultaten";
+import { KennisOnderdelenBeheer } from "@/components/kennis-onderdelen-beheer";
 import { VakBewerkForm } from "./vak-bewerk-form";
 import { VerwijderVakKnop } from "./verwijder-vak-knop";
-import type { Material, OverhoorSessie, Subject } from "@/lib/types";
+import type { KennisOnderdeel, Material, OverhoorSessie, Subject } from "@/lib/types";
 
 const BRON_ICON: Record<string, string> = { tekst: "file", pdf: "file", foto: "image" };
 
@@ -36,6 +37,11 @@ export default async function VakDetailPage({
     .eq("subject_id", id)
     .order("created_at", { ascending: false })
     .limit(10);
+
+  const isWiskunde = subject.name.toLowerCase().includes("wiskunde");
+  const { data: kennisOnderdelen } = isWiskunde
+    ? await supabase.from("kennis_onderdelen").select("*").eq("subject_id", id)
+    : { data: null };
 
   return (
     <div className="flex flex-col gap-6">
@@ -73,6 +79,13 @@ export default async function VakDetailPage({
         <h2 className="mb-3 text-base font-semibold text-slate-900">Overhoor-resultaten</h2>
         <OverhoorResultaten sessies={(overhoorSessies ?? []) as OverhoorSessie[]} />
       </Card>
+
+      {isWiskunde && (
+        <div>
+          <h2 className="mb-3 text-base font-semibold text-slate-900">Kennisonderdelen (regel-niveau)</h2>
+          <KennisOnderdelenBeheer subjectId={id} onderdelen={(kennisOnderdelen ?? []) as KennisOnderdeel[]} />
+        </div>
+      )}
 
       <div>
         <h2 className="mb-3 text-base font-semibold text-slate-900">Lesstof toevoegen</h2>
