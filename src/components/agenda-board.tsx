@@ -1485,6 +1485,7 @@ export function AgendaBoard({
             const statusMeta = STATUS_META[detailItem.status];
             const isVoorstel = detailItem.status === "voorstel";
             const isKlaar = detailItem.status === "klaar";
+            const isPrive = detailItem.type === "prive";
             return (
               <div className="flex flex-col gap-4">
                 <div className="flex items-start gap-3">
@@ -1651,22 +1652,24 @@ export function AgendaBoard({
                     </div>
                   ) : (
                     <>
-                      <Button
-                        variant={isKlaar ? "secondary" : "primary"}
-                        loading={pending}
-                        onClick={() => {
-                          if (isKlaar) {
-                            toggleStatus(detailItem);
-                            sluitDetail();
-                          } else {
-                            klaarBevestiging.vraagBevestiging();
-                          }
-                        }}
-                        icon={<Icon name="check" size={16} />}
-                      >
-                        {isKlaar ? "Weer openzetten" : kiesKlaarLabel(detailItem.id)}
-                      </Button>
-                      {voorKind && (
+                      {!isPrive && (
+                        <Button
+                          variant={isKlaar ? "secondary" : "primary"}
+                          loading={pending}
+                          onClick={() => {
+                            if (isKlaar) {
+                              toggleStatus(detailItem);
+                              sluitDetail();
+                            } else {
+                              klaarBevestiging.vraagBevestiging();
+                            }
+                          }}
+                          icon={<Icon name="check" size={16} />}
+                        >
+                          {isKlaar ? "Weer openzetten" : kiesKlaarLabel(detailItem.id)}
+                        </Button>
+                      )}
+                      {voorKind && !isPrive && (
                         <LinkButton
                           href={`/kind/focus/${detailItem.id}`}
                           variant="secondary"
