@@ -63,7 +63,23 @@ const OPMAAK_INSTRUCTIE = `Opmaak:
 - Gebruik NOOIT LaTeX-notatie (dus geen $...$, \\frac{}{}, \\times, \\cdot e.d.) - een leerling kent die syntax niet en ziet dan alleen rare tekens. Schrijf wiskunde in gewone, leesbare tekst: "x²", "√2", "3 x + 5 = 11".
 - Voor een BREUK geldt een uitzondering: schrijf die nooit als platte tekst zoals "2/3" (een leerling ziet dan geen teller/noemer) - gebruik altijd het breuk-blok hierboven, ook als je er zelf naar verwijst in je uitleg (zeg dan bv. "kijk naar de breuk hieronder" i.p.v. de breuk zelf uit te typen).`;
 
-const AFBEELDING_INSTRUCTIE = `Bij de foto die is bijgevoegd: lees eerst zorgvuldig en LETTERLIJK wat erop staat (de exacte opgavetekst, cijfers, letters/variabelen, labels in een figuur) voordat je erop reageert. Vertrouw alleen wat je op de foto kunt onderscheiden - verzin of vul nooit een woord, cijfer of teken aan dat je niet goed kunt lezen, en verwar bijvoorbeeld nooit rechthoek/figuur I met II of een a met een b. Vat de opgave zo dicht mogelijk bij de letterlijke tekst op de foto samen. Is de foto onscherp, schuin gefotografeerd of gedeeltelijk onleesbaar, of twijfel je over een cijfer/teken? Zeg dat dan expliciet en vraag om een scherpere/rechtere foto of om het stukje over te typen, in plaats van te gokken.`;
+const AFBEELDING_INSTRUCTIE = `Bij de foto die is bijgevoegd: lees eerst zorgvuldig en LETTERLIJK wat erop staat (de exacte opgavetekst, cijfers, letters/variabelen, labels in een figuur) voordat je erop reageert. Vertrouw alleen wat je op de foto kunt onderscheiden - verzin of vul nooit een woord, cijfer of teken aan dat je niet goed kunt lezen, en verwar bijvoorbeeld nooit rechthoek/figuur I met II of een a met een b. Vat de opgave zo dicht mogelijk bij de letterlijke tekst op de foto samen. Is de foto onscherp, schuin gefotografeerd of gedeeltelijk onleesbaar, of twijfel je over een cijfer/teken? Zeg dat dan expliciet en vraag om een scherpere/rechtere foto of om het stukje over te typen, in plaats van te gokken.
+
+Zet HELEMAAL aan het eind van je antwoord, op een eigen laatste regel, exact een van deze 2 labels (dit wordt automatisch verwerkt en nooit aan de leerling getoond, dus leg dit niet uit en noem het niet in je tekst):
+[FOTO_TYPE:THEORIE] - als de foto lesstof/theorie toont (een uitlegpagina, samenvatting, regel, definitie, tabel e.d. - geen specifieke opgave met een eigen antwoord).
+[FOTO_TYPE:OPGAVE] - als de foto een specifieke opgave/vraag/som toont die de leerling probeert te maken.
+Twijfel je? Kies OPGAVE (dat is de veiligste keuze).`;
+
+const FOTO_TYPE_REGEX = /\n?\[FOTO_TYPE:(THEORIE|OPGAVE)\]\s*$/;
+
+function haalFotoTypeEnStripAntwoord(antwoord: string): { antwoord: string; fotoType: "theorie" | "opgave" | null } {
+  const match = antwoord.match(FOTO_TYPE_REGEX);
+  if (!match) return { antwoord, fotoType: null };
+  return {
+    antwoord: antwoord.slice(0, match.index).trimEnd(),
+    fotoType: match[1] === "THEORIE" ? "theorie" : "opgave",
+  };
+}
 
 interface KennisContextVoorChat {
   paragraaf_id: string;
@@ -408,6 +424,7 @@ export async function POST(request: Request) {
   const contentsVoorGemini = [...historyVoorGemini, { role: "user" as const, parts: huidigeBeurtParts }];
 
   let antwoord: string;
+  let fotoType: "theorie" | "opgave" | null = null;
   try {
     let response;
     try {
@@ -439,8 +456,11 @@ export async function POST(request: Request) {
         config: { systemInstruction: systeemPrompt, maxOutputTokens: 2048 },
       });
     }
-    antwoord = response.text ?? "";
-    if (!antwoord.trim()) throw new Error(`Leeg antwoord van de AI (finishReason: ${response.candidates?.[0]?.finishReason})`);
+    const ruweAntwoord = response.text ?? "";
+    if (!ruweAntwoord.trim()) throw new Error(`Leeg antwoord van de AI (finishReason: ${response.candidates?.[0]?.finishReason})`);
+    const gestript = haalFotoTypeEnStripAntwoord(ruweAntwoord);
+    antwoord = gestript.antwoord;
+    if (afbeeldingInvoer) fotoType = gestript.fotoType;
   } catch (e) {
     console.error("Chat: AI-verwerking mislukt.", e);
     return NextResponse.json(
@@ -449,9 +469,12 @@ export async function POST(request: Request) {
     );
   }
 
-  // De foto wordt WEL opgeslagen bij dit ene chatbericht (zodat het gesprek
-  // bij een refresh klopt), maar NIET toegevoegd aan materials/de kennisbank
-  // van het vak - dit is een losse vraag, geen permanente lesstof.
+  // De foto wordt altijd bij dit ene chatbericht opgeslagen (zodat het
+  // gesprek bij een refresh klopt), maar gaat NIET automatisch naar
+  // materials/de kennisbank van het vak - dat is een losse vraag, geen
+  // permanente lesstof. Bij een foto van THEORIE (zie fotoType) kan de
+  // ouder/leerling 'm zelf alsnog bewaren als lesstof, zie
+  // bewaarChatFotoAlsLesstof in lib/actions/materials.ts.
   let afbeeldingPad: string | null = null;
   if (afbeeldingInvoer) {
     const pad = `${subject.family_id}/chat/${subjectId}/${randomUUID()}.${extensieVoorMimeType(afbeeldingInvoer.mimeType)}`;
@@ -473,5 +496,5 @@ export async function POST(request: Request) {
     { family_id: subject.family_id, subject_id: subjectId, user_id: user.id, role: "model", content: antwoord },
   ]);
 
-  return NextResponse.json({ reply: antwoord, images: afbeeldingen });
+  return NextResponse.json({ reply: antwoord, images: afbeeldingen, imagePath: afbeeldingPad, fotoType });
 }
