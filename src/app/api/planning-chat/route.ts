@@ -6,6 +6,7 @@ import { classificeerWerkdruk, WERKDRUK_META } from "@/lib/planning";
 
 const MAX_GESCHIEDENIS = 16;
 const VENSTER_DAGEN = 21;
+const DAGNAMEN = ["", "Maandag", "Dinsdag", "Woensdag", "Donderdag", "Vrijdag", "Zaterdag", "Zondag"];
 
 const VoorstelSchema = z.object({
   actie: z
@@ -57,7 +58,7 @@ export async function POST(request: Request) {
   const vandaagIso = `${nu.getFullYear()}-${String(nu.getMonth() + 1).padStart(2, "0")}-${String(nu.getDate()).padStart(2, "0")}`;
   const eindeVenster = addDagen(vandaagIso, VENSTER_DAGEN);
 
-  const [{ data: items }, { data: subjects }] = await Promise.all([
+  const [{ data: items }, { data: subjects }, { data: periodes }] = await Promise.all([
     supabase
       .from("planning_items")
       .select("id, subject_id, type, title, due_date, start_time, status, estimated_minutes")
@@ -67,9 +68,40 @@ export async function POST(request: Request) {
       .lte("due_date", eindeVenster)
       .order("due_date", { ascending: true }),
     supabase.from("subjects").select("id, name").eq("family_id", profile.family_id),
+    supabase.from("rooster_periodes").select("id, naam, start_datum, eind_datum").eq("family_id", profile.family_id),
   ]);
 
+  // Zelfde manier om de "huidige" periode te bepalen als de agenda zelf
+  // (agenda-board.tsx) - de periode waarvan vandaag binnen start/eind valt.
+  const huidigePeriode = (periodes ?? []).find((p) => p.start_datum <= vandaagIso && vandaagIso <= p.eind_datum) ?? null;
+  const { data: roosterItems } = huidigePeriode
+    ? await supabase
+        .from("rooster_items")
+        .select("subject_id, titel, dag_van_week, start_tijd, eind_tijd")
+        .eq("periode_id", huidigePeriode.id)
+        .order("start_tijd", { ascending: true })
+    : { data: null };
+
   const subjectNaam = new Map((subjects ?? []).map((s) => [s.id, s.name]));
+
+  const roosterTekst = !huidigePeriode
+    ? "(geen actieve roosterperiode ingesteld)"
+    : !roosterItems || roosterItems.length === 0
+      ? "(nog geen lesuren ingevoerd voor de huidige periode)"
+      : Array.from({ length: 7 }, (_, i) => i + 1)
+          .map((dag) => {
+            const lessen = roosterItems.filter((r) => r.dag_van_week === dag);
+            if (lessen.length === 0) return null;
+            const lessenTekst = lessen
+              .map((r) => {
+                const vak = r.subject_id ? subjectNaam.get(r.subject_id) : null;
+                return `${r.start_tijd.slice(0, 5)}-${r.eind_tijd.slice(0, 5)} ${vak || r.titel}`;
+              })
+              .join(", ");
+            return `${DAGNAMEN[dag]}: ${lessenTekst}`;
+          })
+          .filter(Boolean)
+          .join("\n");
   const takenTekst = (items ?? [])
     .map((i) => {
       const vak = i.subject_id ? subjectNaam.get(i.subject_id) : null;
@@ -98,7 +130,7 @@ export async function POST(request: Request) {
 
 Werkwijze:
 - Luister en erken het gevoel eerst in 1 korte zin (bv. "Dat klinkt inderdaad vol") voordat je meedenkt - geen preek, geen lange lijst met tips.
-- Denk hardop mee op basis van de ECHTE taken en werkdruk hieronder - verzin nooit taken of data die er niet staan.
+- Denk hardop mee op basis van de ECHTE taken, werkdruk en het lesrooster hieronder - verzin nooit taken, vakken of tijden die er niet staan. Gebruik het lesrooster om te bepalen wanneer de eerstvolgende les van een vak is (bv. bij "wanneer moet ik dit af hebben" of "wanneer heb ik weer wiskunde").
 - Stel als het niet meteen duidelijk is eerst een korte, gerichte vraag (bv. "wil je 'm verplaatsen, of samen kijken wat echt vandaag moet?") in plaats van meteen een oplossing te pushen. De leerling houdt de regie.
 - Pas als er een concreet, klein voorstel is waar de leerling baat bij heeft (1 taak verplaatsen naar een rustigere dag, of een taak die eigenlijk al gedaan is als klaar markeren) zet je dat in het "voorstel"-veld. Je voert dit voorstel NOOIT zelf uit - de leerling krijgt een knop om het wel of niet te bevestigen, dus laat in je "antwoord"-tekst ook merken dat het een voorstel is dat ze zelf kunnen bevestigen. Tot die tijd blijft "actie" op "geen".
 - Maximaal 1 concreet voorstel tegelijk, en gebruik dan het EXACTE id (het stuk tussen [ ]) uit de takenlijst hieronder - verzin nooit een id en gebruik nooit een id dat niet letterlijk hieronder staat.
@@ -109,6 +141,11 @@ Werkwijze:
 Antwoord altijd in het Nederlands.
 
 Vandaag is ${vandaagIso}.
+
+VAKKEN: ${(subjects ?? []).map((s) => s.name).join(", ") || "(nog geen vakken ingesteld)"}
+
+LESROOSTER (huidige periode, per dag start-eind vak):
+${roosterTekst}
 
 TAKEN (komende ${VENSTER_DAGEN} dagen, [id] type "titel" (vak) - datum starttijd - status):
 ${takenTekst || "(geen taken gevonden in dit venster)"}
