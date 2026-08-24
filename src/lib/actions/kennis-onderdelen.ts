@@ -83,6 +83,63 @@ function bouwPrompt(paragraaf: ParagraafRecord): string {
     .join("\n");
 }
 
+function bouwPromptVanBrontekst(paragraaf: ParagraafRecord, brontekst: string): string {
+  return [
+    "Je splitst een wiskundeparagraaf op in losse, apart te oefenen deelregels voor een leerling van 2 havo.",
+    "",
+    `Paragraaf ${paragraaf.id} - ${paragraaf.titel}`,
+    "",
+    "Bronmateriaal voor deze paragraaf (dit is de leidende, meest volledige bron - gebruik deze in plaats van je eigen kennis):",
+    brontekst,
+    "",
+    "Maak per losse regel/formule uit het bronmateriaal 1 onderdeel (meestal 1-4 onderdelen per paragraaf).",
+    "Gebruik uitsluitend de wiskundige inhoud uit het bronmateriaal hierboven - verzin geen nieuwe wiskundige feiten of regels die daar niet in staan.",
+    "Als het bronmateriaal zelf al voorbeelden geeft, gebruik die (of een lichte variant ervan); geeft het geen voorbeelden, verzin dan zelf simpele rekenvoorbeelden (dat zijn geen boekopgaven, dus dat mag).",
+    "Gebruik ^ voor machten (bv a^2) en / voor breuken in platte tekst; gebruik geen LaTeX.",
+  ].join("\n");
+}
+
+async function slaGegenereerdeOnderdelenOp(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  familyId: string,
+  userId: string,
+  subjectId: string,
+  paragraaf: ParagraafRecord,
+  onderdelen: z.infer<typeof GenereerSchema>["onderdelen"]
+) {
+  const { data: bestaand } = await supabase
+    .from("kennis_onderdelen")
+    .select("volgorde")
+    .eq("subject_id", subjectId)
+    .eq("paragraaf_id", paragraaf.id)
+    .order("volgorde", { ascending: false })
+    .limit(1);
+  let volgende = (bestaand?.[0]?.volgorde ?? -1) + 1;
+
+  const rijen = onderdelen.map((o) => ({
+    family_id: familyId,
+    subject_id: subjectId,
+    hoofdstuk: hoofdstukLabel(paragraaf),
+    paragraaf_id: paragraaf.id,
+    naam: o.naam,
+    volgorde: volgende++,
+    regel: o.regel,
+    voorbeelden: o.voorbeelden,
+    gecombineerd_voorbeeld: o.gecombineerdVoorbeeld,
+    tip: o.tip,
+    uitzondering: o.uitzondering,
+    fout_voorbeeld: o.foutVoorbeeld,
+    status: "concept" as const,
+    created_by: userId,
+  }));
+
+  const { error } = await supabase.from("kennis_onderdelen").insert(rijen);
+  if (error) return { error: error.message };
+
+  revalidateVak(subjectId);
+  return { aantal: rijen.length };
+}
+
 /**
  * Genereert kandidaat-kennisonderdelen (status 'concept') voor 1 paragraaf uit
  * de Getal & Ruimte-kennisbank. De ouder controleert en publiceert ze
@@ -108,37 +165,44 @@ export async function genereerKennisOnderdelenVoorParagraaf(subjectId: string, p
     return { error: e instanceof Error ? e.message : "AI-generatie mislukt." };
   }
 
-  const { data: bestaand } = await supabase
-    .from("kennis_onderdelen")
-    .select("volgorde")
-    .eq("subject_id", subjectId)
-    .eq("paragraaf_id", paragraafId)
-    .order("volgorde", { ascending: false })
-    .limit(1);
-  let volgende = (bestaand?.[0]?.volgorde ?? -1) + 1;
+  return slaGegenereerdeOnderdelenOp(supabase, familyId, user.id, subjectId, paragraaf, resultaat.onderdelen);
+}
 
-  const rijen = resultaat.onderdelen.map((o) => ({
-    family_id: familyId,
-    subject_id: subjectId,
-    hoofdstuk: hoofdstukLabel(paragraaf),
-    paragraaf_id: paragraaf.id,
-    naam: o.naam,
-    volgorde: volgende++,
-    regel: o.regel,
-    voorbeelden: o.voorbeelden,
-    gecombineerd_voorbeeld: o.gecombineerdVoorbeeld,
-    tip: o.tip,
-    uitzondering: o.uitzondering,
-    fout_voorbeeld: o.foutVoorbeeld,
-    status: "concept" as const,
-    created_by: user.id,
-  }));
+const MAX_BRONTEKST_LENGTE = 40_000;
 
-  const { error } = await supabase.from("kennis_onderdelen").insert(rijen);
-  if (error) return { error: error.message };
+/**
+ * Zelfde als genereerKennisOnderdelenVoorParagraaf, maar met een eigen
+ * aangeleverde brontekst (bv. een .md-bestand uit een andere kennisbank-tool)
+ * als leidende bron in plaats van de ingebouwde Getal & Ruimte-samenvatting.
+ * De paragraaf-metadata (titel/hoofdstuk) komt nog wel uit de ingebouwde
+ * dataset, zodat de naamgeving consistent blijft.
+ */
+export async function genereerKennisOnderdelenVanBrontekst(subjectId: string, paragraafId: string, brontekst: string) {
+  const ouder = await ouderProfiel();
+  if ("error" in ouder) return { error: ouder.error };
+  const { supabase, user, familyId } = ouder;
 
-  revalidateVak(subjectId);
-  return { aantal: rijen.length };
+  const paragraaf = GETAL_EN_RUIMTE_2HV13.find((p) => p.id === paragraafId);
+  if (!paragraaf) return { error: "Onbekende paragraaf." };
+
+  const tekst = brontekst.trim();
+  if (!tekst) return { error: "Het bestand lijkt leeg te zijn." };
+  if (tekst.length > MAX_BRONTEKST_LENGTE) {
+    return { error: `Het bestand is te lang (max ${MAX_BRONTEKST_LENGTE.toLocaleString("nl-NL")} tekens per paragraaf).` };
+  }
+
+  const { data: subject } = await supabase.from("subjects").select("id, family_id").eq("id", subjectId).single();
+  if (!subject || subject.family_id !== familyId) return { error: "Vak niet gevonden." };
+
+  let resultaat: z.infer<typeof GenereerSchema>;
+  try {
+    const client = createGeminiClient();
+    resultaat = await genereerGestructureerd(client, GenereerSchema, bouwPromptVanBrontekst(paragraaf, tekst));
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "AI-generatie mislukt." };
+  }
+
+  return slaGegenereerdeOnderdelenOp(supabase, familyId, user.id, subjectId, paragraaf, resultaat.onderdelen);
 }
 
 export async function bewerkKennisOnderdeel(id: string, subjectId: string, formData: FormData) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import { Card } from "@/components/ui/card";
@@ -11,6 +11,7 @@ import { Icon } from "@/components/icon";
 import { GETAL_EN_RUIMTE_2HV13 } from "@/lib/data/getal-en-ruimte-2hv13";
 import {
   genereerKennisOnderdelenVoorParagraaf,
+  genereerKennisOnderdelenVanBrontekst,
   bewerkKennisOnderdeel,
   zetKennisOnderdeelStatus,
   verwijderKennisOnderdeel,
@@ -31,7 +32,8 @@ export function KennisOnderdelenBeheer({
       <p className="text-xs text-slate-500">
         Pilot: hoofdstuk 1 (Rekenen met letters) van Getal &amp; Ruimte, opgesplitst in losse regels met eigen
         voorbeelden - zo kan Oefenen en Toets straks per regel bijhouden wat beheerst wordt, in plaats van per heel
-        hoofdstuk. Laat de AI per paragraaf onderdelen voorstellen en controleer/publiceer ze hieronder.
+        hoofdstuk. Laat de AI per paragraaf onderdelen voorstellen met de ingebouwde samenvatting, of upload een eigen
+        .md-bestand per paragraaf als leidende bron. Controleer en publiceer de voorstellen hieronder.
       </p>
       <div className="flex flex-col gap-2">
         {HOOFDSTUK_1_PARAGRAFEN.map((paragraaf) => (
@@ -63,6 +65,8 @@ function ParagraafRij({
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const bestandInputRef = useRef<HTMLInputElement>(null);
+  const [bronNaam, setBronNaam] = useState<string | null>(null);
 
   const aantalGepubliceerd = onderdelen.filter((o) => o.status === "gepubliceerd").length;
   const aantalConcept = onderdelen.length - aantalGepubliceerd;
@@ -71,6 +75,25 @@ function ParagraafRij({
     setError(null);
     startTransition(async () => {
       const res = await genereerKennisOnderdelenVoorParagraaf(subjectId, paragraafId);
+      if (res.error) {
+        setError(res.error);
+        return;
+      }
+      setOpen(true);
+      router.refresh();
+    });
+  }
+
+  async function bestandGekozen(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+
+    setError(null);
+    const brontekst = await file.text();
+    setBronNaam(file.name);
+    startTransition(async () => {
+      const res = await genereerKennisOnderdelenVanBrontekst(subjectId, paragraafId, brontekst);
       if (res.error) {
         setError(res.error);
         return;
@@ -119,17 +142,37 @@ function ParagraafRij({
             ))}
 
           {error && <p className="text-xs text-rose-600">{error}</p>}
+          {bronNaam && !pending && !error && (
+            <p className="text-xs text-slate-400">Laatst gebruikt: {bronNaam}</p>
+          )}
 
-          <Button
-            variant="secondary"
-            size="md"
-            icon={<Icon name={pending ? "loader" : "sparkles"} size={15} className={pending ? "animate-spin" : undefined} />}
-            onClick={genereer}
-            disabled={pending}
-            className="self-start"
-          >
-            {pending ? "Bezig..." : onderdelen.length === 0 ? "Genereer onderdelen met AI" : "Nog meer onderdelen genereren"}
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="secondary"
+              size="md"
+              icon={<Icon name={pending ? "loader" : "sparkles"} size={15} className={pending ? "animate-spin" : undefined} />}
+              onClick={genereer}
+              disabled={pending}
+            >
+              {pending ? "Bezig..." : onderdelen.length === 0 ? "Genereer onderdelen met AI" : "Nog meer onderdelen genereren"}
+            </Button>
+            <Button
+              variant="secondary"
+              size="md"
+              icon={<Icon name="upload" size={15} />}
+              onClick={() => bestandInputRef.current?.click()}
+              disabled={pending}
+            >
+              Eigen .md-bestand gebruiken
+            </Button>
+            <input
+              ref={bestandInputRef}
+              type="file"
+              accept=".md,.markdown,text/markdown,text/plain"
+              className="hidden"
+              onChange={bestandGekozen}
+            />
+          </div>
         </div>
       )}
     </Card>
