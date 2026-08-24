@@ -40,7 +40,8 @@ export async function genereerGestructureerd<T>(
   client: GoogleGenAI,
   schema: z.ZodType<T>,
   contents: ContentListUnion,
-  maxOutputTokens = 8192
+  maxOutputTokens = 8192,
+  opties: { debugFouten?: boolean } = {}
 ): Promise<T> {
   async function eenPoging(): Promise<T> {
     const response = await client.models.generateContent({
@@ -75,6 +76,10 @@ export async function genereerGestructureerd<T>(
       // fouten mogelijk om de echte oorzaak in de Netlify-functielogs terug
       // te vinden.
       console.error("genereerGestructureerd: 2 pogingen mislukt.", { eersteFout, tweedeFout });
+      if (opties.debugFouten) {
+        const detail = tweedeFout instanceof Error ? tweedeFout.message : String(tweedeFout);
+        throw new Error(`De AI gaf geen volledig/geldig resultaat terug - probeer het opnieuw. [detail: ${detail.slice(0, 400)}]`);
+      }
       throw new Error("De AI gaf geen volledig/geldig resultaat terug - probeer het opnieuw.");
     }
   }

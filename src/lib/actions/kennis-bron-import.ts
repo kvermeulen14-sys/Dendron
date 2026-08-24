@@ -151,7 +151,8 @@ export async function verwerkKennisBrontekst(
       client,
       BrontekstExtractieSchema,
       bouwExtractiePrompt(bestandsnaam, tekst),
-      32_768
+      32_768,
+      { debugFouten: true }
     );
   } catch (e) {
     return { error: e instanceof Error ? e.message : "AI-verwerking mislukt." };
