@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { createClient } from "@/lib/supabase/server";
-import { createGeminiClient, vereistGeminiKey, GEMINI_MODEL } from "@/lib/gemini";
+import { createGeminiClient, vereistGeminiKey, GEMINI_MODEL, GEMINI_VISION_MODEL } from "@/lib/gemini";
 import { kiesRelevanteMaterialen, bouwKennisbankUitOnderdelen, type KennisOnderdeelRij, type KennisParagraafContextRij } from "@/lib/kennisbank";
 
 const MAX_AFBEELDING_BYTES = 8 * 1024 * 1024; // 8MB (ruim voor een foto, zonder de request onnodig groot te maken)
@@ -57,6 +57,8 @@ const OPMAAK_INSTRUCTIE = `Opmaak:
 - Gebruik NOOIT LaTeX-notatie (dus geen $...$, \\frac{}{}, \\times, \\cdot e.d.) - een leerling kent die syntax niet en ziet dan alleen rare tekens. Schrijf wiskunde in gewone, leesbare tekst: "x²", "√2", "3 x + 5 = 11".
 - Voor een BREUK geldt een uitzondering: schrijf die nooit als platte tekst zoals "2/3" (een leerling ziet dan geen teller/noemer) - gebruik altijd het breuk-blok hierboven, ook als je er zelf naar verwijst in je uitleg (zeg dan bv. "kijk naar de breuk hieronder" i.p.v. de breuk zelf uit te typen).`;
 
+const AFBEELDING_INSTRUCTIE = `Bij de foto die is bijgevoegd: lees eerst zorgvuldig en LETTERLIJK wat erop staat (de exacte opgavetekst, cijfers, letters/variabelen, labels in een figuur) voordat je erop reageert. Vertrouw alleen wat je op de foto kunt onderscheiden - verzin of vul nooit een woord, cijfer of teken aan dat je niet goed kunt lezen, en verwar bijvoorbeeld nooit rechthoek/figuur I met II of een a met een b. Vat de opgave zo dicht mogelijk bij de letterlijke tekst op de foto samen. Is de foto onscherp, schuin gefotografeerd of gedeeltelijk onleesbaar, of twijfel je over een cijfer/teken? Zeg dat dan expliciet en vraag om een scherpere/rechtere foto of om het stukje over te typen, in plaats van te gokken.`;
+
 interface KennisContextVoorChat {
   paragraaf_id: string;
   titel: string;
@@ -99,7 +101,8 @@ function bouwSysteemPrompt(
   subjectName: string,
   aiInstructions: string,
   kennisbank: string,
-  modus: "alles" | "selectie" | "index"
+  modus: "alles" | "selectie" | "index",
+  heeftAfbeelding: boolean
 ) {
   const routeringsinstructie =
     modus === "index"
@@ -124,6 +127,7 @@ Belangrijke regels over de lesstof hieronder:
 - Stukjes tussen "[INTERN ..." en het einde van dat blok zijn alleen voor jou (bewijsniveau, bladzijde-status, foto-adviezen) - noem dit nooit letterlijk of impliciet tegen de leerling. Gebruik het wel om in te schatten hoe zeker je mag klinken; vraag desnoods zelf om een foto van de theorie voordat je een exacte formule/definitie stellig presenteert.
 ${routeringsinstructie}
 ${aiInstructions ? `\nExtra instructies van de ouder/docent: ${aiInstructions}\n` : ""}
+${heeftAfbeelding ? `\n${AFBEELDING_INSTRUCTIE}\n` : ""}
 ${VISUAL_INSTRUCTIE}
 ${OPMAAK_INSTRUCTIE}
 
@@ -137,7 +141,8 @@ function bouwOpdrachtSysteemPrompt(
   subjectName: string,
   aiInstructions: string,
   kennisbank: string,
-  modus: "alles" | "selectie" | "index"
+  modus: "alles" | "selectie" | "index",
+  heeftAfbeelding: boolean
 ) {
   const routeringsinstructie =
     modus === "index"
@@ -160,6 +165,7 @@ Belangrijke regels over de lesstof hieronder:
 - Stukjes tussen "[INTERN ..." en het einde van dat blok zijn alleen voor jou (bewijsniveau, bladzijde-status, foto-adviezen) - noem dit nooit tegen de leerling. Vraag desnoods zelf om een foto van de theorie voordat je een exacte formule/definitie stellig gebruikt.
 ${routeringsinstructie}
 ${aiInstructions ? `\nExtra instructies van de ouder/docent: ${aiInstructions}\n` : ""}
+${heeftAfbeelding ? `\n${AFBEELDING_INSTRUCTIE}\n` : ""}
 ${VISUAL_INSTRUCTIE}
 ${OPMAAK_INSTRUCTIE}
 
@@ -307,8 +313,8 @@ export async function POST(request: Request) {
 
   const client = createGeminiClient();
   const systeemPrompt = isOpdrachtModus
-    ? bouwOpdrachtSysteemPrompt(subject.name, subject.ai_instructions ?? "", kennisbank, modus)
-    : bouwSysteemPrompt(subject.name, subject.ai_instructions ?? "", kennisbank, modus);
+    ? bouwOpdrachtSysteemPrompt(subject.name, subject.ai_instructions ?? "", kennisbank, modus, Boolean(afbeeldingInvoer))
+    : bouwSysteemPrompt(subject.name, subject.ai_instructions ?? "", kennisbank, modus, Boolean(afbeeldingInvoer));
 
   const huidigeBeurtParts: ({ text: string } | { inlineData: { mimeType: string; data: string } })[] = [{ text: message }];
   if (afbeeldingInvoer) {
@@ -318,7 +324,7 @@ export async function POST(request: Request) {
   let antwoord: string;
   try {
     const response = await client.models.generateContent({
-      model: GEMINI_MODEL,
+      model: afbeeldingInvoer ? GEMINI_VISION_MODEL : GEMINI_MODEL,
       contents: [...historyVoorGemini, { role: "user", parts: huidigeBeurtParts }],
       config: {
         systemInstruction: systeemPrompt,

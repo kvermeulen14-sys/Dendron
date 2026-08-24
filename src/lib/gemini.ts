@@ -18,6 +18,11 @@ export function createGeminiClient() {
 
 export const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 
+// Bij een bijgevoegde foto (bv. een opgave uit het boek) telt nauwkeurig
+// lezen zwaarder dan snelheid - flash mist daar geregeld details (een
+// verkeerd cijfer, een verwisselde rechthoek I/II) die pro beter goed leest.
+export const GEMINI_VISION_MODEL = process.env.GEMINI_VISION_MODEL || "gemini-2.5-pro";
+
 // Voor gestructureerde JSON-extractie (geen open gesprek) is "denken" niet
 // nodig - zonder dit uit te zetten gaat een deel van maxOutputTokens op aan
 // interne redenering, waardoor de uiteindelijke JSON-output soms halverwege
