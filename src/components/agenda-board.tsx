@@ -15,7 +15,7 @@ import clsx from "clsx";
 import { Icon } from "@/components/icon";
 import { Button, LinkButton } from "@/components/ui/button";
 import { PlanningshulpKnop } from "@/components/planningshulp-knop";
-import { RoosterBlokHuiswerkModal } from "@/components/rooster-blok-huiswerk-modal";
+import { RoosterVakDeadlineModal } from "@/components/rooster-vak-deadline-modal";
 import { NuEnStraks } from "@/components/nu-en-straks";
 import { kiesKlaarLabel, kiesVierTekst } from "@/lib/motiverend";
 import { useKlaarBevestiging } from "@/lib/use-klaar-bevestiging";
@@ -399,11 +399,10 @@ export function AgendaBoard({
   const [bewerkError, setBewerkError] = useState<string | null>(null);
   const [detailItem, setDetailItem] = useState<PlanningItem | null>(null);
   const [weergave, setWeergave] = useState<"rooster" | "lijst">("rooster");
-  // Klik-op-vak-in-het-rooster -> snel huiswerk toevoegen (ouder en kind,
-  // zie RoosterBlokHuiswerkModal).
-  const [huiswerkBlok, setHuiswerkBlok] = useState<{ subjectId: string; titel: string; datum: string; tijd: string } | null>(
-    null
-  );
+  // Klik-op-vak-in-het-rooster -> deadline (huiswerk/toets) bekijken/toevoegen
+  // voor dat vak op die dag (ouder en kind, zie RoosterVakDeadlineModal). Dit
+  // lesuur zelf is de deadline - geen losse datum/tijd-keuze.
+  const [deadlineVak, setDeadlineVak] = useState<{ subjectId: string; titel: string; datum: string } | null>(null);
   // Waar het kaartje zou landen als je nu loslaat - als kwartier-lijn zichtbaar.
   const [dropMinuut, setDropMinuut] = useState<number | null>(null);
   const [resizeDuur, setResizeDuur] = useState<{ id: string; duur: number } | null>(null);
@@ -2047,14 +2046,23 @@ export function AgendaBoard({
               >
                 {roosterBlokken.map((b, bi) => {
                   const klikbaar = !b.isFietsen && Boolean(b.subjectId);
+                  const deadlines = klikbaar
+                    ? dagItems.filter((it) => it.subject_id === b.subjectId && (it.type === "huiswerk" || it.type === "toets"))
+                    : [];
+                  const heeftToets = deadlines.some((d) => d.type === "toets");
+                  const heeftDeadline = deadlines.length > 0;
                   return (
                     <div
                       key={`r-${bi}`}
-                      title={klikbaar ? `${b.tijd} ${b.titel} - klik om huiswerk toe te voegen` : `${b.tijd} ${b.titel}`}
+                      title={
+                        heeftDeadline
+                          ? `${b.tijd} ${b.titel} - ${deadlines.length} deadline(s), klik om te bekijken`
+                          : klikbaar
+                            ? `${b.tijd} ${b.titel} - klik om huiswerk of een toets toe te voegen`
+                            : `${b.tijd} ${b.titel}`
+                      }
                       onClick={
-                        klikbaar
-                          ? () => setHuiswerkBlok({ subjectId: b.subjectId!, titel: b.titel, datum: iso, tijd: b.tijd.split("-")[0] })
-                          : undefined
+                        klikbaar ? () => setDeadlineVak({ subjectId: b.subjectId!, titel: b.titel, datum: iso }) : undefined
                       }
                       style={{ top: topVoorMinuut(b.startMinuten), height: hoogteVoorDuur(b.duurMinuten) }}
                       className={clsx(
@@ -2066,15 +2074,26 @@ export function AgendaBoard({
                           "border-l-amber-400 bg-amber-50 text-amber-800 ring-1 ring-inset ring-amber-200",
                         b.bron === "extra" &&
                           "border-l-accent-400 bg-accent-50 text-accent-800 ring-1 ring-inset ring-accent-200",
+                        heeftDeadline &&
+                          (heeftToets
+                            ? "border-l-rose-400 bg-rose-50 text-rose-800 ring-1 ring-inset ring-rose-200"
+                            : "border-l-amber-400 bg-amber-50 text-amber-800 ring-1 ring-inset ring-amber-200"),
                         klikbaar && "cursor-pointer hover:ring-1 hover:ring-inset hover:ring-accent-300"
                       )}
                     >
                       {b.bron === "gewijzigd" && <Icon name="pencil-line" size={9} className="mr-0.5 mb-px inline" />}
+                      {heeftDeadline && (
+                        <Icon
+                          name={heeftToets ? "alert-circle" : "book-open"}
+                          size={9}
+                          className="mr-0.5 mb-px inline"
+                        />
+                      )}
                       <span className="line-clamp-2">
                         {!b.isFietsen && `${b.tijd.split("-")[0]} `}
                         {b.titel}
                       </span>
-                      {klikbaar && <Icon name="plus" size={9} className="ml-0.5 mb-px inline text-accent-500" />}
+                      {klikbaar && !heeftDeadline && <Icon name="plus" size={9} className="ml-0.5 mb-px inline text-accent-500" />}
                     </div>
                   );
                 })}
@@ -2254,25 +2273,36 @@ export function AgendaBoard({
                 <div className="mb-2 flex flex-col gap-1 rounded-xl border border-slate-100 bg-slate-50/60 p-2.5">
                   {roosterBlokken.map((b, i) => {
                     const klikbaar = !b.isFietsen && Boolean(b.subjectId);
+                    const deadlines = klikbaar
+                      ? dagItems.filter((it) => it.subject_id === b.subjectId && (it.type === "huiswerk" || it.type === "toets"))
+                      : [];
+                    const heeftToets = deadlines.some((d) => d.type === "toets");
+                    const heeftDeadline = deadlines.length > 0;
                     return (
                       <div
                         key={i}
                         onClick={
-                          klikbaar
-                            ? () => setHuiswerkBlok({ subjectId: b.subjectId!, titel: b.titel, datum: iso, tijd: b.tijd.split("-")[0] })
-                            : undefined
+                          klikbaar ? () => setDeadlineVak({ subjectId: b.subjectId!, titel: b.titel, datum: iso }) : undefined
                         }
                         className={clsx(
                           "flex items-center gap-2 text-xs",
                           b.isFietsen ? "text-slate-400" : "text-slate-600",
-                          klikbaar && "cursor-pointer rounded-lg px-1 py-0.5 hover:bg-accent-50 hover:text-accent-700"
+                          klikbaar && "cursor-pointer rounded-lg px-1 py-0.5 hover:bg-accent-50 hover:text-accent-700",
+                          heeftDeadline && (heeftToets ? "bg-rose-50 text-rose-800" : "bg-amber-50 text-amber-800")
                         )}
                       >
                         <Icon name={b.isFietsen ? "bike" : "school"} size={13} className="shrink-0" />
                         {b.bron === "gewijzigd" && <Icon name="pencil-line" size={11} className="shrink-0 text-amber-500" />}
                         <span className="font-medium">{b.tijd}</span>
                         <span>{b.titel}</span>
-                        {klikbaar && <Icon name="plus" size={11} className="shrink-0 text-accent-500" />}
+                        {heeftDeadline && (
+                          <Icon
+                            name={heeftToets ? "alert-circle" : "book-open"}
+                            size={11}
+                            className={clsx("shrink-0", heeftToets ? "text-rose-500" : "text-amber-500")}
+                          />
+                        )}
+                        {klikbaar && !heeftDeadline && <Icon name="plus" size={11} className="shrink-0 text-accent-500" />}
                       </div>
                     );
                   })}
@@ -2499,14 +2529,19 @@ export function AgendaBoard({
           );
         })()}
 
-      {huiswerkBlok && (
-        <RoosterBlokHuiswerkModal
+      {deadlineVak && (
+        <RoosterVakDeadlineModal
           open
-          onClose={() => setHuiswerkBlok(null)}
-          titel={huiswerkBlok.titel}
-          subjectId={huiswerkBlok.subjectId}
-          standaardDatum={huiswerkBlok.datum}
-          standaardTijd={huiswerkBlok.tijd}
+          onClose={() => setDeadlineVak(null)}
+          titel={deadlineVak.titel}
+          subjectId={deadlineVak.subjectId}
+          datum={deadlineVak.datum}
+          bestaandeDeadlines={items.filter(
+            (it) =>
+              it.subject_id === deadlineVak.subjectId &&
+              it.due_date === deadlineVak.datum &&
+              (it.type === "huiswerk" || it.type === "toets")
+          )}
           items={items}
         />
       )}

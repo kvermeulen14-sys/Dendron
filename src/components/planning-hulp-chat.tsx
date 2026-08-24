@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import { Icon } from "@/components/icon";
@@ -32,7 +32,7 @@ function formatDatum(iso: string) {
  * als dat past - dat voorstel wordt nooit automatisch uitgevoerd, alleen na
  * expliciete bevestiging via de knop bij het voorstel.
  */
-export function PlanningHulpChat({ items }: { items: PlanningItem[] }) {
+export function PlanningHulpChat({ items, openingsbericht }: { items: PlanningItem[]; openingsbericht?: string }) {
   const router = useRouter();
   const [messages, setMessages] = useState<Bericht[]>([]);
   const [input, setInput] = useState("");
@@ -40,17 +40,18 @@ export function PlanningHulpChat({ items }: { items: PlanningItem[] }) {
   const [uitvoerenId, setUitvoerenId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const openingVerzonden = useRef(false);
 
   function itemVoor(id: string | null) {
     return id ? (items.find((i) => i.id === id) ?? null) : null;
   }
 
-  async function verstuur() {
-    const tekst = input.trim();
+  async function verstuur(overrideTekst?: string) {
+    const tekst = (overrideTekst ?? input).trim();
     if (!tekst || sending) return;
 
     setError(null);
-    setInput("");
+    if (overrideTekst === undefined) setInput("");
     setSending(true);
     const huidigeMessages = messages;
     const userBericht: Bericht = { id: `u-${Date.now()}`, role: "user", content: tekst };
@@ -85,6 +86,18 @@ export function PlanningHulpChat({ items }: { items: PlanningItem[] }) {
       setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
     }
   }
+
+  // Als deze chat geopend wordt met een openingsbericht (bv. net huiswerk
+  // toegevoegd vanuit een rooster-blokje), stuurt die meteen zelf een eerste
+  // bericht - zodat de AI direct de context heeft en een concreet voorstel
+  // kan doen, zonder dat de leerling dit zelf hoeft uit te typen.
+  useEffect(() => {
+    if (openingsbericht && !openingVerzonden.current) {
+      openingVerzonden.current = true;
+      verstuur(openingsbericht);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openingsbericht]);
 
   async function bevestigVoorstel(berichtId: string, voorstel: Voorstel) {
     if (!voorstel.planningItemId) return;
