@@ -914,9 +914,10 @@ export function AgendaBoard({
         </div>
       </Modal>
 
-      {voorKind && (
-        <NuEnStraks items={vandaagItems} roosterBlokken={vandaagRoosterBlokken} voorKind={voorKind} />
-      )}
+      {/* Ook zichtbaar voor een ouder (handig om in 1 oogopslag te zien
+          waar je kind nu mee bezig is) - alleen de "Focus starten"-link
+          erin is kind-only, dat regelt de voorKind-prop van dit component zelf. */}
+      <NuEnStraks items={vandaagItems} roosterBlokken={vandaagRoosterBlokken} voorKind={voorKind} />
 
       {vandaagOpenItems.length > 0 && (
         <Card
@@ -1043,11 +1044,10 @@ export function AgendaBoard({
         <span>Tik op een taak voor details</span>
       </div>
 
-      {/* Week-navigatie + weekoverzicht in 1 compacte rij: de dagnummers staan
-          al in de kalendergrid eronder, dus hier alleen de dagletters + een
-          capaciteitsbalkje per dag - dat vertelt meteen welke dag deze week
-          nog vol wordt, zonder dat te scrollen. */}
-      <Card className="flex items-center gap-2 py-3">
+      {/* Puur navigatie, geen dag-informatie meer hier - dag/datum/capaciteit
+          staat al in de kalendergrid (en in elke dag-kop in de lijstweergave),
+          dus dit was letterlijk dubbelop. */}
+      <div className="flex items-center justify-between gap-2">
         <button
           onClick={() => setWeekOffset((w) => w - 1)}
           onDragOver={(e) => {
@@ -1061,61 +1061,19 @@ export function AgendaBoard({
             if (item) verplaats(item, isoPlusDagen(item.due_date, -7));
             setDraggedId(null);
           }}
-          className="shrink-0 rounded-xl p-2 text-slate-500 hover:bg-slate-100"
+          className="flex items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
           aria-label="Vorige week (sleep hier een item op om het een week eerder te plannen)"
         >
-          <Icon name="chevron-left" size={18} />
+          <Icon name="chevron-left" size={16} />
+          Vorige week
         </button>
-
-        <div className="flex flex-1 gap-1.5">
-          {weekDagen.map((dag) => {
-            const iso = naarIsoDatum(dag);
-            const cap = capaciteitPerDag.get(iso);
-            const capMeta = cap ? CAPACITEIT_META[cap.niveau] : null;
-            const isVandaag = iso === vandaagIso;
-            return (
-              <div
-                key={iso}
-                title={
-                  cap
-                    ? `${dag.toLocaleDateString("nl-NL", { weekday: "long", day: "numeric", month: "long" })} - ${capaciteitTekst(cap)}`
-                    : undefined
-                }
-                className={clsx(
-                  "flex flex-1 flex-col items-center gap-1 rounded-xl border px-1 py-1.5",
-                  isVandaag ? "border-accent-300 bg-accent-50/60" : "border-slate-100 bg-white"
-                )}
-              >
-                <span
-                  className={clsx(
-                    "text-[10px] font-semibold uppercase tracking-wide",
-                    isVandaag ? "text-accent-700" : "text-slate-400"
-                  )}
-                >
-                  {dag.toLocaleDateString("nl-NL", { weekday: "short" }).slice(0, 2)}
-                </span>
-                <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
-                  {cap && capMeta && (
-                    <span
-                      className={clsx("h-full", capMeta.barClass)}
-                      style={{ width: `${Math.min(100, Math.round(cap.percentage * 100))}%` }}
-                    />
-                  )}
-                </div>
-                {cap?.niveau === "over" && (
-                  <span className="text-[9px] font-bold uppercase text-rose-600">vol</span>
-                )}
-              </div>
-            );
-          })}
-        </div>
 
         {weekOffset !== 0 && (
           <button
             onClick={() => setWeekOffset(0)}
-            className="shrink-0 rounded-xl px-2.5 py-2 text-xs font-medium text-accent-600 hover:bg-accent-50"
+            className="rounded-xl px-2.5 py-2 text-xs font-medium text-accent-600 hover:bg-accent-50"
           >
-            Vandaag
+            Naar deze week
           </button>
         )}
 
@@ -1132,12 +1090,13 @@ export function AgendaBoard({
             if (item) verplaats(item, isoPlusDagen(item.due_date, 7));
             setDraggedId(null);
           }}
-          className="shrink-0 rounded-xl p-2 text-slate-500 hover:bg-slate-100"
+          className="flex items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
           aria-label="Volgende week (sleep hier een item op om het een week later te plannen)"
         >
-          <Icon name="chevron-right" size={18} />
+          Volgende week
+          <Icon name="chevron-right" size={16} />
         </button>
-      </Card>
+      </div>
 
       <Modal open={formOpen} onClose={() => setFormOpen(false)} title="Nieuw item">
         <form action={handleSubmit} className="flex flex-col gap-4">
@@ -1745,8 +1704,8 @@ export function AgendaBoard({
       </Modal>
 
       {/* Kalenderweergave: tijdlijn 7 dagen naast elkaar, zoals afsprakenplanning-software */}
-      <div className={clsx("overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm", weergave === "rooster" ? "hidden md:block" : "hidden")}>
-        <div className="overflow-x-auto">
+      <div className={clsx("rounded-2xl border border-slate-200 bg-white shadow-sm", weergave === "rooster" ? "hidden md:block" : "hidden")}>
+        <div className="overflow-x-auto overflow-y-visible rounded-2xl">
         <div
           className={clsx("grid", weekendIngeklapt ? "min-w-[640px]" : "min-w-[760px]")}
           style={{
