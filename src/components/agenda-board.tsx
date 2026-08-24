@@ -428,7 +428,9 @@ export function AgendaBoard({
     () => items.filter((i) => i.due_date === vandaagIso && i.status !== "voorstel"),
     [items, vandaagIso]
   );
-  const vandaagOpenItems = vandaagItems.filter((i) => i.status !== "klaar");
+  // Prive bezet wel tijd (zie capaciteit.ts) maar is geen afvinkbare taak -
+  // telt daarom niet mee in dit taken-overzicht.
+  const vandaagOpenItems = vandaagItems.filter((i) => i.status !== "klaar" && i.type !== "prive");
   const vandaagMinuten = vandaagOpenItems.reduce((som, i) => som + (i.estimated_minutes ?? 0), 0);
 
   // Vandaag apart, want die valt buiten de getoonde week zodra je vooruitbladert.
@@ -867,6 +869,11 @@ export function AgendaBoard({
               Rooster
             </button>
           </div>
+          {voorKind && (
+            <LinkButton href="/kind/focus/vrij" variant="secondary" icon={<Icon name="target" size={18} />}>
+              Focus
+            </LinkButton>
+          )}
           {voorKind && <PlanningshulpKnop items={items} variant="knop" />}
           <Button icon={<Icon name="plus" size={18} />} onClick={() => setKiesModusOpen(true)}>
             Nieuw item

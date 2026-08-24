@@ -101,7 +101,7 @@ function KindVandaagItem({
       onClick={() => fase === "rust" && router.push(`/kind/focus/${item.id}`)}
       className={clsx(
         "relative flex cursor-pointer flex-col gap-2 rounded-xl border p-3 transition-colors hover:border-accent-200 hover:bg-accent-50/30",
-        fase === "duur" ? "pb-3" : "pb-11",
+        fase === "duur" || item.type === "prive" ? "pb-3" : "pb-11",
         isKlaar
           ? "border-emerald-200 bg-emerald-50/60"
           : variant === "verlopen"
@@ -139,7 +139,8 @@ function KindVandaagItem({
         </div>
       </div>
 
-      {fase === "bevestigen" ? (
+      {/* Prive bezet wel tijd (zie capaciteit.ts) maar is geen afvinkbare taak - geen afvink-knop hiervoor. */}
+      {item.type === "prive" ? null : fase === "bevestigen" ? (
         <div
           onClick={(e) => e.stopPropagation()}
           className="absolute inset-x-2 bottom-2 flex items-center justify-end gap-1.5"

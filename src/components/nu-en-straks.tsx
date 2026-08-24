@@ -17,6 +17,8 @@ interface Blok {
   startMinuten: number;
   duurMinuten: number;
   isSchool: boolean;
+  /** Een prive-afspraak bezet wel tijd, maar is geen afvinkbare taak - geen Focus-knop hiervoor. */
+  isPrive: boolean;
 }
 
 /**
@@ -60,6 +62,7 @@ export function NuEnStraks({
       startMinuten: b.startMinuten,
       duurMinuten: b.duurMinuten,
       isSchool: true,
+      isPrive: false,
     })),
     ...items
       .filter((i) => i.status === "open" && i.start_time)
@@ -70,6 +73,7 @@ export function NuEnStraks({
         startMinuten: tijdNaarMinuten(i.start_time!),
         duurMinuten: i.estimated_minutes ?? ONBEKENDE_DUUR_MINUTEN,
         isSchool: false,
+        isPrive: i.type === "prive",
       })),
   ].sort((a, b) => a.startMinuten - b.startMinuten);
 
@@ -106,7 +110,7 @@ export function NuEnStraks({
               <span className="text-xs font-medium text-slate-500 tabular-nums">
                 nog {restMinuten} van {huidig.duurMinuten} min
               </span>
-              {voorKind && huidig.id && (
+              {voorKind && huidig.id && !huidig.isPrive && (
                 <Link
                   href={`/kind/focus/${huidig.id}`}
                   className="flex shrink-0 items-center gap-1 rounded-lg bg-accent-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-accent-700"

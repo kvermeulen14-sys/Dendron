@@ -104,7 +104,10 @@ export default async function KindOverzicht() {
   const weekItems = (weekData ?? []) as PlanningItem[];
   const openItems = (openItemsData ?? []) as PlanningItem[];
 
-  const vandaagGedaan = vandaagItems.filter((i) => i.status === "klaar").length;
+  // Prive bezet wel tijd maar is geen afvinkbare taak - telt niet mee in
+  // "X van Y gedaan" (zie ook capaciteit.ts en de agenda-samenvatting).
+  const vandaagTaken = vandaagItems.filter((i) => i.type !== "prive");
+  const vandaagGedaan = vandaagTaken.filter((i) => i.status === "klaar").length;
 
   return (
     <div className="flex flex-col gap-6">
@@ -152,9 +155,9 @@ export default async function KindOverzicht() {
       <Card>
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-base font-semibold text-slate-900">Vandaag</h2>
-          {vandaagItems.length > 0 && (
+          {vandaagTaken.length > 0 && (
             <span className="text-xs font-medium text-slate-400">
-              {vandaagGedaan} van {vandaagItems.length} gedaan
+              {vandaagGedaan} van {vandaagTaken.length} gedaan
             </span>
           )}
         </div>

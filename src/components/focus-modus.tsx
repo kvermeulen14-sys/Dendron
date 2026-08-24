@@ -64,9 +64,9 @@ function berekenBlokPlan(totaalMinuten: number | null, werkMinuten: number, pauz
   return { blokken, werkTotaal, pauzeTotaal, totaal: werkTotaal + pauzeTotaal };
 }
 
-export function FocusModus({ item, subject }: { item: PlanningItem; subject: Subject | null }) {
+export function FocusModus({ item, subject }: { item: PlanningItem | null; subject: Subject | null }) {
   const router = useRouter();
-  const meta = PLANNING_TYPE_META[item.type];
+  const meta = item ? PLANNING_TYPE_META[item.type] : { icon: "target", label: "Vrije sessie" };
   const [werkMinuten, schrijfWerkMinuten] = useLokaleVoorkeur(
     "dendron-focus-werk",
     STANDAARD_WERK_MINUTEN,
@@ -125,7 +125,7 @@ export function FocusModus({ item, subject }: { item: PlanningItem; subject: Sub
   }
 
   const gemetenMinuten = gewerkteSeconden >= 60 ? Math.round(gewerkteSeconden / 60) : null;
-  const blokPlan = berekenBlokPlan(item.estimated_minutes, werkMinuten, pauzeMinuten);
+  const blokPlan = item ? berekenBlokPlan(item.estimated_minutes, werkMinuten, pauzeMinuten) : null;
   const huidigePreset = PRESETS.find((p) => p.werk === werkMinuten && p.pauze === pauzeMinuten);
 
   function naarDashboard() {
@@ -136,17 +136,20 @@ export function FocusModus({ item, subject }: { item: PlanningItem; subject: Sub
   }
 
   async function afronden() {
+    if (!item) return;
+    const huidigItem = item;
     await klaarBevestiging.bevestig(
       async () => {
-        await updatePlanningStatus(item.id, "klaar");
+        await updatePlanningStatus(huidigItem.id, "klaar");
       },
       { vraagDuur: true }
     );
   }
 
   async function rondDuurAf(minuten: number | null) {
+    const huidigItem = item;
     await klaarBevestiging.meldDuur(
-      minuten === null ? undefined : async () => updatePlanningWerkelijkeDuur(item.id, minuten)
+      minuten === null || !huidigItem ? undefined : async () => updatePlanningWerkelijkeDuur(huidigItem.id, minuten)
     );
     naarDashboard();
   }
@@ -154,7 +157,14 @@ export function FocusModus({ item, subject }: { item: PlanningItem; subject: Sub
   const totaalSeconden = (fase === "werk" ? werkMinuten : pauzeMinuten) * 60;
   const voortgang = 1 - secondenOver / totaalSeconden;
 
-  const klaarBlok = (
+  // Zonder gekoppelde taak, of bij een prive-afspraak (die bezet wel tijd
+  // maar is geen afvinkbare taak), is er niets om af te vinken - dan gewoon
+  // terug naar het dashboard i.p.v. de klaar-bevestiging.
+  const klaarBlok = !item || item.type === "prive" ? (
+    <LinkButton href="/kind" variant="secondary" className="w-full" icon={<Icon name="check" size={18} />}>
+      Klaar voor nu
+    </LinkButton>
+  ) : (
     <>
       {klaarBevestiging.fase === "bevestigen" ? (
         <div className="flex items-center gap-2 rounded-2xl bg-slate-50 p-2.5">
@@ -207,8 +217,17 @@ export function FocusModus({ item, subject }: { item: PlanningItem; subject: Sub
               {meta.label}
               {subject && <span>&middot; {subject.name}</span>}
             </div>
-            <h1 className="text-lg font-semibold text-slate-900">{item.title}</h1>
-            {item.description && <p className="text-sm text-slate-500">{item.description}</p>}
+            {item ? (
+              <>
+                <h1 className="text-lg font-semibold text-slate-900">{item.title}</h1>
+                {item.description && <p className="text-sm text-slate-500">{item.description}</p>}
+              </>
+            ) : (
+              <>
+                <h1 className="text-lg font-semibold text-slate-900">Vrij focussen</h1>
+                <p className="text-sm text-slate-500">Kies zelf waar je aan werkt - de timer helpt je gefocust blijven.</p>
+              </>
+            )}
           </Card>
 
           <Card className="flex flex-col items-center gap-5 py-10">
@@ -258,9 +277,13 @@ export function FocusModus({ item, subject }: { item: PlanningItem; subject: Sub
                 <span className="text-5xl font-semibold tabular-nums text-slate-900">{formatTijd(secondenOver)}</span>
                 <span className="mt-2 text-sm font-medium text-slate-500">
                   {fase === "werk" ? (
-                    <>
-                      bezig met <span className="text-slate-700">{item.title}</span>
-                    </>
+                    item ? (
+                      <>
+                        bezig met <span className="text-slate-700">{item.title}</span>
+                      </>
+                    ) : (
+                      "vrije focussessie"
+                    )
                   ) : (
                     "pauze"
                   )}
@@ -291,7 +314,7 @@ export function FocusModus({ item, subject }: { item: PlanningItem; subject: Sub
         </div>
 
         <div className="flex flex-col gap-5">
-          {blokPlan && (
+          {blokPlan && item && (
             <Card className="flex flex-col gap-2.5">
               <h2 className="text-sm font-semibold text-slate-900">Jouw plan voor deze taak</h2>
               <p className="text-sm text-slate-600">
