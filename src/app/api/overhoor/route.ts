@@ -2,7 +2,16 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createGeminiClient, vereistGeminiKey, genereerGestructureerd } from "@/lib/gemini";
-import { GROTE_KENNISBANK_DREMPEL, kiesBesteMateriaal, kiesWillekeurigeSelectie } from "@/lib/kennisbank";
+import {
+  GROTE_KENNISBANK_DREMPEL,
+  kiesBesteMateriaal,
+  kiesWillekeurigeSelectie,
+  bouwKennisbankUitOnderdelen,
+  onderdelenAlsMateriaalRijen,
+  type KennisOnderdeelRij,
+  type KennisParagraafContextRij,
+  type MateriaalRij,
+} from "@/lib/kennisbank";
 
 const MAX_KENNISBANK_TEKENS = 14000;
 const MAX_OVERHOOR_MATERIALEN = 6;
@@ -55,12 +64,10 @@ const MAX_FRAGMENT_TEKENS = 500;
 // (i.p.v. dat de AI de theorie parafraseert, wat kan hallucineren) - de
 // leerling kan zo de echte uitleg uit het boek erbij lezen. Puur
 // deterministisch (geen AI-call), hergebruikt dezelfde matching als de
-// vakdocent-chat.
-function kiesLesstofFragment(
-  materials: { id: string; title: string; content: string; hoofdstuk: string | null }[],
-  zoekTekst: string
-) {
-  const beste = kiesBesteMateriaal(materials, zoekTekst);
+// vakdocent-chat. `materialen` kan hier ook een MateriaalRij-projectie van
+// kennisonderdelen zijn (zie onderdelenAlsMateriaalRijen).
+function kiesLesstofFragment(materialen: MateriaalRij[], zoekTekst: string) {
+  const beste = kiesBesteMateriaal(materialen, zoekTekst);
   if (!beste || !beste.content.trim()) return null;
 
   let fragment = beste.content.trim();
@@ -104,12 +111,36 @@ export async function POST(request: Request) {
     .from("materials")
     .select("id, title, content, hoofdstuk")
     .eq("subject_id", subjectId);
-  if (!materials || materials.length === 0) {
+
+  const { data: kennisOnderdelen } = await supabase
+    .from("kennis_onderdelen")
+    .select("paragraaf_id, naam, regel, voorbeelden, gecombineerd_voorbeeld, tip, uitzondering, fout_voorbeeld")
+    .eq("subject_id", subjectId)
+    .eq("status", "gepubliceerd");
+  const { data: kennisContexten } = await supabase
+    .from("kennis_paragraaf_context")
+    .select("paragraaf_id, titel, leerdoelen, voorkennis, kernbegrippen")
+    .eq("subject_id", subjectId)
+    .eq("status", "gepubliceerd");
+
+  // Zelfde "1 bron van waarheid"-regel als de vakdocent-chat: zodra dit vak
+  // gepubliceerde kennisonderdelen heeft, gebruikt Oefenen die - niet meer
+  // de oudere materials-tekst.
+  const heeftKennisOnderdelen = (kennisOnderdelen?.length ?? 0) > 0;
+
+  if (!heeftKennisOnderdelen && (!materials || materials.length === 0)) {
     return NextResponse.json(
       { error: "Er is nog geen lesstof voor dit vak, dus overhoren kan nog niet." },
       { status: 400 }
     );
   }
+
+  // Gebruikt voor het kiezen van het lesstof-fragment bij feedback (en, bij
+  // een grote kennisbank, voor de willekeurige deelselectie hieronder) -
+  // bij kennisonderdelen is dit een projectie ervan naar hetzelfde vorm.
+  const materialenVoorMatching: MateriaalRij[] = heeftKennisOnderdelen
+    ? onderdelenAlsMateriaalRijen((kennisOnderdelen ?? []) as KennisOnderdeelRij[])
+    : (materials ?? []);
 
   const leerfaseInstructie = LEERFASE_INSTRUCTIE[leerfase] ?? LEERFASE_INSTRUCTIE.tussentijds;
 
@@ -119,9 +150,20 @@ export async function POST(request: Request) {
   if (modus === "uitleg") {
     if (!vorigeVraag) return NextResponse.json({ error: "Geen vraag om uit te leggen." }, { status: 400 });
 
-    const overhoorMaterialenUitleg =
-      materials.length > GROTE_KENNISBANK_DREMPEL ? kiesWillekeurigeSelectie(materials, MAX_OVERHOOR_MATERIALEN) : materials;
-    let kennisbankUitleg = overhoorMaterialenUitleg.map((m) => `## ${m.title}\n${m.content}`).join("\n\n");
+    let kennisbankUitleg: string;
+    if (heeftKennisOnderdelen) {
+      kennisbankUitleg = bouwKennisbankUitOnderdelen(
+        (kennisOnderdelen ?? []) as KennisOnderdeelRij[],
+        (kennisContexten ?? []) as KennisParagraafContextRij[]
+      );
+    } else {
+      const materialenLijst = materials ?? [];
+      const overhoorMaterialenUitleg =
+        materialenLijst.length > GROTE_KENNISBANK_DREMPEL
+          ? kiesWillekeurigeSelectie(materialenLijst, MAX_OVERHOOR_MATERIALEN)
+          : materialenLijst;
+      kennisbankUitleg = overhoorMaterialenUitleg.map((m) => `## ${m.title}\n${m.content}`).join("\n\n");
+    }
     if (kennisbankUitleg.length > MAX_KENNISBANK_TEKENS) {
       kennisbankUitleg = kennisbankUitleg.slice(0, MAX_KENNISBANK_TEKENS) + "\n[...ingekort...]";
     }
@@ -149,9 +191,18 @@ ${kennisbankUitleg}`;
     }
   }
 
-  const overhoorMaterialen =
-    materials.length > GROTE_KENNISBANK_DREMPEL ? kiesWillekeurigeSelectie(materials, MAX_OVERHOOR_MATERIALEN) : materials;
-  let kennisbank = overhoorMaterialen.map((m) => `## ${m.title}\n${m.content}`).join("\n\n");
+  let kennisbank: string;
+  if (heeftKennisOnderdelen) {
+    kennisbank = bouwKennisbankUitOnderdelen(
+      (kennisOnderdelen ?? []) as KennisOnderdeelRij[],
+      (kennisContexten ?? []) as KennisParagraafContextRij[]
+    );
+  } else {
+    const materialenLijst = materials ?? [];
+    const overhoorMaterialen =
+      materialenLijst.length > GROTE_KENNISBANK_DREMPEL ? kiesWillekeurigeSelectie(materialenLijst, MAX_OVERHOOR_MATERIALEN) : materialenLijst;
+    kennisbank = overhoorMaterialen.map((m) => `## ${m.title}\n${m.content}`).join("\n\n");
+  }
   if (kennisbank.length > MAX_KENNISBANK_TEKENS) {
     kennisbank = kennisbank.slice(0, MAX_KENNISBANK_TEKENS) + "\n[...ingekort...]";
   }
@@ -196,7 +247,7 @@ ${kennisbank}`;
     // theorie zelf kan naslaan terwijl het nog vers is.
     let lesstofFragment: { titel: string; tekst: string } | null = null;
     if (vorigeVraag && vorigAntwoord && (geparsed.beoordeling === "deels" || geparsed.beoordeling === "fout")) {
-      lesstofFragment = kiesLesstofFragment(materials, `${vorigeVraag} ${vorigAntwoord}`);
+      lesstofFragment = kiesLesstofFragment(materialenVoorMatching, `${vorigeVraag} ${vorigAntwoord}`);
     }
 
     return NextResponse.json({ ...geparsed, lesstofFragment });

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createGeminiClient, vereistGeminiKey, GEMINI_MODEL } from "@/lib/gemini";
-import { kiesRelevanteMaterialen } from "@/lib/kennisbank";
+import { kiesRelevanteMaterialen, bouwKennisbankUitOnderdelen, type KennisOnderdeelRij, type KennisParagraafContextRij } from "@/lib/kennisbank";
 
 const MAX_GESCHIEDENIS = 20;
 const MAX_KENNISBANK_TEKENS = 14000;
@@ -56,52 +56,6 @@ interface KennisContextVoorChat {
   kernbegrippen?: string | null;
   coachaanpak: string | null;
   videos: { titel: string; url: string; aanbiedenBij: string | null }[];
-}
-
-interface KennisOnderdeelVoorChat {
-  paragraaf_id: string;
-  naam: string;
-  regel: string;
-  voorbeelden: string[];
-  gecombineerd_voorbeeld: string | null;
-  tip: string | null;
-  uitzondering: string | null;
-  fout_voorbeeld: string | null;
-}
-
-/**
- * Bouwt de LESSTOF-tekst rechtstreeks uit de gepubliceerde kennisonderdelen
- * + paragraafcontext, i.p.v. uit materials - gebruikt zodra een vak naar de
- * regel-niveau kennisbank gemigreerd is (zie heeftKennisOnderdelen).
- */
-function bouwKennisbankUitOnderdelen(onderdelen: KennisOnderdeelVoorChat[], contexten: KennisContextVoorChat[]): string {
-  const paragraafIds = Array.from(new Set([...onderdelen.map((o) => o.paragraaf_id), ...contexten.map((c) => c.paragraaf_id)])).sort(
-    (a, b) => a.localeCompare(b, undefined, { numeric: true })
-  );
-
-  return paragraafIds
-    .map((pid) => {
-      const context = contexten.find((c) => c.paragraaf_id === pid);
-      const onderdelenVanParagraaf = onderdelen.filter((o) => o.paragraaf_id === pid);
-      const titel = context?.titel ?? onderdelenVanParagraaf[0]?.naam ?? pid;
-
-      const regels = [`## ${pid} - ${titel}`];
-      if (context?.leerdoelen) regels.push(`Leerdoelen: ${context.leerdoelen}`);
-      if (context?.voorkennis) regels.push(`Voorkennis: ${context.voorkennis}`);
-      if (context?.kernbegrippen) regels.push(`Kernbegrippen: ${context.kernbegrippen}`);
-
-      for (const o of onderdelenVanParagraaf) {
-        regels.push(`\n### ${o.naam}`);
-        regels.push(o.regel);
-        regels.push(`Voorbeelden: ${o.voorbeelden.join("; ")}`);
-        if (o.gecombineerd_voorbeeld) regels.push(`Gecombineerd voorbeeld: ${o.gecombineerd_voorbeeld}`);
-        if (o.tip) regels.push(`Tip: ${o.tip}`);
-        if (o.uitzondering) regels.push(`Let op: ${o.uitzondering}`);
-        if (o.fout_voorbeeld) regels.push(`Veelgemaakte fout: ${o.fout_voorbeeld}`);
-      }
-      return regels.join("\n");
-    })
-    .join("\n\n");
 }
 
 /**
@@ -293,8 +247,8 @@ export async function POST(request: Request) {
     // foto's om te tonen.
     modus = "alles";
     kennisbank = bouwKennisbankUitOnderdelen(
-      (kennisOnderdelen ?? []) as KennisOnderdeelVoorChat[],
-      (kennisContexten ?? []) as KennisContextVoorChat[]
+      (kennisOnderdelen ?? []) as KennisOnderdeelRij[],
+      (kennisContexten ?? []) as KennisParagraafContextRij[]
     );
     if (kennisbank.length > MAX_KENNISBANK_TEKENS) {
       kennisbank = kennisbank.slice(0, MAX_KENNISBANK_TEKENS) + "\n[...ingekort...]";
