@@ -1,12 +1,21 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { VakWerkruimte } from "@/components/vak-werkruimte";
-import { MateriaalForm } from "@/components/materiaal-form";
-import { KennisbankUploader } from "@/components/kennisbank-uploader";
-import { OverhoorResultaten } from "@/components/overhoor-resultaten";
 import { Icon } from "@/components/icon";
-import { Card } from "@/components/ui/card";
-import type { OverhoorSessie } from "@/lib/types";
+import type { ChatMessage, OverhoorSessie } from "@/lib/types";
+
+// Foto's die de leerling zelf in de chat heeft bijgevoegd (niet de
+// AI-vakdocent-illustraties, dat gaat via `images` in de API-respons) -
+// getekende URL erbij zodat ze na een refresh nog zichtbaar zijn.
+async function metFotoUrls(supabase: Awaited<ReturnType<typeof createClient>>, berichten: ChatMessage[]) {
+  return Promise.all(
+    berichten.map(async (m) => {
+      if (!m.image_path) return m;
+      const { data: signed } = await supabase.storage.from("lesstof").createSignedUrl(m.image_path, 3600);
+      return signed?.signedUrl ? { ...m, imageUrl: signed.signedUrl } : m;
+    })
+  );
+}
 
 export default async function KindVakDetailPage({
   params,
@@ -26,23 +35,25 @@ export default async function KindVakDetailPage({
   const { data: subject } = await supabase.from("subjects").select("*").eq("id", id).single();
   if (!subject) notFound();
 
-  const { data: messages } = await supabase
-    .from("chat_messages")
-    .select("*")
-    .eq("subject_id", id)
-    .eq("user_id", user!.id)
-    .order("created_at", { ascending: true });
+  const [{ data: messages }, { data: opdrachtMessages }] = await Promise.all([
+    supabase
+      .from("chat_messages")
+      .select("*")
+      .eq("subject_id", id)
+      .eq("user_id", user!.id)
+      .order("created_at", { ascending: true }),
+    supabase
+      .from("opdracht_berichten")
+      .select("*")
+      .eq("subject_id", id)
+      .eq("user_id", user!.id)
+      .order("created_at", { ascending: true }),
+  ]);
 
-  // Foto's die de leerling zelf in de chat heeft bijgevoegd (niet de
-  // AI-vakdocent-illustraties, dat gaat via `images` in de API-respons) -
-  // getekende URL erbij zodat ze na een refresh nog zichtbaar zijn.
-  const messagesMetFoto = await Promise.all(
-    (messages ?? []).map(async (m) => {
-      if (!m.image_path) return m;
-      const { data: signed } = await supabase.storage.from("lesstof").createSignedUrl(m.image_path, 3600);
-      return signed?.signedUrl ? { ...m, imageUrl: signed.signedUrl } : m;
-    })
-  );
+  const [messagesMetFoto, opdrachtMessagesMetFoto] = await Promise.all([
+    metFotoUrls(supabase, (messages ?? []) as ChatMessage[]),
+    metFotoUrls(supabase, (opdrachtMessages ?? []) as ChatMessage[]),
+  ]);
 
   const { data: overhoorSessies } = await supabase
     .from("overhoor_sessies")
@@ -70,32 +81,14 @@ export default async function KindVakDetailPage({
         </div>
       </div>
 
-      {(overhoorSessies?.length ?? 0) > 0 && (
-        <Card>
-          <h2 className="mb-3 text-base font-semibold text-slate-900">Mijn voortgang</h2>
-          <OverhoorResultaten sessies={(overhoorSessies ?? []) as OverhoorSessie[]} />
-        </Card>
-      )}
-
       <VakWerkruimte
         subjectId={id}
         subjectName={subject.name}
         initialMessages={messagesMetFoto}
+        initialOpdrachtMessages={opdrachtMessagesMetFoto}
         initialModus={initialModus}
         hoofdstukken={hoofdstukken}
-        beheerSectie={
-          <div className="flex flex-col gap-3">
-            <p className="text-sm text-slate-500">
-              Voor een losse vraag over een opgave: gebruik het fotoknopje in de chat hierboven - dat blijft bij dat
-              ene gesprek. Gebruik dit hieronder alleen om lesstof blijvend toe te voegen (bv. een pagina uit je
-              boek), zodat de vakdocent dat voortaan bij elke vraag kan gebruiken.
-            </p>
-            <KennisbankUploader subjectId={id} />
-            <div>
-              <MateriaalForm subjectId={id} />
-            </div>
-          </div>
-        }
+        overhoorSessies={(overhoorSessies ?? []) as OverhoorSessie[]}
       />
     </div>
   );

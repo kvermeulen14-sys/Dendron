@@ -1,11 +1,13 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import clsx from "clsx";
 import { Icon } from "@/components/icon";
+import { Card } from "@/components/ui/card";
 import { ChatPanel } from "@/components/chat-panel";
 import { OverhoorPanel } from "@/components/overhoor-panel";
-import type { ChatMessage } from "@/lib/types";
+import { OverhoorResultaten } from "@/components/overhoor-resultaten";
+import type { ChatMessage, OverhoorSessie } from "@/lib/types";
 
 const TABS = [
   { modus: "chat", label: "Chat", icon: "chat" },
@@ -17,17 +19,18 @@ export function VakWerkruimte({
   subjectId,
   subjectName,
   initialMessages,
+  initialOpdrachtMessages = [],
   initialModus = "chat",
   hoofdstukken = [],
-  beheerSectie,
+  overhoorSessies = [],
 }: {
   subjectId: string;
   subjectName: string;
   initialMessages: ChatMessage[];
+  initialOpdrachtMessages?: ChatMessage[];
   initialModus?: (typeof TABS)[number]["modus"];
   hoofdstukken?: string[];
-  /** Materiaal-toevoegen e.d. - blijft weg zolang er een oefensessie loopt, dat is dan niet relevant. */
-  beheerSectie?: ReactNode;
+  overhoorSessies?: OverhoorSessie[];
 }) {
   const [modus, setModus] = useState<(typeof TABS)[number]["modus"]>(initialModus);
   const [oefenSessieActief, setOefenSessieActief] = useState(false);
@@ -55,17 +58,25 @@ export function VakWerkruimte({
       {modus === "chat" && (
         <ChatPanel subjectId={subjectId} subjectName={subjectName} initialMessages={initialMessages} modus="algemeen" />
       )}
-      {modus === "opdracht" && <ChatPanel subjectId={subjectId} subjectName={subjectName} modus="opdracht" />}
-      {modus === "overhoren" && (
-        <OverhoorPanel
-          subjectId={subjectId}
-          subjectName={subjectName}
-          hoofdstukken={hoofdstukken}
-          sessieActiefChange={setOefenSessieActief}
-        />
+      {modus === "opdracht" && (
+        <ChatPanel subjectId={subjectId} subjectName={subjectName} initialMessages={initialOpdrachtMessages} modus="opdracht" />
       )}
-
-      {!oefenSessieActief && beheerSectie}
+      {modus === "overhoren" && (
+        <>
+          <OverhoorPanel
+            subjectId={subjectId}
+            subjectName={subjectName}
+            hoofdstukken={hoofdstukken}
+            sessieActiefChange={setOefenSessieActief}
+          />
+          {!oefenSessieActief && overhoorSessies.length > 0 && (
+            <Card>
+              <h2 className="mb-3 text-base font-semibold text-slate-900">Mijn voortgang</h2>
+              <OverhoorResultaten sessies={overhoorSessies} />
+            </Card>
+          )}
+        </>
+      )}
     </div>
   );
 }

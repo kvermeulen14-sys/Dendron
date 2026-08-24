@@ -188,11 +188,12 @@ export async function POST(request: Request) {
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Niet ingelogd." }, { status: 401 });
 
-  const { subjectId, message, gespreksmodus, opdrachtGeschiedenis, image } = await request.json();
+  const { subjectId, message, gespreksmodus, image } = await request.json();
   if (!subjectId || !message || typeof message !== "string") {
     return NextResponse.json({ error: "subjectId en message zijn verplicht." }, { status: 400 });
   }
   const isOpdrachtModus = gespreksmodus === "opdracht";
+  const berichtenTabel = isOpdrachtModus ? "opdracht_berichten" : "chat_messages";
 
   let afbeeldingInvoer: { mimeType: string; data: string } | null = null;
   if (image && typeof image === "object" && typeof image.mimeType === "string" && typeof image.data === "string") {
@@ -236,24 +237,16 @@ export async function POST(request: Request) {
   // sync kan raken met wat in de kennisonderdelen is bijgewerkt).
   const heeftKennisOnderdelen = (kennisOnderdelen?.length ?? 0) > 0;
 
-  // Opdrachten-maken-modus is net als overhoren niet-persistent (aparte
-  // sessie per keer openen); de client stuurt zijn eigen berichtgeschiedenis
-  // mee (oudste eerst) in plaats van dat de server chat_messages leest/schrijft.
-  let geschiedenisChronologisch: { role: string; content: string }[];
-  if (isOpdrachtModus) {
-    geschiedenisChronologisch = (Array.isArray(opdrachtGeschiedenis) ? opdrachtGeschiedenis : []).slice(
-      -MAX_GESCHIEDENIS
-    );
-  } else {
-    const { data: dbGeschiedenis } = await supabase
-      .from("chat_messages")
-      .select("role, content, created_at")
-      .eq("subject_id", subjectId)
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(MAX_GESCHIEDENIS);
-    geschiedenisChronologisch = (dbGeschiedenis ?? []).slice().reverse();
-  }
+  // Opdrachten-maken-modus wordt, net als de gewone chat, blijvend bewaard
+  // per vak (opdracht_berichten i.p.v. chat_messages) - zelfde leespatroon.
+  const { data: dbGeschiedenis } = await supabase
+    .from(berichtenTabel)
+    .select("role, content, created_at")
+    .eq("subject_id", subjectId)
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false })
+    .limit(MAX_GESCHIEDENIS);
+  const geschiedenisChronologisch: { role: string; content: string }[] = (dbGeschiedenis ?? []).slice().reverse();
 
   // Recente eigen berichten meenemen in de zoektekst, zodat "opgave 38" nog
   // steeds matcht op een paragraaf die een paar berichten eerder al genoemd is.
@@ -373,7 +366,6 @@ export async function POST(request: Request) {
     if (!uploadError) afbeeldingPad = pad;
   }
 
-  const berichtenTabel = isOpdrachtModus ? "opdracht_berichten" : "chat_messages";
   await supabase.from(berichtenTabel).insert([
     {
       family_id: subject.family_id,

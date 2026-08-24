@@ -104,7 +104,6 @@ export function ChatPanel({
     const bijgevoegdeFoto = foto;
     setFoto(null);
     setSending(true);
-    const huidigeMessages = messages;
     setMessages((prev) => [
       ...prev,
       {
@@ -129,9 +128,6 @@ export function ChatPanel({
           message: bericht,
           gespreksmodus: modus,
           ...(bijgevoegdeFoto ? { image: { mimeType: bijgevoegdeFoto.mimeType, data: bijgevoegdeFoto.base64 } } : {}),
-          ...(modus === "opdracht"
-            ? { opdrachtGeschiedenis: huidigeMessages.map((m) => ({ role: m.role, content: m.content })) }
-            : {}),
         }),
       });
       const data = await res.json();
