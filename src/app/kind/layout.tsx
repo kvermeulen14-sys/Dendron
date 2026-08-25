@@ -30,7 +30,6 @@ export default async function KindLayout({ children }: { children: React.ReactNo
       navItems={NAV_ITEMS}
       userName={profile.full_name || "Leerling"}
       roleLabel="Mijn omgeving"
-      accentClass="bg-violet-600"
       canvasClassName="bg-gradient-to-b from-rose-50 via-rose-50/50 to-slate-50"
       bottomNav={{
         items: [

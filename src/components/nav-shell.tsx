@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import clsx from "clsx";
 import { Icon } from "@/components/icon";
+import { Logo } from "@/components/logo";
 import { NavLinkStatus } from "@/components/nav-link-status";
 import { createClient } from "@/lib/supabase/client";
 
@@ -19,7 +20,6 @@ export function NavShell({
   navItems,
   userName,
   roleLabel,
-  accentClass,
   canvasClassName = "bg-slate-50",
   bottomNav,
 }: {
@@ -27,7 +27,6 @@ export function NavShell({
   navItems: NavItem[];
   userName: string;
   roleLabel: string;
-  accentClass: string;
   /** Achtergrond van het scherm zelf - kind-omgeving krijgt een zachte, speelse tint. */
   canvasClassName?: string;
   /** Duimvriendelijke navigatiebalk onderaan op mobiel, met eventueel een uitgelicht 'snel toevoegen'-knopje in het midden. */
@@ -68,14 +67,7 @@ export function NavShell({
       <aside className="w-full shrink-0 border-b border-slate-200 bg-white md:flex md:w-64 md:flex-col md:border-b-0 md:border-r">
         <div className="flex items-center justify-between gap-3 px-5 py-4 md:py-5">
           <div className="flex items-center gap-3">
-            <div
-              className={clsx(
-                "flex h-10 w-10 items-center justify-center rounded-2xl text-white",
-                accentClass
-              )}
-            >
-              <Icon name="book-open" size={22} />
-            </div>
+            <Logo size="sm" withWordmark={false} />
             <div>
               <p className="font-heading text-base font-bold leading-tight text-slate-900">Dendron</p>
               <p className="text-xs text-slate-500">{roleLabel}</p>
