@@ -8,7 +8,7 @@ import { SubmitButton } from "@/components/ui/submit-button";
 import { Modal } from "@/components/ui/modal";
 import { Icon } from "@/components/icon";
 import { PlanningHulpChat } from "@/components/planning-hulp-chat";
-import { maakPlanningItem, updatePlanningStatus, verwijderPlanningItem } from "@/lib/actions/planning";
+import { bewerkPlanningItem, maakPlanningItem, updatePlanningStatus, verwijderPlanningItem } from "@/lib/actions/planning";
 import type { PlanningItem, Subject } from "@/lib/types";
 
 function datumLabel(iso: string) {
@@ -47,10 +47,12 @@ export function RoosterVakDeadlineModal({
   const [error, setError] = useState<string | null>(null);
   const [bezig, setBezig] = useState(false);
   const [planningshulp, setPlanningshulp] = useState<{ type: "huiswerk" | "toets" } | null>(null);
+  const [bewerkId, setBewerkId] = useState<string | null>(null);
 
   function sluit() {
     onClose();
     setError(null);
+    setBewerkId(null);
   }
 
   async function zetKlaar(id: string, klaar: boolean) {
@@ -75,42 +77,99 @@ export function RoosterVakDeadlineModal({
           {bestaandeDeadlines.length > 0 && (
             <div className="flex flex-col gap-2">
               <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Moet af op {datumLabel(datum)}</p>
-              {bestaandeDeadlines.map((d) => (
-                <div key={d.id} className="flex items-center gap-2.5 rounded-xl border border-slate-200 p-3">
-                  <Icon
-                    name={d.type === "toets" ? "alert-circle" : "book-open"}
-                    size={16}
-                    className={clsx("shrink-0", d.type === "toets" ? "text-rose-500" : "text-amber-500")}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <p className={clsx("text-sm font-medium", d.status === "klaar" ? "text-slate-400 line-through" : "text-slate-800")}>
+              {bestaandeDeadlines.map((d) =>
+                bewerkId === d.id ? (
+                  <form
+                    key={d.id}
+                    action={async (formData) => {
+                      setError(null);
+                      setBezig(true);
+                      const res = await bewerkPlanningItem(d.id, formData);
+                      setBezig(false);
+                      if (res?.error) {
+                        setError(res.error);
+                        return;
+                      }
+                      setBewerkId(null);
+                      router.refresh();
+                    }}
+                    className="flex flex-col gap-2.5 rounded-xl border border-slate-200 p-3"
+                  >
+                    <input type="hidden" name="title" value={d.title} />
+                    <input type="hidden" name="dueDate" value={d.due_date} />
+                    <input type="hidden" name="subjectId" value={d.subject_id ?? ""} />
+                    {d.start_time && <input type="hidden" name="startTime" value={d.start_time} />}
+                    <p className={clsx("text-sm font-medium", d.type === "toets" ? "text-toets-800" : "text-huiswerk-800")}>
                       {d.title}
                     </p>
-                    {d.description && <p className="text-xs text-slate-500">{d.description}</p>}
+                    <textarea
+                      name="description"
+                      defaultValue={d.description ?? ""}
+                      rows={2}
+                      placeholder={d.type === "toets" ? "Waar gaat de toets over?" : "Wat moet je doen?"}
+                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
+                    />
+                    <input
+                      type="number"
+                      name="estimatedMinutes"
+                      min={0}
+                      defaultValue={d.estimated_minutes ?? ""}
+                      placeholder="Geschatte tijd in minuten"
+                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
+                    />
+                    <div className="flex gap-2">
+                      <SubmitButton>Opslaan</SubmitButton>
+                      <Button type="button" size="md" variant="secondary" onClick={() => setBewerkId(null)}>
+                        Annuleren
+                      </Button>
+                    </div>
+                  </form>
+                ) : (
+                  <div key={d.id} className="flex items-center gap-2.5 rounded-xl border border-slate-200 p-3">
+                    <Icon
+                      name={d.type === "toets" ? "target" : "pencil-line"}
+                      size={16}
+                      className={clsx("shrink-0", d.type === "toets" ? "text-toets-500" : "text-huiswerk-500")}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className={clsx("text-sm font-medium", d.status === "klaar" ? "text-slate-400 line-through" : "text-slate-800")}>
+                        {d.title}
+                      </p>
+                      {d.description && <p className="text-xs text-slate-500">{d.description}</p>}
+                    </div>
+                    <button
+                      onClick={() => setBewerkId(d.id)}
+                      disabled={bezig}
+                      className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"
+                      aria-label="Bewerken"
+                      title="Bewerken"
+                    >
+                      <Icon name="pencil-line" size={15} />
+                    </button>
+                    <button
+                      onClick={() => zetKlaar(d.id, d.status !== "klaar")}
+                      disabled={bezig}
+                      className={clsx(
+                        "rounded-lg p-1.5",
+                        d.status === "klaar" ? "bg-emerald-50 text-emerald-600" : "text-slate-400 hover:bg-slate-100"
+                      )}
+                      aria-label={d.status === "klaar" ? "Weer openzetten" : "Klaar melden"}
+                      title={d.status === "klaar" ? "Weer openzetten" : "Klaar melden"}
+                    >
+                      <Icon name="check" size={15} />
+                    </button>
+                    <button
+                      onClick={() => verwijder(d.id)}
+                      disabled={bezig}
+                      className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                      aria-label="Verwijderen"
+                      title="Verwijderen"
+                    >
+                      <Icon name="trash" size={15} />
+                    </button>
                   </div>
-                  <button
-                    onClick={() => zetKlaar(d.id, d.status !== "klaar")}
-                    disabled={bezig}
-                    className={clsx(
-                      "rounded-lg p-1.5",
-                      d.status === "klaar" ? "bg-emerald-50 text-emerald-600" : "text-slate-400 hover:bg-slate-100"
-                    )}
-                    aria-label={d.status === "klaar" ? "Weer openzetten" : "Klaar melden"}
-                    title={d.status === "klaar" ? "Weer openzetten" : "Klaar melden"}
-                  >
-                    <Icon name="check" size={15} />
-                  </button>
-                  <button
-                    onClick={() => verwijder(d.id)}
-                    disabled={bezig}
-                    className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
-                    aria-label="Verwijderen"
-                    title="Verwijderen"
-                  >
-                    <Icon name="trash" size={15} />
-                  </button>
-                </div>
-              ))}
+                )
+              )}
             </div>
           )}
 

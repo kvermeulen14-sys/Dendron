@@ -447,7 +447,7 @@ export function AgendaBoard({
   // 1 keer zichtbaar (i.p.v. steeds "volgende week" te moeten klikken), zodat
   // er ook echt vooruitgepland kan worden. Het roosterraster (desktop) blijft
   // op de smallere weekDagen - dat is bewust een 1-weeks grid.
-  const LIJST_WEKEN = 4;
+  const LIJST_WEKEN = 2;
   const lijstDagen = useMemo(
     () => Array.from({ length: LIJST_WEKEN * 7 }, (_, i) => voegDagenToe(weekMaandag, i)),
     [weekMaandag]
@@ -1816,7 +1816,7 @@ export function AgendaBoard({
 
                 {/* Capaciteitsmeter: geplande tijd tegenover de tijd die er die
                     dag echt is. Een te volle dag hoort er ook te vol uit te zien. */}
-                {cap && capMeta && cap.niveau !== "leeg" && (
+                {cap && capMeta && (
                   <div
                     className="flex flex-col gap-1"
                     title={`${formatMinuten(cap.geplandMinuten)} gepland, ${formatMinuten(cap.beschikbaarMinuten)} beschikbaar (${vensterTekst(cap)})`}
@@ -2064,11 +2064,19 @@ export function AgendaBoard({
                   backgroundImage: `repeating-linear-gradient(to bottom, rgba(100,116,139,0.14) 0px, rgba(100,116,139,0.14) 1px, transparent 1px, transparent ${UUR_HOOGTE}px)`,
                 }}
               >
-                {roosterBlokken.map((b, bi) => {
+                {(() => {
+                  // Zelfde regel als in de lijstweergave: een vak dat die dag
+                  // meerdere keren in het rooster staat, claimt zijn
+                  // huiswerk/toets maar bij het eerste lesuur.
+                  const geclaimdeVakIdsGrid = new Set<string>();
+                  return roosterBlokken.map((b, bi) => {
                   const klikbaar = !b.isFietsen && Boolean(b.subjectId);
-                  const deadlines = klikbaar
-                    ? dagItems.filter((it) => it.subject_id === b.subjectId && (it.type === "huiswerk" || it.type === "toets"))
-                    : [];
+                  const algeclaimd = b.subjectId ? geclaimdeVakIdsGrid.has(b.subjectId) : false;
+                  const deadlines =
+                    klikbaar && !algeclaimd
+                      ? dagItems.filter((it) => it.subject_id === b.subjectId && (it.type === "huiswerk" || it.type === "toets"))
+                      : [];
+                  if (deadlines.length > 0 && b.subjectId) geclaimdeVakIdsGrid.add(b.subjectId);
                   const heeftToets = deadlines.some((d) => d.type === "toets");
                   const heeftDeadline = deadlines.length > 0;
                   return (
@@ -2096,15 +2104,15 @@ export function AgendaBoard({
                           "border-l-accent-400 bg-accent-50 text-accent-800 ring-1 ring-inset ring-accent-200",
                         heeftDeadline &&
                           (heeftToets
-                            ? "border-l-rose-400 bg-rose-50 text-rose-800 ring-1 ring-inset ring-rose-200"
-                            : "border-l-amber-400 bg-amber-50 text-amber-800 ring-1 ring-inset ring-amber-200"),
+                            ? "border-l-toets-400 bg-toets-50 text-toets-800 ring-1 ring-inset ring-toets-200"
+                            : "border-l-huiswerk-400 bg-huiswerk-50 text-huiswerk-800 ring-1 ring-inset ring-huiswerk-200"),
                         klikbaar && "cursor-pointer hover:ring-1 hover:ring-inset hover:ring-accent-300"
                       )}
                     >
                       {b.bron === "gewijzigd" && <Icon name="pencil-line" size={9} className="mr-0.5 mb-px inline" />}
                       {heeftDeadline && (
                         <Icon
-                          name={heeftToets ? "alert-circle" : "book-open"}
+                          name={heeftToets ? "target" : "pencil-line"}
                           size={9}
                           className="mr-0.5 mb-px inline"
                         />
@@ -2116,7 +2124,8 @@ export function AgendaBoard({
                       {klikbaar && !heeftDeadline && <Icon name="plus" size={9} className="ml-0.5 mb-px inline text-accent-500" />}
                     </div>
                   );
-                })}
+                  });
+                })()}
 
                 {tijdItems.map((item) => {
                   const meta = PLANNING_TYPE_META[item.type];
@@ -2280,6 +2289,28 @@ export function AgendaBoard({
           );
           const jaarEvent = eventsOpDatum(jaarEvents, dag)[0] ?? null;
           const eventMeta = jaarEvent ? JAAR_EVENT_META[jaarEvent.type] : null;
+
+          // Een vak dat die dag meerdere keren in het rooster staat (bv. 2
+          // lesuren) mag zijn huiswerk/toets maar 1x als deadline claimen
+          // (bij het eerste lesuur) - anders lijkt het net of dezelfde toets
+          // 2x apart gepland staat. Items die hier als deadline getoond
+          // worden, verdwijnen verderop uit de losse takenlijst (dat zou
+          // dubbelop zijn).
+          const geclaimdeVakIds = new Set<string>();
+          const roosterBlokkenMetDeadline = roosterBlokken.map((b) => {
+            const klikbaar = !b.isFietsen && Boolean(b.subjectId);
+            const algeclaimd = b.subjectId ? geclaimdeVakIds.has(b.subjectId) : false;
+            const deadlines =
+              klikbaar && !algeclaimd
+                ? dagItems.filter((it) => it.subject_id === b.subjectId && (it.type === "huiswerk" || it.type === "toets"))
+                : [];
+            if (deadlines.length > 0 && b.subjectId) geclaimdeVakIds.add(b.subjectId);
+            return { b, klikbaar, deadlines };
+          });
+          const voorRoosterGetoondeIds = new Set(
+            roosterBlokkenMetDeadline.flatMap(({ deadlines }) => deadlines.map((d) => d.id))
+          );
+
           return (
             <div
               key={iso}
@@ -2299,72 +2330,99 @@ export function AgendaBoard({
                 )}
                 {(() => {
                   const cap = capaciteitPerDag.get(iso);
-                  if (!cap || cap.niveau === "leeg") return null;
+                  if (!cap) return null;
                   return <CapaciteitRing percentage={cap.percentage} tekst={capaciteitTekst(cap)} toonKleur={cap.niveau} />;
                 })()}
               </div>
 
-              {roosterBlokken.length > 0 && (
-                <div className="mb-3 flex flex-col gap-1 rounded-3xl bg-white/70 p-2 ring-1 ring-slate-900/5">
-                  {roosterBlokken.map((b, i) => {
-                    const klikbaar = !b.isFietsen && Boolean(b.subjectId);
-                    const deadlines = klikbaar
-                      ? dagItems.filter((it) => it.subject_id === b.subjectId && (it.type === "huiswerk" || it.type === "toets"))
-                      : [];
-                    const heeftToets = deadlines.some((d) => d.type === "toets");
-                    const heeftDeadline = deadlines.length > 0;
-                    const vakSubject = b.subjectId ? subjects.find((s) => s.id === b.subjectId) : null;
-                    const kleur = vakKleur(b.subjectId);
-                    return (
-                      <div
-                        key={i}
-                        onClick={
-                          klikbaar ? () => setDeadlineVak({ subjectId: b.subjectId!, titel: b.titel, datum: iso }) : undefined
-                        }
-                        className={clsx(
-                          "flex items-center gap-2.5 rounded-2xl px-1.5 py-1.5 text-sm transition-colors",
-                          klikbaar && "cursor-pointer hover:bg-violet-50/70",
-                          heeftDeadline &&
-                            (heeftToets
-                              ? "bg-rose-50 ring-1 ring-inset ring-rose-200"
-                              : "bg-amber-50 ring-1 ring-inset ring-amber-200")
-                        )}
-                      >
-                        <span
+              {(() => {
+                if (roosterBlokkenMetDeadline.length === 0) return null;
+                return (
+                  <div className="mb-3 flex flex-col gap-1 rounded-3xl bg-white/70 p-2 ring-1 ring-slate-900/5">
+                    {roosterBlokkenMetDeadline.map(({ b, klikbaar, deadlines }, i) => {
+                      const heeftToets = deadlines.some((d) => d.type === "toets");
+                      const heeftDeadline = deadlines.length > 0;
+                      const alleKlaar = heeftDeadline && deadlines.every((d) => d.status === "klaar");
+                      const vakSubject = b.subjectId ? subjects.find((s) => s.id === b.subjectId) : null;
+                      const kleur = vakKleur(b.subjectId);
+                      return (
+                        <div
+                          key={i}
+                          onClick={
+                            klikbaar ? () => setDeadlineVak({ subjectId: b.subjectId!, titel: b.titel, datum: iso }) : undefined
+                          }
                           className={clsx(
-                            "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl",
-                            b.isFietsen ? "bg-slate-100 text-slate-400" : [kleur.bg, kleur.text]
+                            "flex items-center gap-2.5 rounded-2xl px-1.5 py-1.5 text-sm transition-colors",
+                            klikbaar && "cursor-pointer hover:bg-violet-50/70",
+                            heeftDeadline &&
+                              (alleKlaar
+                                ? "bg-emerald-50 ring-1 ring-inset ring-emerald-200"
+                                : heeftToets
+                                  ? "bg-toets-50 ring-1 ring-inset ring-toets-200"
+                                  : "bg-huiswerk-50 ring-1 ring-inset ring-huiswerk-200")
                           )}
                         >
-                          <Icon name={b.isFietsen ? "bike" : (vakSubject?.icon ?? "school")} size={17} />
-                        </span>
-                        <span className="min-w-0 flex-1 truncate">
-                          <span className="font-semibold tabular-nums text-slate-400">{b.tijd}</span>{" "}
-                          <span className={b.isFietsen ? "text-slate-400" : "font-medium text-slate-800"}>{b.titel}</span>
-                        </span>
-                        {b.bron === "gewijzigd" && <Icon name="pencil-line" size={13} className="shrink-0 text-amber-500" />}
-                        {heeftDeadline ? (
-                          <Icon
-                            name={heeftToets ? "alert-circle" : "book-open"}
-                            size={17}
-                            className={clsx("shrink-0", heeftToets ? "text-rose-500" : "text-amber-500")}
-                          />
-                        ) : (
-                          klikbaar && <Icon name="plus" size={15} className="shrink-0 text-violet-400" />
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+                          <span
+                            className={clsx(
+                              "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl",
+                              b.isFietsen
+                                ? "bg-slate-100 text-slate-400"
+                                : !heeftDeadline
+                                  ? [kleur.bg, kleur.text]
+                                  : alleKlaar
+                                    ? "bg-emerald-500 text-white"
+                                    : heeftToets
+                                      ? "bg-toets-500 text-white"
+                                      : "bg-huiswerk-500 text-white"
+                            )}
+                          >
+                            <Icon
+                              name={
+                                b.isFietsen
+                                  ? "bike"
+                                  : !heeftDeadline
+                                    ? (vakSubject?.icon ?? "school")
+                                    : alleKlaar
+                                      ? "check"
+                                      : heeftToets
+                                        ? "target"
+                                        : "pencil-line"
+                              }
+                              size={17}
+                            />
+                          </span>
+                          <span className="min-w-0 flex-1 truncate">
+                            <span className="font-semibold tabular-nums text-slate-400">{b.tijd}</span>{" "}
+                            <span className={b.isFietsen ? "text-slate-400" : "font-medium text-slate-800"}>{b.titel}</span>
+                            {heeftDeadline && (
+                              <span
+                                className={clsx(
+                                  "ml-1.5 truncate text-xs font-medium",
+                                  alleKlaar ? "text-emerald-600" : heeftToets ? "text-toets-700" : "text-huiswerk-700"
+                                )}
+                              >
+                                - {deadlines.map((d) => d.title).join(", ")}
+                              </span>
+                            )}
+                          </span>
+                          {b.bron === "gewijzigd" && <Icon name="pencil-line" size={13} className="shrink-0 text-amber-500" />}
+                          {!heeftDeadline && klikbaar && <Icon name="plus" size={15} className="shrink-0 text-violet-400" />}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
 
-              {dagItems.length === 0 ? (
+              {dagItems.filter((it) => !voorRoosterGetoondeIds.has(it.id)).length === 0 ? (
                 <Card className="py-3">
                   <p className="text-base text-slate-400">Niets gepland.</p>
                 </Card>
               ) : (
                 <div className="flex flex-col gap-2.5">
-                  {dagItems.map((item) => {
+                  {dagItems
+                    .filter((it) => !voorRoosterGetoondeIds.has(it.id))
+                    .map((item) => {
                     const meta = PLANNING_TYPE_META[item.type];
                     const isVoorstel = item.status === "voorstel";
                     const isKlaar = item.status === "klaar";
@@ -2410,7 +2468,7 @@ export function AgendaBoard({
                           <div className="flex items-center gap-1.5">
                             <p
                               className={clsx(
-                                "truncate text-base font-medium text-slate-800",
+                                "text-base font-medium text-slate-800",
                                 isKlaar && "line-through"
                               )}
                             >
@@ -2445,53 +2503,6 @@ export function AgendaBoard({
                                 </p>
                               );
                             })()}
-                          {!isVoorstel && (
-                            <div className="mt-1 flex items-center gap-2 text-[11px] font-medium text-slate-400">
-                              <span>Verplaats:</span>
-                              <button
-                                disabled={pending}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  verplaats(item, isoPlusDagen(item.due_date, -1));
-                                }}
-                                className="rounded px-1.5 py-0.5 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50"
-                              >
-                                -1 dag
-                              </button>
-                              <button
-                                disabled={pending}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  verplaats(item, isoPlusDagen(item.due_date, 1));
-                                }}
-                                className="rounded px-1.5 py-0.5 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50"
-                              >
-                                +1 dag
-                              </button>
-                              <button
-                                disabled={pending}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  verplaats(item, isoPlusDagen(item.due_date, 7));
-                                }}
-                                className="rounded px-1.5 py-0.5 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50"
-                              >
-                                +1 week
-                              </button>
-                              {!item.start_time && !isKlaar && (
-                                <button
-                                  disabled={pending}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    planOpVoorgesteldeTijd(item, iso, stelTijdVoor(iso, item));
-                                  }}
-                                  className="rounded bg-slate-100 px-1.5 py-0.5 font-semibold text-slate-600 hover:bg-slate-200 disabled:opacity-50"
-                                >
-                                  Plan om {stelTijdVoor(iso, item)}
-                                </button>
-                              )}
-                            </div>
-                          )}
                         </div>
 
                         {isVoorstel ? (

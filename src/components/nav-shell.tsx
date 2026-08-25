@@ -123,7 +123,7 @@ export function NavShell({
         className={clsx(
           "flex-1 px-4 py-6 sm:px-6 md:px-10 md:py-10",
           canvasClassName,
-          bottomNav && "pb-28 md:pb-10"
+          bottomNav && "pb-40 md:pb-10"
         )}
       >
         <div className="mx-auto w-full max-w-7xl">{children}</div>
@@ -132,7 +132,11 @@ export function NavShell({
       {bottomNav && (
         <nav
           aria-label="Snelle navigatie"
-          className="fixed inset-x-3 bottom-3 z-30 flex items-center justify-between gap-1 rounded-full bg-white/95 px-2 py-1.5 shadow-[0_10px_30px_-8px_rgba(15,23,42,0.28)] ring-1 ring-slate-900/5 backdrop-blur md:hidden"
+          // Extra hoog boven de onderrand (i.p.v. de gebruikelijke ~12px) -
+          // Netlify plaatst op dit soort projecten zelf een "Powered by
+          // Netlify"-badge rechtsonder, die anders precies over de rechter
+          // navigatie-iconen heen valt.
+          className="fixed inset-x-3 bottom-16 z-30 flex items-center justify-between gap-1 rounded-full bg-white/95 px-2 py-1.5 shadow-[0_10px_30px_-8px_rgba(15,23,42,0.28)] ring-1 ring-slate-900/5 backdrop-blur md:hidden"
         >
           {bottomNav.items.slice(0, 2).map((item) => (
             <BottomNavItem key={item.href} item={item} actief={isActief(item.href)} />
