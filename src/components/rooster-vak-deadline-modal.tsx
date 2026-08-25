@@ -29,6 +29,7 @@ export function RoosterVakDeadlineModal({
   titel,
   subjectId,
   datum,
+  lesuurTijd,
   bestaandeDeadlines,
   items,
   subjects,
@@ -38,6 +39,8 @@ export function RoosterVakDeadlineModal({
   titel: string;
   subjectId: string;
   datum: string;
+  /** Starttijd van het aangeklikte lesuur - puur om deze deadline aan dat specifieke lesuur te koppelen. */
+  lesuurTijd: string;
   bestaandeDeadlines: PlanningItem[];
   items: PlanningItem[];
   subjects: Subject[];
@@ -191,6 +194,7 @@ export function RoosterVakDeadlineModal({
             <input type="hidden" name="dueDate" value={datum} />
             <input type="hidden" name="type" value={type} />
             <input type="hidden" name="title" value={`${type === "toets" ? "Toets" : "Huiswerk"} ${titel}`} />
+            <input type="hidden" name="roosterStartTijd" value={lesuurTijd} />
 
             <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
               {bestaandeDeadlines.length > 0 ? "Nog iets toevoegen" : `Moet af op ${datumLabel(datum)}`}

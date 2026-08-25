@@ -410,7 +410,9 @@ export function AgendaBoard({
   // Klik-op-vak-in-het-rooster -> deadline (huiswerk/toets) bekijken/toevoegen
   // voor dat vak op die dag (ouder en kind, zie RoosterVakDeadlineModal). Dit
   // lesuur zelf is de deadline - geen losse datum/tijd-keuze.
-  const [deadlineVak, setDeadlineVak] = useState<{ subjectId: string; titel: string; datum: string } | null>(null);
+  const [deadlineVak, setDeadlineVak] = useState<{ subjectId: string; titel: string; datum: string; lesuurTijd: string } | null>(
+    null
+  );
   // Waar het kaartje zou landen als je nu loslaat - als kwartier-lijn zichtbaar.
   const [dropMinuut, setDropMinuut] = useState<number | null>(null);
   const [resizeDuur, setResizeDuur] = useState<{ id: string; duur: number } | null>(null);
@@ -2065,18 +2067,30 @@ export function AgendaBoard({
                 }}
               >
                 {(() => {
-                  // Zelfde regel als in de lijstweergave: een vak dat die dag
-                  // meerdere keren in het rooster staat, claimt zijn
-                  // huiswerk/toets maar bij het eerste lesuur.
+                  // Een vak dat die dag meerdere keren in het rooster staat,
+                  // claimt zijn huiswerk/toets bij het lesuur waarop het
+                  // daadwerkelijk is aangemaakt (rooster_start_tijd). Alleen
+                  // items zonder die koppeling (bv. via Planningshulp
+                  // aangemaakt) vallen terug op "eerste lesuur claimt 'm".
                   const geclaimdeVakIdsGrid = new Set<string>();
                   return roosterBlokken.map((b, bi) => {
                   const klikbaar = !b.isFietsen && Boolean(b.subjectId);
-                  const algeclaimd = b.subjectId ? geclaimdeVakIdsGrid.has(b.subjectId) : false;
-                  const deadlines =
-                    klikbaar && !algeclaimd
-                      ? dagItems.filter((it) => it.subject_id === b.subjectId && (it.type === "huiswerk" || it.type === "toets"))
-                      : [];
-                  if (deadlines.length > 0 && b.subjectId) geclaimdeVakIdsGrid.add(b.subjectId);
+                  const blokTijd = b.tijd.split("-")[0];
+                  let deadlines: PlanningItem[] = [];
+                  if (klikbaar) {
+                    const vakItems = dagItems.filter(
+                      (it) => it.subject_id === b.subjectId && (it.type === "huiswerk" || it.type === "toets")
+                    );
+                    const exact = vakItems.filter((it) => it.rooster_start_tijd?.slice(0, 5) === blokTijd);
+                    if (exact.length > 0) {
+                      deadlines = exact;
+                    } else {
+                      const algeclaimd = b.subjectId ? geclaimdeVakIdsGrid.has(b.subjectId) : false;
+                      const zonderLesuur = vakItems.filter((it) => !it.rooster_start_tijd);
+                      deadlines = !algeclaimd ? zonderLesuur : [];
+                      if (deadlines.length > 0 && b.subjectId) geclaimdeVakIdsGrid.add(b.subjectId);
+                    }
+                  }
                   const heeftToets = deadlines.some((d) => d.type === "toets");
                   const heeftDeadline = deadlines.length > 0;
                   return (
@@ -2090,7 +2104,9 @@ export function AgendaBoard({
                             : `${b.tijd} ${b.titel}`
                       }
                       onClick={
-                        klikbaar ? () => setDeadlineVak({ subjectId: b.subjectId!, titel: b.titel, datum: iso }) : undefined
+                        klikbaar
+                          ? () => setDeadlineVak({ subjectId: b.subjectId!, titel: b.titel, datum: iso, lesuurTijd: blokTijd })
+                          : undefined
                       }
                       style={{ top: topVoorMinuut(b.startMinuten), height: hoogteVoorDuur(b.duurMinuten) }}
                       className={clsx(
@@ -2291,21 +2307,33 @@ export function AgendaBoard({
           const eventMeta = jaarEvent ? JAAR_EVENT_META[jaarEvent.type] : null;
 
           // Een vak dat die dag meerdere keren in het rooster staat (bv. 2
-          // lesuren) mag zijn huiswerk/toets maar 1x als deadline claimen
-          // (bij het eerste lesuur) - anders lijkt het net of dezelfde toets
-          // 2x apart gepland staat. Items die hier als deadline getoond
-          // worden, verdwijnen verderop uit de losse takenlijst (dat zou
-          // dubbelop zijn).
+          // lesuren) toont zijn huiswerk/toets bij het lesuur waarop het
+          // daadwerkelijk is aangemaakt (rooster_start_tijd). Alleen items
+          // zonder die koppeling (bv. via Planningshulp aangemaakt) vallen
+          // terug op "eerste lesuur claimt 'm" - anders lijkt het net of
+          // dezelfde toets 2x apart gepland staat. Items die hier als
+          // deadline getoond worden, verdwijnen verderop uit de losse
+          // takenlijst (dat zou dubbelop zijn).
           const geclaimdeVakIds = new Set<string>();
           const roosterBlokkenMetDeadline = roosterBlokken.map((b) => {
             const klikbaar = !b.isFietsen && Boolean(b.subjectId);
-            const algeclaimd = b.subjectId ? geclaimdeVakIds.has(b.subjectId) : false;
-            const deadlines =
-              klikbaar && !algeclaimd
-                ? dagItems.filter((it) => it.subject_id === b.subjectId && (it.type === "huiswerk" || it.type === "toets"))
-                : [];
-            if (deadlines.length > 0 && b.subjectId) geclaimdeVakIds.add(b.subjectId);
-            return { b, klikbaar, deadlines };
+            const blokTijd = b.tijd.split("-")[0];
+            let deadlines: PlanningItem[] = [];
+            if (klikbaar) {
+              const vakItems = dagItems.filter(
+                (it) => it.subject_id === b.subjectId && (it.type === "huiswerk" || it.type === "toets")
+              );
+              const exact = vakItems.filter((it) => it.rooster_start_tijd?.slice(0, 5) === blokTijd);
+              if (exact.length > 0) {
+                deadlines = exact;
+              } else {
+                const algeclaimd = b.subjectId ? geclaimdeVakIds.has(b.subjectId) : false;
+                const zonderLesuur = vakItems.filter((it) => !it.rooster_start_tijd);
+                deadlines = !algeclaimd ? zonderLesuur : [];
+                if (deadlines.length > 0 && b.subjectId) geclaimdeVakIds.add(b.subjectId);
+              }
+            }
+            return { b, klikbaar, deadlines, blokTijd };
           });
           const voorRoosterGetoondeIds = new Set(
             roosterBlokkenMetDeadline.flatMap(({ deadlines }) => deadlines.map((d) => d.id))
@@ -2339,7 +2367,7 @@ export function AgendaBoard({
                 if (roosterBlokkenMetDeadline.length === 0) return null;
                 return (
                   <div className="mb-3 flex flex-col gap-1 rounded-3xl bg-white/70 p-2 ring-1 ring-slate-900/5">
-                    {roosterBlokkenMetDeadline.map(({ b, klikbaar, deadlines }, i) => {
+                    {roosterBlokkenMetDeadline.map(({ b, klikbaar, deadlines, blokTijd }, i) => {
                       const heeftToets = deadlines.some((d) => d.type === "toets");
                       const heeftDeadline = deadlines.length > 0;
                       const alleKlaar = heeftDeadline && deadlines.every((d) => d.status === "klaar");
@@ -2349,7 +2377,9 @@ export function AgendaBoard({
                         <div
                           key={i}
                           onClick={
-                            klikbaar ? () => setDeadlineVak({ subjectId: b.subjectId!, titel: b.titel, datum: iso }) : undefined
+                            klikbaar
+                              ? () => setDeadlineVak({ subjectId: b.subjectId!, titel: b.titel, datum: iso, lesuurTijd: blokTijd })
+                              : undefined
                           }
                           className={clsx(
                             "flex items-center gap-2.5 rounded-2xl px-1.5 py-1.5 text-sm transition-colors",
@@ -2596,6 +2626,7 @@ export function AgendaBoard({
           titel={deadlineVak.titel}
           subjectId={deadlineVak.subjectId}
           datum={deadlineVak.datum}
+          lesuurTijd={deadlineVak.lesuurTijd}
           bestaandeDeadlines={items.filter(
             (it) =>
               it.subject_id === deadlineVak.subjectId &&

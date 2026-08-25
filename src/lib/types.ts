@@ -141,6 +141,8 @@ export interface PlanningItem {
   actual_minutes: number | null;
   /** Gedeeld tussen alle occurrences van 1 herhalend item; null als dit item niet herhaalt. */
   herhaling_groep_id: string | null;
+  /** Starttijd van het rooster-lesuur waarop deze deadline is aangemaakt (via een klik op een vak-blokje) - alleen voor matching, niet voor planning. Null als niet zo aangemaakt. */
+  rooster_start_tijd: string | null;
   created_by: string;
   created_at: string;
 }

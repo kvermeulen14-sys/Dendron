@@ -62,6 +62,10 @@ export async function maakPlanningItem(formData: FormData) {
   const estimatedMinutesRaw = String(formData.get("estimatedMinutes") || "");
   const estimatedMinutes = estimatedMinutesRaw ? Number(estimatedMinutesRaw) : null;
   const startTime = String(formData.get("startTime") || "") || null;
+  // Alleen gezet vanuit een klik op een specifiek vak-blokje in het rooster -
+  // puur om later te herkennen bij WELK lesuur deze deadline hoort, als
+  // hetzelfde vak die dag vaker in het rooster staat. Geen scheduling-veld.
+  const roosterStartTijd = String(formData.get("roosterStartTijd") || "") || null;
   const herhaling = String(formData.get("herhaling") || "geen") as HerhalingType;
   const herhaalTot = String(formData.get("herhaalTot") || "") || null;
 
@@ -83,6 +87,7 @@ export async function maakPlanningItem(formData: FormData) {
       description,
       due_date: dueDate,
       start_time: startTime,
+      rooster_start_tijd: roosterStartTijd,
       status: "open",
       estimated_minutes: estimatedMinutes,
       herhaling_groep_id: herhalingGroepId,
