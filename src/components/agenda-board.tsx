@@ -2126,13 +2126,12 @@ export function AgendaBoard({
                       )}
                     >
                       {b.bron === "gewijzigd" && <Icon name="pencil-line" size={9} className="mr-0.5 mb-px inline" />}
-                      {heeftDeadline && (
-                        <Icon
-                          name={heeftToets ? "target" : "pencil-line"}
-                          size={9}
-                          className="mr-0.5 mb-px inline"
-                        />
-                      )}
+                      {heeftDeadline &&
+                        (heeftToets ? (
+                          <Icon name="target" size={9} className="mr-0.5 mb-px inline" />
+                        ) : (
+                          <span className="mr-0.5 text-[8px] font-black tracking-tighter">HW</span>
+                        ))}
                       <span className="line-clamp-2">
                         {!b.isFietsen && `${b.tijd.split("-")[0]} `}
                         {b.titel}
@@ -2406,34 +2405,26 @@ export function AgendaBoard({
                                       : "bg-huiswerk-500 text-white"
                             )}
                           >
-                            <Icon
-                              name={
-                                b.isFietsen
-                                  ? "bike"
-                                  : !heeftDeadline
-                                    ? (vakSubject?.icon ?? "school")
-                                    : alleKlaar
-                                      ? "check"
-                                      : heeftToets
-                                        ? "target"
-                                        : "pencil-line"
-                              }
-                              size={17}
-                            />
+                            {heeftDeadline && !alleKlaar && !heeftToets ? (
+                              <span className="text-[11px] font-extrabold tracking-tight">HW</span>
+                            ) : (
+                              <Icon
+                                name={
+                                  b.isFietsen
+                                    ? "bike"
+                                    : !heeftDeadline
+                                      ? (vakSubject?.icon ?? "school")
+                                      : alleKlaar
+                                        ? "check"
+                                        : "target"
+                                }
+                                size={17}
+                              />
+                            )}
                           </span>
                           <span className="min-w-0 flex-1 truncate">
                             <span className="font-semibold tabular-nums text-slate-400">{b.tijd}</span>{" "}
                             <span className={b.isFietsen ? "text-slate-400" : "font-medium text-slate-800"}>{b.titel}</span>
-                            {heeftDeadline && (
-                              <span
-                                className={clsx(
-                                  "ml-1.5 truncate text-xs font-medium",
-                                  alleKlaar ? "text-emerald-600" : heeftToets ? "text-toets-700" : "text-huiswerk-700"
-                                )}
-                              >
-                                - {deadlines.map((d) => d.title).join(", ")}
-                              </span>
-                            )}
                           </span>
                           {b.bron === "gewijzigd" && <Icon name="pencil-line" size={13} className="shrink-0 text-amber-500" />}
                           {!heeftDeadline && klikbaar && <Icon name="plus" size={15} className="shrink-0 text-violet-400" />}
