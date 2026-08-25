@@ -4,7 +4,7 @@ import clsx from "clsx";
 import { Icon } from "@/components/icon";
 
 type Variant = "primary" | "secondary" | "ghost" | "danger";
-type Size = "md" | "lg";
+type Size = "sm" | "md" | "lg";
 
 const variantClasses: Record<Variant, string> = {
   primary:
@@ -16,6 +16,7 @@ const variantClasses: Record<Variant, string> = {
 };
 
 const sizeClasses: Record<Size, string> = {
+  sm: "px-3 py-1.5 text-xs gap-1.5",
   md: "px-4 py-2.5 text-sm gap-2",
   lg: "px-6 py-4 text-base gap-3",
 };
