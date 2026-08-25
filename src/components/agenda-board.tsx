@@ -1879,6 +1879,7 @@ export function AgendaBoard({
                   const meta = PLANNING_TYPE_META[item.type];
                   const isVoorstel = item.status === "voorstel";
                   const isKlaar = item.status === "klaar";
+                  const heeftAandacht = !isKlaar && aandachtItemIds.has(item.id);
                   return (
                     <div
                       key={item.id}
@@ -1894,7 +1895,8 @@ export function AgendaBoard({
                       }}
                       onClick={() => openDetail(item)}
                       className={clsx(
-                        "flex cursor-pointer gap-1.5 rounded-lg border border-slate-200 bg-white py-1 pr-1.5 text-xs shadow-sm transition-opacity",
+                        "flex cursor-pointer gap-1.5 rounded-lg border bg-white py-1 pr-1.5 text-xs shadow-sm transition-opacity",
+                        heeftAandacht ? "border-rose-300" : "border-slate-200",
                         isVoorstel && "border-dashed bg-slate-50/70",
                         isKlaar && "opacity-60",
                         !isVoorstel && "cursor-grab active:cursor-grabbing",
@@ -1904,7 +1906,7 @@ export function AgendaBoard({
                       <span
                         className={clsx(
                           "ml-1 w-1 shrink-0 rounded-full",
-                          isKlaar ? "bg-emerald-500" : KAART_STIJL[item.type].rail,
+                          isKlaar ? "bg-emerald-500" : heeftAandacht ? "bg-rose-500" : KAART_STIJL[item.type].rail,
                           isVoorstel && "opacity-50"
                         )}
                       />
@@ -2514,10 +2516,15 @@ export function AgendaBoard({
 
                         <span
                           className={clsx(
-                            "flex h-10 w-10 shrink-0 items-center justify-center rounded-full border",
+                            "relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full border",
                             isKlaar ? "border-emerald-200 bg-emerald-100 text-emerald-600" : meta.badgeClass
                           )}
                         >
+                          {!isKlaar && aandachtItemIds.has(item.id) && (
+                            <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-rose-600 text-white ring-2 ring-white">
+                              <Icon name="alert-triangle" size={10} />
+                            </span>
+                          )}
                           <Icon name={isKlaar ? "check" : meta.icon} size={18} />
                         </span>
 

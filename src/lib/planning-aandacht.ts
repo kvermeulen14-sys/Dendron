@@ -60,7 +60,16 @@ export function bepaalAandachtSignalen(items: PlanningItem[], testTypes: TestTyp
     );
     if (nuVerwacht.length === 0) continue; // < 2 dagen te gaan, niks meer aan te plannen
 
-    const leermomenten = items.filter((i) => i.parent_item_id === toets.id && i.type === "leermoment");
+    // Meestal auto-aangemaakt en via parent_item_id gekoppeld, maar de coach
+    // kan via het gesprek ook losse leermomenten voor dit vak toevoegen
+    // zonder die koppeling te zetten - die tellen net zo goed mee als
+    // voorbereiding, dus meenemen op vak + datum vóór de toets.
+    const leermomenten = items.filter(
+      (i) =>
+        i.type === "leermoment" &&
+        (i.parent_item_id === toets.id ||
+          (!i.parent_item_id && i.subject_id === toets.subject_id && i.due_date >= vandaagIso && i.due_date < toets.due_date))
+    );
 
     for (const l of leermomenten.filter((l) => l.due_date >= toets.due_date)) {
       signalen.push({
