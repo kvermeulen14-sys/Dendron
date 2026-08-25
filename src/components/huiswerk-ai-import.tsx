@@ -20,7 +20,7 @@ interface RuweRegel {
   beschrijving?: string;
 }
 
-interface Regel {
+export interface Regel {
   titel: string;
   subjectId: string;
   datum: string;
@@ -38,10 +38,10 @@ function vindVakMatch(subjects: Subject[], vak?: string) {
  * kan aanbieden als 1 van de opties achter de gedeelde "Nieuw item"-knop
  * i.p.v. een losse knop ernaast.
  */
-export const HuiswerkAIImport = forwardRef<HuiswerkAIImportHandle, { subjects: Subject[] }>(function HuiswerkAIImport(
-  { subjects },
-  ref
-) {
+export const HuiswerkAIImport = forwardRef<
+  HuiswerkAIImportHandle,
+  { subjects: Subject[]; /** Na succesvol opslaan, met de opgeslagen regels - bv. om meteen de planningscoach te openen. */ onOpgeslagen?: (regels: Regel[]) => void }
+>(function HuiswerkAIImport({ subjects, onOpgeslagen }, ref) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [bezig, setBezig] = useState(false);
@@ -103,6 +103,7 @@ export const HuiswerkAIImport = forwardRef<HuiswerkAIImportHandle, { subjects: S
         return;
       }
       setOpen(false);
+      onOpgeslagen?.(regels);
       reset();
       router.refresh();
     } catch {

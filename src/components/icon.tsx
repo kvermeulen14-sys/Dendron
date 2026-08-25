@@ -42,6 +42,7 @@ import {
   Menu,
   Sun,
   User,
+  TriangleAlert,
   type LucideProps,
 } from "lucide-react";
 
@@ -49,6 +50,7 @@ export const ICONS = {
   "book-open": BookOpen,
   "pencil-line": PencilLine,
   "alert-circle": AlertCircle,
+  "alert-triangle": TriangleAlert,
   heart: Heart,
   brain: Brain,
   calendar: Calendar,

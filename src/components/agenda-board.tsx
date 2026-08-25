@@ -29,6 +29,8 @@ import { Card } from "@/components/ui/card";
 import { Modal } from "@/components/ui/modal";
 import { HuiswerkAIImport, type HuiswerkAIImportHandle } from "@/components/huiswerk-ai-import";
 import { TijdSelect } from "@/components/ui/tijd-select";
+import { PlanningHulpChat } from "@/components/planning-hulp-chat";
+import { bepaalAandachtSignalen, bouwAandachtBericht } from "@/lib/planning-aandacht";
 import { PLANNING_TYPE_META, minutenNaarTijd, vindEersteVrijeSlot } from "@/lib/planning";
 import { JAAR_EVENT_META, eventsOpDatum, naarIsoDatum } from "@/lib/jaarkalender";
 import {
@@ -413,6 +415,10 @@ export function AgendaBoard({
   const [deadlineVak, setDeadlineVak] = useState<{ subjectId: string; titel: string; datum: string; lesuurTijd: string } | null>(
     null
   );
+  // Gedeelde coach-popup voor alle plekken waar net huiswerk/toets is
+  // toegevoegd (Nieuw item, AI-import) of waar iets aandacht nodig heeft -
+  // los van de eigen coach-popup die RoosterVakDeadlineModal al opent.
+  const [planningshulp, setPlanningshulp] = useState<{ openingsbericht: string } | null>(null);
   // Waar het kaartje zou landen als je nu loslaat - als kwartier-lijn zichtbaar.
   const [dropMinuut, setDropMinuut] = useState<number | null>(null);
   const [resizeDuur, setResizeDuur] = useState<{ id: string; duur: number } | null>(null);
@@ -538,6 +544,17 @@ export function AgendaBoard({
     [items, vandaagIso]
   );
 
+  // Huiswerk/toetsen zonder werkmoment, een toets met te weinig gespreide
+  // leermomenten, of iets dat niet is afgevinkt terwijl de dag al voorbij is
+  // - dit hoort niet stil te blijven liggen, dus overal zichtbaar maken en
+  // met 1 klik naar de coach kunnen om het samen met de rest van de week op
+  // te lossen.
+  const aandachtSignalen = useMemo(
+    () => bepaalAandachtSignalen(items, testTypes, new Date(vandaagIso + "T00:00:00")),
+    [items, testTypes, vandaagIso]
+  );
+  const aandachtItemIds = useMemo(() => new Set(aandachtSignalen.map((s) => s.item.id)), [aandachtSignalen]);
+
   const roosterPerDag = useMemo(() => {
     const map = new Map<string, RoosterBlok[]>();
     for (const dag of lijstDagen) {
@@ -651,6 +668,18 @@ export function AgendaBoard({
       setWeekOffset(verschilWeken);
     }
 
+    // Huiswerk/toets: meteen de coach erbij halen om te bedenken wanneer
+    // eraan gewerkt wordt - i.p.v. dat het los blijft liggen tot iemand het
+    // zelf weer oppikt.
+    const typeIngevuld = String(formData.get("type") || "");
+    if (typeIngevuld === "huiswerk" || typeIngevuld === "toets") {
+      const titelIngevuld = String(formData.get("title") || "");
+      const vak = subjects.find((s) => s.id === String(formData.get("subjectId") || ""))?.name;
+      setPlanningshulp({
+        openingsbericht: `Ik heb net ${typeIngevuld === "toets" ? "een toets" : "huiswerk"}${vak ? ` voor ${vak}` : ""} toegevoegd ("${titelIngevuld}"), moet af zijn op ${dueDateRaw ? formatDatumLabel(dueDateRaw) : "later"}. Kun je helpen bedenken wanneer ik hier het beste aan kan werken, rekening houdend met de rest van mijn week?`,
+      });
+    }
+
     setFormOpen(false);
     router.refresh();
   }
@@ -734,45 +763,6 @@ export function AgendaBoard({
     if (nieuweDatum === item.due_date) return;
     startTransition(async () => {
       await verplaatsPlanningItem(item.id, nieuweDatum);
-      router.refresh();
-    });
-  }
-
-  /**
-   * Een goed moment voor een taak die nog geen tijd heeft: het eerste gat na
-   * school waar hij helemaal in past. Een taak met een tijdstip erop wordt veel
-   * vaker echt gedaan dan een taak die alleen "vandaag" heet.
-   */
-  function stelTijdVoor(iso: string, item: PlanningItem) {
-    const cap = capaciteitPerDag.get(iso);
-    const duur = item.estimated_minutes ?? ONBEKENDE_DUUR_MINUTEN;
-    const bezet = [
-      ...(roosterPerDag.get(iso) ?? []).map((b) => ({
-        startMinuten: b.startMinuten,
-        duurMinuten: b.duurMinuten,
-      })),
-      ...(itemsPerDag.get(iso) ?? [])
-        .filter((i) => i.id !== item.id && i.status !== "voorstel" && i.start_time)
-        .map((i) => ({
-          startMinuten: tijdNaarMinuten(i.start_time!),
-          duurMinuten: i.estimated_minutes ?? ONBEKENDE_DUUR_MINUTEN,
-        })),
-    ];
-    const eersteVenster = cap?.vensters[0];
-    const laatsteVenster = cap?.vensters[cap.vensters.length - 1];
-    const slot = vindEersteVrijeSlot(
-      bezet,
-      duur,
-      eersteVenster && laatsteVenster
-        ? { vanafMinuten: eersteVenster.start, totMinuten: Math.max(eersteVenster.start, laatsteVenster.eind - duur) }
-        : undefined
-    );
-    return minutenNaarTijd(Math.round(slot / SNAP_MINUTEN) * SNAP_MINUTEN);
-  }
-
-  function planOpVoorgesteldeTijd(item: PlanningItem, iso: string, tijd: string) {
-    startTransition(async () => {
-      await verplaatsPlanningItemNaarTijd(item.id, iso, tijd);
       router.refresh();
     });
   }
@@ -923,7 +913,38 @@ export function AgendaBoard({
         </div>
       </div>
 
-      <HuiswerkAIImport subjects={subjects} ref={huiswerkAIImportRef} />
+      {aandachtSignalen.length > 0 && (
+        <Card className="flex flex-wrap items-center gap-3 border-rose-200 bg-rose-50/70 py-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-rose-100 text-rose-600">
+            <Icon name="alert-triangle" size={18} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-slate-900">
+              {aandachtSignalen.length} {aandachtSignalen.length === 1 ? "ding heeft" : "dingen hebben"} aandacht nodig
+            </p>
+            <p className="text-xs text-slate-500">Huiswerk of een toets zonder werkmoment, of iets dat niet is afgevinkt.</p>
+          </div>
+          <Button size="sm" onClick={() => setPlanningshulp({ openingsbericht: bouwAandachtBericht(aandachtSignalen) })}>
+            Bespreek met de coach
+          </Button>
+        </Card>
+      )}
+
+      <HuiswerkAIImport
+        subjects={subjects}
+        ref={huiswerkAIImportRef}
+        onOpgeslagen={(regels) => {
+          const lijst = regels
+            .map((r) => {
+              const vak = subjects.find((s) => s.id === r.subjectId)?.name;
+              return `- ${r.titel}${vak ? ` (${vak})` : ""}, moet af op ${formatDatumLabel(r.datum)}`;
+            })
+            .join("\n");
+          setPlanningshulp({
+            openingsbericht: `Ik heb net dit huiswerk toegevoegd:\n${lijst}\n\nKun je me helpen dit in te plannen, rekening houdend met de rest van mijn week?`,
+          });
+        }}
+      />
 
       {/* 1 knop met daarachter de keuze foto/tekst (AI) of handmatig, i.p.v. 2
           losse knoppen naast elkaar - rustiger boven de agenda. */}
@@ -1939,19 +1960,24 @@ export function AgendaBoard({
                           </>
                         ) : (
                           <>
-                            {/* Een taak met een tijdstip wordt veel vaker echt
-                                gedaan dan een taak die alleen "vandaag" heet -
-                                dus bieden we er meteen een aan. */}
-                            {!item.start_time && !isKlaar && (
+                            {/* Huiswerk/toets zonder werkmoment: niet zelf een
+                                tijd erop plakken (die dag kan de deadline zelf
+                                zijn), maar de coach erbij halen die met de rest
+                                van de week rekening houdt. */}
+                            {!item.start_time && !isKlaar && (item.type === "huiswerk" || item.type === "toets") && (
                               <button
                                 disabled={pending}
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  planOpVoorgesteldeTijd(item, iso, stelTijdVoor(iso, item));
+                                  const vak = subjectNaam(item.subject_id);
+                                  setPlanningshulp({
+                                    openingsbericht: `Ik heb ${item.type === "toets" ? "een toets" : "huiswerk"}${vak ? ` voor ${vak}` : ""} ("${item.title}"), moet af zijn op ${formatDatumLabel(item.due_date)}. Kun je helpen bedenken wanneer ik hier het beste aan kan werken, rekening houdend met de rest van mijn week?`,
+                                  });
                                 }}
-                                className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 hover:bg-slate-200 disabled:opacity-50"
+                                className="flex items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 hover:bg-slate-200 disabled:opacity-50"
                               >
-                                Plan om {stelTijdVoor(iso, item)}
+                                <Icon name="chat" size={10} />
+                                Plan met de coach
                               </button>
                             )}
                             <button
@@ -2093,15 +2119,18 @@ export function AgendaBoard({
                   }
                   const heeftToets = deadlines.some((d) => d.type === "toets");
                   const heeftDeadline = deadlines.length > 0;
+                  const heeftAandacht = deadlines.some((d) => aandachtItemIds.has(d.id));
                   return (
                     <div
                       key={`r-${bi}`}
                       title={
-                        heeftDeadline
-                          ? `${b.tijd} ${b.titel} - ${deadlines.length} deadline(s), klik om te bekijken`
-                          : klikbaar
-                            ? `${b.tijd} ${b.titel} - klik om huiswerk of een toets toe te voegen`
-                            : `${b.tijd} ${b.titel}`
+                        heeftAandacht
+                          ? `${b.tijd} ${b.titel} - heeft aandacht nodig, klik om te bekijken`
+                          : heeftDeadline
+                            ? `${b.tijd} ${b.titel} - ${deadlines.length} deadline(s), klik om te bekijken`
+                            : klikbaar
+                              ? `${b.tijd} ${b.titel} - klik om huiswerk of een toets toe te voegen`
+                              : `${b.tijd} ${b.titel}`
                       }
                       onClick={
                         klikbaar
@@ -2122,15 +2151,17 @@ export function AgendaBoard({
                           (heeftToets
                             ? "border-l-toets-400 bg-toets-50 text-toets-800 ring-1 ring-inset ring-toets-200"
                             : "border-l-huiswerk-400 bg-huiswerk-50 text-huiswerk-800 ring-1 ring-inset ring-huiswerk-200"),
+                        heeftAandacht && "border-l-rose-500 ring-1 ring-inset ring-rose-300",
                         klikbaar && "cursor-pointer hover:ring-1 hover:ring-inset hover:ring-accent-300"
                       )}
                     >
                       {b.bron === "gewijzigd" && <Icon name="pencil-line" size={9} className="mr-0.5 mb-px inline" />}
+                      {heeftAandacht && <Icon name="alert-triangle" size={9} className="mr-0.5 mb-px inline text-rose-600" />}
                       {heeftDeadline &&
                         (heeftToets ? (
-                          <Icon name="target" size={9} className="mr-0.5 mb-px inline" />
+                          <span className="mr-0.5 text-[8px] font-black tracking-tighter">TOETS</span>
                         ) : (
-                          <span className="mr-0.5 text-[8px] font-black tracking-tighter">HW</span>
+                          <span className="mr-0.5 text-[8px] font-black tracking-tighter">HUISWERK</span>
                         ))}
                       <span className="line-clamp-2">
                         {!b.isFietsen && `${b.tijd.split("-")[0]} `}
@@ -2370,6 +2401,7 @@ export function AgendaBoard({
                       const heeftToets = deadlines.some((d) => d.type === "toets");
                       const heeftDeadline = deadlines.length > 0;
                       const alleKlaar = heeftDeadline && deadlines.every((d) => d.status === "klaar");
+                      const heeftAandacht = deadlines.some((d) => aandachtItemIds.has(d.id));
                       const vakSubject = b.subjectId ? subjects.find((s) => s.id === b.subjectId) : null;
                       const kleur = vakKleur(b.subjectId);
                       return (
@@ -2388,12 +2420,13 @@ export function AgendaBoard({
                                 ? "bg-emerald-50 ring-1 ring-inset ring-emerald-200"
                                 : heeftToets
                                   ? "bg-toets-50 ring-1 ring-inset ring-toets-200"
-                                  : "bg-huiswerk-50 ring-1 ring-inset ring-huiswerk-200")
+                                  : "bg-huiswerk-50 ring-1 ring-inset ring-huiswerk-200"),
+                            heeftAandacht && "ring-2 ring-inset ring-rose-400"
                           )}
                         >
                           <span
                             className={clsx(
-                              "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl",
+                              "relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl",
                               b.isFietsen
                                 ? "bg-slate-100 text-slate-400"
                                 : !heeftDeadline
@@ -2405,8 +2438,13 @@ export function AgendaBoard({
                                       : "bg-huiswerk-500 text-white"
                             )}
                           >
-                            {heeftDeadline && !alleKlaar && !heeftToets ? (
-                              <span className="text-[11px] font-extrabold tracking-tight">HW</span>
+                            {heeftAandacht && (
+                              <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-rose-600 text-white ring-2 ring-white">
+                                <Icon name="alert-triangle" size={10} />
+                              </span>
+                            )}
+                            {heeftDeadline && !alleKlaar ? (
+                              <span className="text-[9px] font-extrabold tracking-tight">{heeftToets ? "TOETS" : "HW"}</span>
                             ) : (
                               <Icon
                                 name={
@@ -2414,9 +2452,7 @@ export function AgendaBoard({
                                     ? "bike"
                                     : !heeftDeadline
                                       ? (vakSubject?.icon ?? "school")
-                                      : alleKlaar
-                                        ? "check"
-                                        : "target"
+                                      : "check"
                                 }
                                 size={17}
                               />
@@ -2627,6 +2663,12 @@ export function AgendaBoard({
           items={items}
           subjects={subjects}
         />
+      )}
+
+      {planningshulp && (
+        <Modal open onClose={() => setPlanningshulp(null)} title="Planningshulp" maxWidthClass="max-w-xl">
+          <PlanningHulpChat items={items} subjects={subjects} openingsbericht={planningshulp.openingsbericht} />
+        </Modal>
       )}
     </div>
   );
