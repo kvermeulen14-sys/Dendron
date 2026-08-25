@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/card";
 import { Icon } from "@/components/icon";
+import { vakKleur } from "@/lib/vak-kleur";
 import { VerwijderMateriaalKnop } from "@/components/verwijder-materiaal-knop";
 import { MateriaalForm } from "@/components/materiaal-form";
 import { LesstofOpschonenKnop } from "@/components/lesstof-opschonen-knop";
@@ -64,7 +65,7 @@ export default async function VakDetailPage({
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center gap-3">
-        <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-accent-50 text-accent-600">
+        <span className={`flex h-12 w-12 items-center justify-center rounded-xl ${vakKleur(subject.id).bg} ${vakKleur(subject.id).text}`}>
           <Icon name={subject.icon} size={22} />
         </span>
         <div className="flex-1">

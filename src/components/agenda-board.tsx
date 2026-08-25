@@ -442,16 +442,25 @@ export function AgendaBoard({
     () => Array.from({ length: 7 }, (_, i) => voegDagenToe(weekMaandag, i)),
     [weekMaandag]
   );
+  // Bredere reeks voor de lijstweergave: deze week plus de komende 3 weken in
+  // 1 keer zichtbaar (i.p.v. steeds "volgende week" te moeten klikken), zodat
+  // er ook echt vooruitgepland kan worden. Het roosterraster (desktop) blijft
+  // op de smallere weekDagen - dat is bewust een 1-weeks grid.
+  const LIJST_WEKEN = 4;
+  const lijstDagen = useMemo(
+    () => Array.from({ length: LIJST_WEKEN * 7 }, (_, i) => voegDagenToe(weekMaandag, i)),
+    [weekMaandag]
+  );
 
   const itemsPerDag = useMemo(() => {
     const map = new Map<string, PlanningItem[]>();
-    for (const dag of weekDagen) map.set(naarIsoDatum(dag), []);
+    for (const dag of lijstDagen) map.set(naarIsoDatum(dag), []);
     for (const item of items) {
       const lijst = map.get(item.due_date);
       if (lijst) lijst.push(item);
     }
     return map;
-  }, [items, weekDagen]);
+  }, [items, lijstDagen]);
 
   const vandaagItems = useMemo(
     () => items.filter((i) => i.due_date === vandaagIso && i.status !== "voorstel"),
@@ -528,20 +537,20 @@ export function AgendaBoard({
 
   const roosterPerDag = useMemo(() => {
     const map = new Map<string, RoosterBlok[]>();
-    for (const dag of weekDagen) {
+    for (const dag of lijstDagen) {
       map.set(
         naarIsoDatum(dag),
         roosterBlokkenVoorDag(dag, periodes, roosterItems, uitzonderingen, reistijdMinuten, jaarEvents)
       );
     }
     return map;
-  }, [weekDagen, periodes, roosterItems, uitzonderingen, reistijdMinuten, jaarEvents]);
+  }, [lijstDagen, periodes, roosterItems, uitzonderingen, reistijdMinuten, jaarEvents]);
 
   // Per dag: hoeveel tijd is er echt, en hoeveel staat er gepland. Zo wordt een
   // te volle dag zichtbaar op het moment dat er nog iets aan te doen is.
   const capaciteitPerDag = useMemo(() => {
     const map = new Map<string, DagCapaciteit>();
-    for (const dag of weekDagen) {
+    for (const dag of lijstDagen) {
       const iso = naarIsoDatum(dag);
       map.set(
         iso,
@@ -553,7 +562,7 @@ export function AgendaBoard({
       );
     }
     return map;
-  }, [weekDagen, roosterPerDag, itemsPerDag, ritmesPerWeek]);
+  }, [lijstDagen, roosterPerDag, itemsPerDag, ritmesPerWeek]);
 
   // Het weekend klapt vanzelf in zolang er niets staat, en gaat open zodra er
   // wel iets is (ook bij een vakantie of toetsweek uit de jaarkalender) - tenzij
@@ -2224,7 +2233,7 @@ export function AgendaBoard({
       {/* Dag-kiezer: springt naar een dag verderop in de lijst hieronder -
           de dag van vandaag springt eruit, net als in een gewone planner-app. */}
       <div className={clsx("-mx-1 flex gap-2 overflow-x-auto px-1 pb-1", weergave === "rooster" && "md:hidden")}>
-        {weekDagen.map((dag) => {
+        {lijstDagen.map((dag) => {
           const iso = naarIsoDatum(dag);
           const isVandaag = iso === vandaagIso;
           return (
@@ -2251,7 +2260,7 @@ export function AgendaBoard({
 
       {/* Lijstweergave: dagen onder elkaar - altijd op mobiel, en op elk formaat als 'Lijst' gekozen is */}
       <div className={clsx("flex flex-col gap-4", weergave === "rooster" && "md:hidden")}>
-        {weekDagen.map((dag) => {
+        {lijstDagen.map((dag) => {
           const iso = naarIsoDatum(dag);
           const dagItems = [...(itemsPerDag.get(iso) ?? [])].sort((a, b) => {
             if (a.start_time && b.start_time) return a.start_time.localeCompare(b.start_time);

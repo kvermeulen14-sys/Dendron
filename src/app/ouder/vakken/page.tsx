@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/card";
 import { Icon } from "@/components/icon";
+import { vakKleur } from "@/lib/vak-kleur";
 import { VakForm } from "./vak-form";
 
 export default async function VakkenPage() {
@@ -42,10 +43,12 @@ export default async function VakkenPage() {
       )}
 
       <div className="grid gap-4 sm:grid-cols-2">
-        {subjects?.map((s) => (
+        {subjects?.map((s) => {
+          const kleur = vakKleur(s.id);
+          return (
           <Link key={s.id} href={`/ouder/vakken/${s.id}`}>
             <Card className="flex h-full items-center gap-3 transition-shadow hover:shadow-md">
-              <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-accent-50 text-accent-600">
+              <span className={`flex h-11 w-11 items-center justify-center rounded-xl ${kleur.bg} ${kleur.text}`}>
                 <Icon name={s.icon} size={20} />
               </span>
               <div>
@@ -63,7 +66,8 @@ export default async function VakkenPage() {
               </div>
             </Card>
           </Link>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

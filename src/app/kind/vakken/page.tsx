@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/card";
 import { Icon } from "@/components/icon";
+import { vakKleur } from "@/lib/vak-kleur";
 
 export default async function KindVakkenPage() {
   const supabase = await createClient();
@@ -38,19 +39,22 @@ export default async function KindVakkenPage() {
       )}
 
       <div className="grid gap-4 sm:grid-cols-2">
-        {subjects?.map((s) => (
-          <Link key={s.id} href={`/kind/vakken/${s.id}`}>
-            <Card className="flex h-full items-center gap-3 transition-shadow hover:shadow-md">
-              <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
-                <Icon name={s.icon} size={20} />
-              </span>
-              <div>
-                <p className="text-sm font-semibold text-slate-900">{s.name}</p>
-                <p className="text-xs text-slate-500">Chat met je vakdocent</p>
-              </div>
-            </Card>
-          </Link>
-        ))}
+        {subjects?.map((s) => {
+          const kleur = vakKleur(s.id);
+          return (
+            <Link key={s.id} href={`/kind/vakken/${s.id}`}>
+              <Card className="flex h-full items-center gap-3 transition-shadow hover:shadow-md">
+                <span className={`flex h-11 w-11 items-center justify-center rounded-xl ${kleur.bg} ${kleur.text}`}>
+                  <Icon name={s.icon} size={20} />
+                </span>
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">{s.name}</p>
+                  <p className="text-xs text-slate-500">Chat met je vakdocent</p>
+                </div>
+              </Card>
+            </Link>
+          );
+        })}
       </div>
     </div>
   );

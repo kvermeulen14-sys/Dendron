@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { VakWerkruimte } from "@/components/vak-werkruimte";
 import { Icon } from "@/components/icon";
+import { vakKleur } from "@/lib/vak-kleur";
 import type { ChatMessage, OverhoorSessie } from "@/lib/types";
 
 // Foto's die de leerling zelf in de chat heeft bijgevoegd (niet de
@@ -120,7 +121,7 @@ export default async function KindVakDetailPage({
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center gap-3">
-        <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
+        <span className={`flex h-12 w-12 items-center justify-center rounded-xl ${vakKleur(subject.id).bg} ${vakKleur(subject.id).text}`}>
           <Icon name={subject.icon} size={22} />
         </span>
         <div>
