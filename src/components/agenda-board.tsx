@@ -19,6 +19,7 @@ import { RoosterVakDeadlineModal } from "@/components/rooster-vak-deadline-modal
 import { NuEnStraks } from "@/components/nu-en-straks";
 import { CapaciteitRing } from "@/components/capaciteit-ring";
 import { vakKleur } from "@/lib/vak-kleur";
+import { vakAfkorting } from "@/lib/vak-afkorting";
 import { kiesKlaarLabel, kiesVierTekst } from "@/lib/motiverend";
 import { useKlaarBevestiging } from "@/lib/use-klaar-bevestiging";
 import { DuurTerugblik } from "@/components/duur-terugblik";
@@ -627,7 +628,8 @@ export function AgendaBoard({
 
   function subjectCode(id: string | null) {
     if (!id) return null;
-    return subjects.find((s) => s.id === id)?.code ?? null;
+    const vak = subjects.find((s) => s.id === id);
+    return vak ? vakAfkorting(vak) : null;
   }
 
   async function handleSubmit(formData: FormData) {

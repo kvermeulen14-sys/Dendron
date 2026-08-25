@@ -8,6 +8,7 @@ import { updatePlanningStatus, updatePlanningWerkelijkeDuur } from "@/lib/action
 import { kiesKlaarLabel, kiesVierTekst } from "@/lib/motiverend";
 import { useKlaarBevestiging } from "@/lib/use-klaar-bevestiging";
 import { DuurTerugblik } from "@/components/duur-terugblik";
+import { vakAfkorting } from "@/lib/vak-afkorting";
 import type { PlanningItem, Subject } from "@/lib/types";
 
 function formatMinuten(minuten: number) {
@@ -40,7 +41,8 @@ export function KindVandaagLijst({
 
   function subjectCode(id: string | null) {
     if (!id) return null;
-    return subjects.find((s) => s.id === id)?.code ?? null;
+    const vak = subjects.find((s) => s.id === id);
+    return vak ? vakAfkorting(vak) : null;
   }
 
   return (

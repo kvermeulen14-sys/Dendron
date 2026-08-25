@@ -19,6 +19,7 @@ import {
   koppelRoosterItemsAutomatisch,
 } from "@/lib/actions/rooster";
 import { vindSubjectVoorTitel } from "@/lib/vak-matching";
+import { vakAfkorting } from "@/lib/vak-afkorting";
 import type { RoosterItem, RoosterPeriode, Subject } from "@/lib/types";
 import { SomTodayUploader } from "./somtoday-uploader";
 import { HuiswerkKoppelenKnop } from "./huiswerk-koppelen-knop";
@@ -127,10 +128,6 @@ export function RoosterBeheer({
 
   const bewerkItem = bewerkId ? itemsVoorPeriode.find((i) => i.id === bewerkId) ?? null : null;
   const itemModalOpen = itemFormOpen || bewerkItem !== null;
-
-  function subjectNaam(id: string | null) {
-    return subjects.find((s) => s.id === id)?.name ?? null;
-  }
 
   function verwijderPeriode(id: string) {
     startTransition(async () => {
@@ -461,17 +458,22 @@ export function RoosterBeheer({
                   <div key={dag.value}>
                     <p className="mb-2 text-sm font-medium text-slate-500">{dag.label}</p>
                     <div className="flex flex-col gap-2">
-                      {items.map((item) => (
-                        <Card key={item.id} className="flex items-center gap-3 py-3">
-                          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600">
+                      {items.map((item) => {
+                        const vak = subjects.find((s) => s.id === item.subject_id) ?? null;
+                        return (
+                        <Card key={item.id} className="flex items-start gap-3 py-3">
+                          <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600">
                             <Icon name="school" size={16} />
                           </span>
-                          <div className="flex-1">
+                          <div className="min-w-0 flex-1">
+                            {/* Afkorting i.p.v. de volle vaknaam - blijft compact en netjes
+                                uitlijnen ook als de titel zelf al lang is (zie items-start
+                                hierboven, dat houdt de knoppen rechts bovenaan vast). */}
                             <p className="text-sm font-medium text-slate-800">
                               {item.titel}
-                              {subjectNaam(item.subject_id) && subjectNaam(item.subject_id) !== item.titel && (
-                                <span className="ml-1.5 text-xs font-normal text-slate-400">
-                                  ({subjectNaam(item.subject_id)})
+                              {vak && vak.name !== item.titel && (
+                                <span className="ml-1.5 inline-block rounded bg-slate-100 px-1.5 py-0.5 align-middle text-[10px] font-bold tracking-wide text-slate-500">
+                                  {vakAfkorting(vak)}
                                 </span>
                               )}
                             </p>
@@ -479,30 +481,33 @@ export function RoosterBeheer({
                               {item.start_tijd.slice(0, 5)} - {item.eind_tijd.slice(0, 5)}
                             </p>
                           </div>
-                          {item.subject_id && (
-                            <HuiswerkKoppelenKnop
-                              titel={subjectNaam(item.subject_id) ?? item.titel}
-                              subjectId={item.subject_id}
-                              dagVanWeek={item.dag_van_week}
-                            />
-                          )}
-                          <button
-                            onClick={() => openItemBewerken(item)}
-                            className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                            aria-label="Bewerken"
-                          >
-                            <Icon name="pencil-line" size={16} />
-                          </button>
-                          <button
-                            disabled={pending}
-                            onClick={() => verwijderItem(item.id)}
-                            className="rounded-xl p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"
-                            aria-label="Verwijderen"
-                          >
-                            <Icon name={pending ? "loader" : "trash"} size={16} className={pending ? "animate-spin" : undefined} />
-                          </button>
+                          <div className="flex shrink-0 items-center gap-1">
+                            {item.subject_id && (
+                              <HuiswerkKoppelenKnop
+                                titel={vak?.name ?? item.titel}
+                                subjectId={item.subject_id}
+                                dagVanWeek={item.dag_van_week}
+                              />
+                            )}
+                            <button
+                              onClick={() => openItemBewerken(item)}
+                              className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                              aria-label="Bewerken"
+                            >
+                              <Icon name="pencil-line" size={16} />
+                            </button>
+                            <button
+                              disabled={pending}
+                              onClick={() => verwijderItem(item.id)}
+                              className="rounded-xl p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"
+                              aria-label="Verwijderen"
+                            >
+                              <Icon name={pending ? "loader" : "trash"} size={16} className={pending ? "animate-spin" : undefined} />
+                            </button>
+                          </div>
                         </Card>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 );
