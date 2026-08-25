@@ -224,7 +224,7 @@ export default async function KindOverzicht() {
         dagenTotToetsPerVak={dagenTotToetsPerVak}
       />
 
-      <PlanningshulpKnop items={openItems} />
+      <PlanningshulpKnop items={openItems} subjects={subjects} />
 
       <Link href="/kind/vakken">
         <Card className="flex items-center gap-3 transition-shadow hover:shadow-md">

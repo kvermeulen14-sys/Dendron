@@ -7,24 +7,56 @@ import { classificeerWerkdruk, WERKDRUK_META } from "@/lib/planning";
 const MAX_GESCHIEDENIS = 16;
 const VENSTER_DAGEN = 21;
 const DAGNAMEN = ["", "Maandag", "Dinsdag", "Woensdag", "Donderdag", "Vrijdag", "Zaterdag", "Zondag"];
+const PLANNING_TYPES = ["huiswerk", "toets", "leermoment", "prive"] as const;
+const MAX_VOORSTELLEN = 4;
 
 const VoorstelSchema = z.object({
-  actie: z
-    .enum(["verplaats", "klaar_melden", "geen"])
-    .describe("'geen' zolang er nog geen concreet, door de leerling nog te bevestigen voorstel is"),
+  actie: z.enum(["aanmaken", "verplaats", "klaar_melden", "heropenen", "verwijderen"]),
   planningItemId: z
     .string()
     .nullable()
-    .describe("het exacte id van het item uit TAKEN hieronder waar het voorstel over gaat, of null bij actie 'geen'"),
+    .describe(
+      "Verplicht: het EXACTE id (tussen [ ]) uit TAKEN hieronder bij verplaats/klaar_melden/heropenen/verwijderen. Verzin nooit een id. Altijd null bij aanmaken."
+    ),
   nieuweDatum: z
     .string()
     .nullable()
-    .describe("nieuwe datum als YYYY-MM-DD, verplicht bij actie 'verplaats', anders null"),
+    .describe(
+      "YYYY-MM-DD. Verplicht bij aanmaken (de datum van het nieuwe item). Bij verplaats: de nieuwe datum, of null om de datum te laten staan en alleen de tijd te wijzigen. Nooit een datum in het verleden."
+    ),
+  nieuweTijd: z
+    .string()
+    .nullable()
+    .describe("HH:MM (24-uurs). Optioneel bij aanmaken/verplaats - een concreet tijdstip. Null = geen specifiek tijdstip."),
+  type: z
+    .enum(PLANNING_TYPES)
+    .nullable()
+    .describe("Verplicht bij aanmaken: huiswerk, toets, leermoment of prive. Anders null."),
+  titel: z.string().nullable().describe("Verplicht bij aanmaken: een korte, duidelijke titel. Anders null."),
+  vakId: z
+    .string()
+    .nullable()
+    .describe(
+      "Bij aanmaken: het EXACTE id (tussen [ ]) van het vak uit VAKKEN hieronder als dit item bij een vak hoort. Null bij prive of als er geen duidelijk vak is."
+    ),
+  geschatteMinuten: z
+    .number()
+    .nullable()
+    .describe("Bij aanmaken: een realistische inschatting in minuten als je die kunt geven, anders null."),
+  toelichting: z
+    .string()
+    .nullable()
+    .describe(
+      "Verplicht bij elk voorstel: 1-2 korte zinnen, op het niveau van een 13-jarige, WAAROM je dit zo voorstelt (bv. spreiding, een rustigere dag, energie/timing). Nooit een voorstel zonder toelichting."
+    ),
 });
 
 const ResponsSchema = z.object({
   antwoord: z.string().describe("je reactie aan de leerling: meedenkend, geruststellend, kort (dit is een chat, geen preek)"),
-  voorstel: VoorstelSchema,
+  voorstellen: z
+    .array(VoorstelSchema)
+    .max(MAX_VOORSTELLEN)
+    .describe("0 tot 4 concrete voorstellen. Leeg zolang er nog niets concreets is af te spreken - dan blijft dit een lege lijst."),
 });
 
 function addDagen(iso: string, dagen: number) {
@@ -56,12 +88,13 @@ export async function POST(request: Request) {
 
   const nu = new Date();
   const vandaagIso = `${nu.getFullYear()}-${String(nu.getMonth() + 1).padStart(2, "0")}-${String(nu.getDate()).padStart(2, "0")}`;
+  const huidigeTijd = `${String(nu.getHours()).padStart(2, "0")}:${String(nu.getMinutes()).padStart(2, "0")}`;
   const eindeVenster = addDagen(vandaagIso, VENSTER_DAGEN);
 
   const [{ data: items }, { data: subjects }, { data: periodes }] = await Promise.all([
     supabase
       .from("planning_items")
-      .select("id, subject_id, type, title, due_date, start_time, status, estimated_minutes")
+      .select("id, subject_id, type, title, due_date, start_time, status, estimated_minutes, parent_item_id")
       .eq("family_id", profile.family_id)
       .neq("status", "klaar")
       .gte("due_date", vandaagIso)
@@ -83,6 +116,9 @@ export async function POST(request: Request) {
     : { data: null };
 
   const subjectNaam = new Map((subjects ?? []).map((s) => [s.id, s.name]));
+  const titelPerId = new Map((items ?? []).map((i) => [i.id, i.title]));
+
+  const vakkenTekst = (subjects ?? []).map((s) => `[${s.id}] ${s.name}`).join("\n") || "(nog geen vakken ingesteld)";
 
   const roosterTekst = !huidigePeriode
     ? "(geen actieve roosterperiode ingesteld)"
@@ -105,7 +141,8 @@ export async function POST(request: Request) {
   const takenTekst = (items ?? [])
     .map((i) => {
       const vak = i.subject_id ? subjectNaam.get(i.subject_id) : null;
-      return `- [${i.id}] ${i.type} "${i.title}"${vak ? ` (${vak})` : ""} - ${i.due_date}${i.start_time ? ` ${i.start_time.slice(0, 5)}` : ""} - status: ${i.status}${i.estimated_minutes ? ` - ~${i.estimated_minutes} min` : ""}`;
+      const ouderTitel = i.parent_item_id ? titelPerId.get(i.parent_item_id) : null;
+      return `- [${i.id}] ${i.type} "${i.title}"${vak ? ` (${vak})` : ""} - ${i.due_date}${i.start_time ? ` ${i.start_time.slice(0, 5)}` : ""} - status: ${i.status}${i.estimated_minutes ? ` - ~${i.estimated_minutes} min` : ""}${ouderTitel ? ` - hoort bij: ${ouderTitel}` : ""}`;
     })
     .join("\n");
 
@@ -126,28 +163,44 @@ export async function POST(request: Request) {
     .map((m: { role: string; content: string }) => `${m.role === "model" ? "Jij" : "Leerling"}: ${m.content}`)
     .join("\n");
 
-  const prompt = `Je bent een rustige, meedenkende planning-buddy voor een leerling in de tweede klas van het Havo die moeite heeft met plannen. Je bent geen schema-generator en geen ouder/docent - je bent er om samen met de leerling na te denken over een planningsdilemma ("ik heb morgen te veel te doen", "kan dit anders?", "ik heb hier geen zin in").
+  const prompt = `Je bent een rustige, meedenkende planning-buddy voor een leerling in de tweede klas van het Havo die moeite heeft met plannen. Je bent geen schema-generator en geen ouder/docent - je denkt samen met de leerling na over een planningsdilemma, EN je kunt de agenda voor ze aanpassen als dat helpt.
+
+Wat je kunt voorstellen (via "voorstellen" hieronder - elk voorstel krijgt de leerling apart te zien met een eigen "Ja doe dit"/"Nee laat maar"-knop, dus je voert NOOIT zelf iets uit, je stelt het alleen voor):
+- "aanmaken": een nieuw item toevoegen - huiswerk, een toets, een leermoment, of iets privés (bv. "kamer opruimen", "voetbaltraining", "afspreken met een vriend(in)").
+- "verplaats": een bestaand item (huiswerk, toets, leermoment of prive) naar een andere datum en/of tijd verzetten.
+- "klaar_melden" / "heropenen": een bestaand item als klaar markeren, of terugzetten naar open.
+- "verwijderen": een bestaand item weghalen - ook een toets kan hiermee weg (de eraan gekoppelde leermomenten verdwijnen dan automatisch mee, dat regelt de app zelf, daar hoef je geen apart voorstel voor te doen).
 
 Werkwijze:
-- Luister en erken het gevoel eerst in 1 korte zin (bv. "Dat klinkt inderdaad vol") voordat je meedenkt - geen preek, geen lange lijst met tips.
-- Denk hardop mee op basis van de ECHTE taken, werkdruk en het lesrooster hieronder - verzin nooit taken, vakken of tijden die er niet staan. Gebruik het lesrooster om te bepalen wanneer de eerstvolgende les van een vak is (bv. bij "wanneer moet ik dit af hebben" of "wanneer heb ik weer wiskunde").
-- Stel als het niet meteen duidelijk is eerst een korte, gerichte vraag (bv. "wil je 'm verplaatsen, of samen kijken wat echt vandaag moet?") in plaats van meteen een oplossing te pushen. De leerling houdt de regie.
-- Pas als er een concreet, klein voorstel is waar de leerling baat bij heeft (1 taak verplaatsen naar een rustigere dag, of een taak die eigenlijk al gedaan is als klaar markeren) zet je dat in het "voorstel"-veld. Je voert dit voorstel NOOIT zelf uit - de leerling krijgt een knop om het wel of niet te bevestigen, dus laat in je "antwoord"-tekst ook merken dat het een voorstel is dat ze zelf kunnen bevestigen. Tot die tijd blijft "actie" op "geen".
-- Maximaal 1 concreet voorstel tegelijk, en gebruik dan het EXACTE id (het stuk tussen [ ]) uit de takenlijst hieronder - verzin nooit een id en gebruik nooit een id dat niet letterlijk hieronder staat.
-- Bij "verplaats": kies bij voorkeur een dag die volgens de werkdruk hieronder rustiger is, en nooit een dag in het verleden.
+- Luister en erken het gevoel of de situatie eerst in 1 korte zin (bv. "Dat klinkt inderdaad vol", "Fijn dat je dat oppakt") voordat je meedenkt - geen preek, geen lange lijst met tips.
+- Denk hardop mee op basis van de ECHTE taken, werkdruk en het lesrooster hieronder - verzin nooit taken, vakken of tijden die er niet staan.
+- Stel als het niet meteen duidelijk is eerst een korte, gerichte vraag in plaats van meteen iets voor te stellen. De leerling houdt de regie - dat blijft ook zo zodra je wel een voorstel doet, want elk voorstel moet nog apart bevestigd worden.
+- Gebruik het lesrooster om de eerstvolgende les van een vak te bepalen. Bij "mijn wiskundeles van morgen valt uit" (of een toets die uitvalt/verzet wordt): kijk welk huiswerk of welke toets voor dat vak op die datum staat, en stel voor dat te verplaatsen (huiswerk: naar de eerstvolgende les van dat vak; een toets: naar de datum die de leerling noemt, of vraag ernaar als die nog niet genoemd is).
+- Bij "ik wil dit vanmiddag/vanavond doen" (prive of huiswerk zonder tijdstip): kijk naar de HUIDIGE TIJD, het lesrooster en wat er die dag al gepland staat, en kies een tijdstip dat daar niet mee botst. Nooit een tijdstip vóór de HUIDIGE TIJD, en niet later dan ongeveer 20:30 's avonds.
+- Wees terughoudend met meerdere voorstellen tegelijk - alleen als de leerling daar zelf om vraagt (bv. "verplaats alles van morgen naar overmorgen, ik ben ziek") mag je er meer dan 1 doen, maximaal ${MAX_VOORSTELLEN}.
+- Vul bij ELK voorstel "toelichting" in: kort, op het niveau van een 13-jarige, WAAROM dit een goed idee is. Baseer dit op wat echt helpt bij plannen en leren, bijvoorbeeld:
+  - Spreiding: leren in kleine stukjes verspreid over meerdere dagen beklijft beter dan alles in 1 keer vlak voor de toets.
+  - Afwisseling: niet alles van hetzelfde vak achter elkaar plannen als het ook anders kan.
+  - Een rustigere dag: iets verplaatsen naar een dag die volgens de werkdruk hieronder minder vol is.
+  - Timing/energie: iets actiefs of leuks past vaak beter na school dan vlak voor het slapengaan.
+  Nooit een voorstel zonder toelichting, en nooit een preek - hooguit 1-2 zinnen.
+- Kies bij "verplaats" en "aanmaken" bij voorkeur een dag die volgens de werkdruk hieronder rustiger is, en nooit een datum in het verleden.
+- Stel je een toets voor ("aanmaken", type toets): zeg er in je antwoord bij dat er meteen een paar gespreide leermomenten bij komen zodra de leerling dit bevestigt (dat regelt de app zelf).
+- Gebruik voor "vakId" en "planningItemId" ALTIJD het exacte id tussen [ ] uit VAKKEN/TAKEN hieronder - verzin nooit een id.
 - Wees kort. Dit is een chatgesprek met een tiener, geen collegetekst.
-- Noem bij ELKE datum die je noemt ook de dag van de week (bv. "vrijdag 28 augustus", niet alleen "28 augustus") - dat is voor een leerling veel makkelijker te plaatsen dan een kale datum.
+- Noem bij ELKE datum die je noemt ook de dag van de week (bv. "vrijdag 28 augustus", niet alleen "28 augustus").
 
 Antwoord altijd in het Nederlands.
 
-Vandaag is ${vandaagIso}.
+Vandaag is ${vandaagIso}, huidige tijd ${huidigeTijd}.
 
-VAKKEN: ${(subjects ?? []).map((s) => s.name).join(", ") || "(nog geen vakken ingesteld)"}
+VAKKEN ([id] naam):
+${vakkenTekst}
 
 LESROOSTER (huidige periode, per dag start-eind vak):
 ${roosterTekst}
 
-TAKEN (komende ${VENSTER_DAGEN} dagen, [id] type "titel" (vak) - datum starttijd - status):
+TAKEN (komende ${VENSTER_DAGEN} dagen, [id] type "titel" (vak) - datum starttijd - status - hoort bij (indien leermoment van een toets)):
 ${takenTekst || "(geen taken gevonden in dit venster)"}
 
 WERKDRUK PER DAG (komende week):
@@ -158,22 +211,35 @@ Nieuw bericht van de leerling: ${message}`;
 
   try {
     const client = createGeminiClient();
-    const geparsed = await genereerGestructureerd(client, ResponsSchema, [{ role: "user", parts: [{ text: prompt }] }], 2048);
+    const geparsed = await genereerGestructureerd(client, ResponsSchema, [{ role: "user", parts: [{ text: prompt }] }], 2560);
 
-    // Extra veiligheidscheck: alleen een voorstel doorlaten dat naar een echt,
-    // in de takenlijst aanwezig item verwijst - zo kan de AI nooit een
-    // uitvoerbaar voorstel doen over een verzonnen of niet-toegankelijk item.
+    // Extra veiligheidscheck: elk voorstel moet naar echte, toegankelijke
+    // ids verwijzen en logisch consistent zijn - zo kan de AI nooit een
+    // uitvoerbaar voorstel doen over een verzonnen/niet-toegankelijk item,
+    // vak, of een datum in het verleden.
     const geldigeIds = new Set((items ?? []).map((i) => i.id));
-    if (geparsed.voorstel.actie !== "geen" && !geldigeIds.has(geparsed.voorstel.planningItemId ?? "")) {
-      geparsed.voorstel = { actie: "geen", planningItemId: null, nieuweDatum: null };
-    }
+    const geldigeVakIds = new Set((subjects ?? []).map((s) => s.id));
+    const geldigeVoorstellen = geparsed.voorstellen.filter((v) => {
+      if (v.actie === "aanmaken") {
+        if (!v.type || !PLANNING_TYPES.includes(v.type)) return false;
+        if (!v.titel?.trim()) return false;
+        if (!v.nieuweDatum || v.nieuweDatum < vandaagIso) return false;
+        if (v.vakId && !geldigeVakIds.has(v.vakId)) v.vakId = null;
+        return true;
+      }
+      if (!v.planningItemId || !geldigeIds.has(v.planningItemId)) return false;
+      if (v.actie === "verplaats" && v.nieuweDatum && v.nieuweDatum < vandaagIso) return false;
+      return true;
+    });
+
+    const respons = { antwoord: geparsed.antwoord, voorstellen: geldigeVoorstellen };
 
     await supabase.from("planningshulp_berichten").insert([
       { family_id: profile.family_id, user_id: user.id, role: "user", content: message },
       { family_id: profile.family_id, user_id: user.id, role: "model", content: geparsed.antwoord },
     ]);
 
-    return NextResponse.json(geparsed);
+    return NextResponse.json(respons);
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? `AI-verwerking mislukt: ${e.message}` : "AI-verwerking mislukt." },

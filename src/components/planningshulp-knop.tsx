@@ -5,7 +5,7 @@ import { Icon } from "@/components/icon";
 import { Card } from "@/components/ui/card";
 import { Modal } from "@/components/ui/modal";
 import { PlanningHulpChat } from "@/components/planning-hulp-chat";
-import type { PlanningItem } from "@/lib/types";
+import type { PlanningItem, Subject } from "@/lib/types";
 
 /**
  * Opent de Planningshulp-chat als popup i.p.v. inline op de pagina - zodat
@@ -15,9 +15,11 @@ import type { PlanningItem } from "@/lib/types";
  */
 export function PlanningshulpKnop({
   items,
+  subjects,
   variant = "kaart",
 }: {
   items: PlanningItem[];
+  subjects: Subject[];
   variant?: "kaart" | "knop";
 }) {
   const [open, setOpen] = useState(false);
@@ -46,7 +48,7 @@ export function PlanningshulpKnop({
       )}
 
       <Modal open={open} onClose={() => setOpen(false)} title="Planningshulp" maxWidthClass="max-w-xl">
-        <PlanningHulpChat items={items} />
+        <PlanningHulpChat items={items} subjects={subjects} />
       </Modal>
     </>
   );

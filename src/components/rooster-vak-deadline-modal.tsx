@@ -9,7 +9,7 @@ import { Modal } from "@/components/ui/modal";
 import { Icon } from "@/components/icon";
 import { PlanningHulpChat } from "@/components/planning-hulp-chat";
 import { maakPlanningItem, updatePlanningStatus, verwijderPlanningItem } from "@/lib/actions/planning";
-import type { PlanningItem } from "@/lib/types";
+import type { PlanningItem, Subject } from "@/lib/types";
 
 function datumLabel(iso: string) {
   return new Date(iso + "T00:00:00").toLocaleDateString("nl-NL", { weekday: "long", day: "numeric", month: "long" });
@@ -31,6 +31,7 @@ export function RoosterVakDeadlineModal({
   datum,
   bestaandeDeadlines,
   items,
+  subjects,
 }: {
   open: boolean;
   onClose: () => void;
@@ -39,6 +40,7 @@ export function RoosterVakDeadlineModal({
   datum: string;
   bestaandeDeadlines: PlanningItem[];
   items: PlanningItem[];
+  subjects: Subject[];
 }) {
   const router = useRouter();
   const [type, setType] = useState<"huiswerk" | "toets">("huiswerk");
@@ -201,6 +203,7 @@ export function RoosterVakDeadlineModal({
         <Modal open onClose={() => setPlanningshulp(null)} title="Planningshulp" maxWidthClass="max-w-xl">
           <PlanningHulpChat
             items={items}
+            subjects={subjects}
             openingsbericht={`Ik heb net ${planningshulp.type === "toets" ? "een toets" : "huiswerk"} voor ${titel} toegevoegd, moet af zijn op ${datumLabel(datum)}. Kun je me helpen bedenken wanneer ik hier het beste aan kan werken?`}
           />
         </Modal>

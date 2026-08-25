@@ -914,7 +914,7 @@ export function AgendaBoard({
               Focus
             </LinkButton>
           )}
-          {voorKind && <PlanningshulpKnop items={items} variant="knop" />}
+          <PlanningshulpKnop items={items} subjects={subjects} variant="knop" />
           <Button icon={<Icon name="plus" size={18} />} onClick={() => setKiesModusOpen(true)}>
             Nieuw item
           </Button>
@@ -2592,6 +2592,7 @@ export function AgendaBoard({
               (it.type === "huiswerk" || it.type === "toets")
           )}
           items={items}
+          subjects={subjects}
         />
       )}
     </div>
