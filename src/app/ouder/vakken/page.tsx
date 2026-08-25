@@ -2,8 +2,8 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/card";
 import { Icon } from "@/components/icon";
+import { vakKleur } from "@/lib/vak-kleur";
 import { VakForm } from "./vak-form";
-import { KennisbankImportKnop } from "./kennisbank-import-knop";
 
 export default async function VakkenPage() {
   const supabase = await createClient();
@@ -34,17 +34,6 @@ export default async function VakkenPage() {
         <VakForm />
       </div>
 
-      <Card className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold text-slate-900">Kant-en-klare kennisbank</p>
-          <p className="text-xs text-slate-500">
-            Voegt 41 uitgewerkte paragrafen (leerdoelen, regels, stappen, veelgemaakte fouten) toe
-            aan het vak Wiskunde - wordt aangemaakt als het nog niet bestaat.
-          </p>
-        </div>
-        <KennisbankImportKnop />
-      </Card>
-
       {(!subjects || subjects.length === 0) && (
         <Card>
           <p className="text-sm text-slate-500">
@@ -54,10 +43,12 @@ export default async function VakkenPage() {
       )}
 
       <div className="grid gap-4 sm:grid-cols-2">
-        {subjects?.map((s) => (
+        {subjects?.map((s) => {
+          const kleur = vakKleur(s.id);
+          return (
           <Link key={s.id} href={`/ouder/vakken/${s.id}`}>
             <Card className="flex h-full items-center gap-3 transition-shadow hover:shadow-md">
-              <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-accent-50 text-accent-600">
+              <span className={`flex h-11 w-11 items-center justify-center rounded-xl ${kleur.bg} ${kleur.text}`}>
                 <Icon name={s.icon} size={20} />
               </span>
               <div>
@@ -75,7 +66,8 @@ export default async function VakkenPage() {
               </div>
             </Card>
           </Link>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

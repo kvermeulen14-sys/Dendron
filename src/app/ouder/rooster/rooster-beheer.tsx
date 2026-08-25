@@ -16,9 +16,13 @@ import {
   maakRoosterItem,
   bewerkRoosterItem,
   verwijderRoosterItem,
+  koppelRoosterItemsAutomatisch,
 } from "@/lib/actions/rooster";
+import { vindSubjectVoorTitel } from "@/lib/vak-matching";
+import { vakAfkorting } from "@/lib/vak-afkorting";
 import type { RoosterItem, RoosterPeriode, Subject } from "@/lib/types";
 import { SomTodayUploader } from "./somtoday-uploader";
+import { HuiswerkKoppelenKnop } from "./huiswerk-koppelen-knop";
 
 const DAGEN = [
   { value: 1, label: "Maandag" },
@@ -85,6 +89,28 @@ export function RoosterBeheer({
   const [itemError, setItemError] = useState<string | null>(null);
   const [startTijd, setStartTijd] = useState("");
   const [eindTijd, setEindTijd] = useState("");
+  const [itemTitel, setItemTitel] = useState("");
+  const [itemSubjectId, setItemSubjectId] = useState("");
+  const [subjectHandmatigGekozen, setSubjectHandmatigGekozen] = useState(false);
+  const [koppelBezig, setKoppelBezig] = useState(false);
+  const [koppelResultaat, setKoppelResultaat] = useState<string | null>(null);
+
+  const aantalOngekoppeld = roosterItems.filter((i) => !i.subject_id).length;
+
+  async function koppelAutomatisch() {
+    setKoppelBezig(true);
+    setKoppelResultaat(null);
+    const res = await koppelRoosterItemsAutomatisch();
+    setKoppelBezig(false);
+    if (res.error) {
+      setKoppelResultaat(res.error);
+      return;
+    }
+    setKoppelResultaat(
+      res.aantal === 0 ? "Geen lesuren gevonden om te koppelen." : `${res.aantal} lesuren gekoppeld aan het juiste vak.`
+    );
+    router.refresh();
+  }
 
   const itemsVoorPeriode = useMemo(
     () => roosterItems.filter((i) => i.periode_id === selectedPeriodeId).sort((a, b) => a.start_tijd.localeCompare(b.start_tijd)),
@@ -102,10 +128,6 @@ export function RoosterBeheer({
 
   const bewerkItem = bewerkId ? itemsVoorPeriode.find((i) => i.id === bewerkId) ?? null : null;
   const itemModalOpen = itemFormOpen || bewerkItem !== null;
-
-  function subjectNaam(id: string | null) {
-    return subjects.find((s) => s.id === id)?.name ?? null;
-  }
 
   function verwijderPeriode(id: string) {
     startTransition(async () => {
@@ -132,6 +154,9 @@ export function RoosterBeheer({
     setBewerkId(null);
     setStartTijd("");
     setEindTijd("");
+    setItemTitel("");
+    setItemSubjectId("");
+    setSubjectHandmatigGekozen(false);
     setItemFormOpen(true);
   }
 
@@ -139,7 +164,20 @@ export function RoosterBeheer({
     setBewerkId(item.id);
     setStartTijd(item.start_tijd.slice(0, 5));
     setEindTijd(item.eind_tijd.slice(0, 5));
+    setItemTitel(item.titel);
+    setItemSubjectId(item.subject_id ?? "");
+    // Een al gekoppeld vak nooit stilzwijgend overschrijven terwijl de titel
+    // hier verder aangepast wordt - alleen bij een nog ongekoppeld lesuur
+    // blijft live meesuggereren zinvol.
+    setSubjectHandmatigGekozen(item.subject_id !== null);
     setItemFormOpen(false);
+  }
+
+  function titelGewijzigd(waarde: string) {
+    setItemTitel(waarde);
+    if (!subjectHandmatigGekozen) {
+      setItemSubjectId(vindSubjectVoorTitel(waarde, subjects) ?? "");
+    }
   }
 
   return (
@@ -263,12 +301,18 @@ export function RoosterBeheer({
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-base font-semibold text-slate-900">Lesuren</h2>
             <div className="flex flex-wrap gap-2">
-              <SomTodayUploader periodes={periodes} />
+              {aantalOngekoppeld > 0 && (
+                <Button size="md" variant="secondary" loading={koppelBezig} onClick={koppelAutomatisch} icon={<Icon name="sparkles" size={16} />}>
+                  Automatisch koppelen ({aantalOngekoppeld})
+                </Button>
+              )}
+              <SomTodayUploader periodes={periodes} subjects={subjects} />
               <Button size="md" icon={<Icon name="plus" size={16} />} onClick={openItemToevoegen}>
                 Lesuur toevoegen
               </Button>
             </div>
           </div>
+          {koppelResultaat && <p className="mb-3 text-xs text-slate-500">{koppelResultaat}</p>}
 
           <Modal open={itemModalOpen} onClose={sluitItemModal} title={bewerkItem ? "Lesuur bewerken" : "Lesuur toevoegen"}>
             <form
@@ -288,10 +332,25 @@ export function RoosterBeheer({
             >
               <input type="hidden" name="periodeId" value={selectedPeriodeId} />
               <div>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">Titel op rooster</label>
+                <input
+                  name="titel"
+                  required
+                  value={itemTitel}
+                  onChange={(e) => titelGewijzigd(e.target.value)}
+                  placeholder="bijv. Wiskunde"
+                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
+                />
+              </div>
+              <div>
                 <label className="mb-1.5 block text-sm font-medium text-slate-700">Vak</label>
                 <select
                   name="subjectId"
-                  defaultValue={bewerkItem?.subject_id ?? ""}
+                  value={itemSubjectId}
+                  onChange={(e) => {
+                    setSubjectHandmatigGekozen(true);
+                    setItemSubjectId(e.target.value);
+                  }}
                   className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
                 >
                   <option value="">Geen specifiek vak</option>
@@ -301,16 +360,9 @@ export function RoosterBeheer({
                     </option>
                   ))}
                 </select>
-              </div>
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-slate-700">Titel op rooster</label>
-                <input
-                  name="titel"
-                  required
-                  defaultValue={bewerkItem?.titel ?? ""}
-                  placeholder="bijv. Wiskunde"
-                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
-                />
+                {itemSubjectId && !subjectHandmatigGekozen && (
+                  <p className="mt-1 text-xs text-slate-400">Automatisch herkend op basis van de titel.</p>
+                )}
               </div>
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-slate-700">Dag</label>
@@ -406,17 +458,22 @@ export function RoosterBeheer({
                   <div key={dag.value}>
                     <p className="mb-2 text-sm font-medium text-slate-500">{dag.label}</p>
                     <div className="flex flex-col gap-2">
-                      {items.map((item) => (
-                        <Card key={item.id} className="flex items-center gap-3 py-3">
-                          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600">
+                      {items.map((item) => {
+                        const vak = subjects.find((s) => s.id === item.subject_id) ?? null;
+                        return (
+                        <Card key={item.id} className="flex items-start gap-3 py-3">
+                          <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600">
                             <Icon name="school" size={16} />
                           </span>
-                          <div className="flex-1">
+                          <div className="min-w-0 flex-1">
+                            {/* Afkorting i.p.v. de volle vaknaam - blijft compact en netjes
+                                uitlijnen ook als de titel zelf al lang is (zie items-start
+                                hierboven, dat houdt de knoppen rechts bovenaan vast). */}
                             <p className="text-sm font-medium text-slate-800">
                               {item.titel}
-                              {subjectNaam(item.subject_id) && subjectNaam(item.subject_id) !== item.titel && (
-                                <span className="ml-1.5 text-xs font-normal text-slate-400">
-                                  ({subjectNaam(item.subject_id)})
+                              {vak && vak.name !== item.titel && (
+                                <span className="ml-1.5 inline-block rounded bg-slate-100 px-1.5 py-0.5 align-middle text-[10px] font-bold tracking-wide text-slate-500">
+                                  {vakAfkorting(vak)}
                                 </span>
                               )}
                             </p>
@@ -424,23 +481,33 @@ export function RoosterBeheer({
                               {item.start_tijd.slice(0, 5)} - {item.eind_tijd.slice(0, 5)}
                             </p>
                           </div>
-                          <button
-                            onClick={() => openItemBewerken(item)}
-                            className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                            aria-label="Bewerken"
-                          >
-                            <Icon name="pencil-line" size={16} />
-                          </button>
-                          <button
-                            disabled={pending}
-                            onClick={() => verwijderItem(item.id)}
-                            className="rounded-xl p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"
-                            aria-label="Verwijderen"
-                          >
-                            <Icon name={pending ? "loader" : "trash"} size={16} className={pending ? "animate-spin" : undefined} />
-                          </button>
+                          <div className="flex shrink-0 items-center gap-1">
+                            {item.subject_id && (
+                              <HuiswerkKoppelenKnop
+                                titel={vak?.name ?? item.titel}
+                                subjectId={item.subject_id}
+                                dagVanWeek={item.dag_van_week}
+                              />
+                            )}
+                            <button
+                              onClick={() => openItemBewerken(item)}
+                              className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                              aria-label="Bewerken"
+                            >
+                              <Icon name="pencil-line" size={16} />
+                            </button>
+                            <button
+                              disabled={pending}
+                              onClick={() => verwijderItem(item.id)}
+                              className="rounded-xl p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"
+                              aria-label="Verwijderen"
+                            >
+                              <Icon name={pending ? "loader" : "trash"} size={16} className={pending ? "animate-spin" : undefined} />
+                            </button>
+                          </div>
                         </Card>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 );

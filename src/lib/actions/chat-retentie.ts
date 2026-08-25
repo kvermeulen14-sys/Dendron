@@ -59,3 +59,34 @@ export async function wisOudeChatgeschiedenis(): Promise<
   revalidatePath("/ouder/account");
   return { success: true, cutoffDatum: actievePeriode.start_datum };
 }
+
+/**
+ * Wist ALLE chatinhoud (vakdocent, opdracht maken, planningshulp, overhoor-
+ * transcripts) van het hele gezin, ongeacht periode - voor een volledig
+ * schone lei i.p.v. alleen alles vóór de huidige roosterperiode. De
+ * score/voortgang van overhoor-sessies blijft staan, alleen het transcript
+ * wordt geleegd (net als bij wisOudeChatgeschiedenis).
+ */
+export async function wisAlleChatgeschiedenis(): Promise<
+  { error: string; success?: undefined } | { error?: undefined; success: true }
+> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Niet ingelogd." };
+
+  const { data: profile } = await supabase.from("profiles").select("family_id, role").eq("id", user.id).single();
+  if (!profile) return { error: "Profiel niet gevonden." };
+  if (profile.role !== "ouder") return { error: "Alleen een ouder kan chatgeschiedenis opschonen." };
+
+  await Promise.all([
+    supabase.from("chat_messages").delete().eq("family_id", profile.family_id),
+    supabase.from("opdracht_berichten").delete().eq("family_id", profile.family_id),
+    supabase.from("planningshulp_berichten").delete().eq("family_id", profile.family_id),
+    supabase.from("overhoor_sessies").update({ transcript: [] }).eq("family_id", profile.family_id),
+  ]);
+
+  revalidatePath("/ouder/account");
+  return { success: true };
+}

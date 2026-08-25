@@ -113,3 +113,99 @@ export function kiesWillekeurigeSelectie<T>(materials: T[], aantal: number): T[]
   }
   return kopie.slice(0, aantal);
 }
+
+// ---------------------------------------------------------------------------
+// Kennisonderdelen (regel-niveau kennisbank) als lesstof-bron - gedeeld door
+// de vakdocent-chat (incl. opdrachten-maken-modus, zelfde route) en Oefenen,
+// zodat een vak dat gemigreerd is naar kennis_onderdelen overal dezelfde,
+// bijgewerkte bron gebruikt i.p.v. de oudere materials-tekst.
+// ---------------------------------------------------------------------------
+
+export interface KennisOnderdeelRij {
+  paragraaf_id: string;
+  naam: string;
+  regel: string;
+  voorbeelden: string[];
+  gecombineerd_voorbeeld: string | null;
+  tip: string | null;
+  uitzondering: string | null;
+  fout_voorbeeld: string | null;
+}
+
+export interface KennisParagraafContextRij {
+  paragraaf_id: string;
+  titel: string;
+  leerdoelen?: string | null;
+  voorkennis?: string | null;
+  kernbegrippen?: string | null;
+}
+
+export interface KennisWoordenlijstRij {
+  paragraaf_id: string;
+  titel: string;
+  woorden: { bron: string; doel: string; voorbeeldzin: string | null }[];
+}
+
+/** Bouwt leesbare lesstof-tekst uit de gepubliceerde kennisonderdelen + paragraafcontext (+ evt. woordenlijsten voor taalvakken). */
+export function bouwKennisbankUitOnderdelen(
+  onderdelen: KennisOnderdeelRij[],
+  contexten: KennisParagraafContextRij[],
+  woordenlijsten: KennisWoordenlijstRij[] = []
+): string {
+  const paragraafIds = Array.from(
+    new Set([...onderdelen.map((o) => o.paragraaf_id), ...contexten.map((c) => c.paragraaf_id), ...woordenlijsten.map((w) => w.paragraaf_id)])
+  ).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+  return paragraafIds
+    .map((pid) => {
+      const context = contexten.find((c) => c.paragraaf_id === pid);
+      const onderdelenVanParagraaf = onderdelen.filter((o) => o.paragraaf_id === pid);
+      const woordenlijstenVanParagraaf = woordenlijsten.filter((w) => w.paragraaf_id === pid);
+      const titel = context?.titel ?? onderdelenVanParagraaf[0]?.naam ?? woordenlijstenVanParagraaf[0]?.titel ?? pid;
+
+      const regels = [`## ${pid} - ${titel}`];
+      if (context?.leerdoelen) regels.push(`Leerdoelen: ${context.leerdoelen}`);
+      if (context?.voorkennis) regels.push(`Voorkennis: ${context.voorkennis}`);
+      if (context?.kernbegrippen) regels.push(`Kernbegrippen: ${context.kernbegrippen}`);
+
+      for (const o of onderdelenVanParagraaf) {
+        regels.push(`\n### ${o.naam}`);
+        regels.push(o.regel);
+        regels.push(`Voorbeelden: ${o.voorbeelden.join("; ")}`);
+        if (o.gecombineerd_voorbeeld) regels.push(`Gecombineerd voorbeeld: ${o.gecombineerd_voorbeeld}`);
+        if (o.tip) regels.push(`Tip: ${o.tip}`);
+        if (o.uitzondering) regels.push(`Let op: ${o.uitzondering}`);
+        if (o.fout_voorbeeld) regels.push(`Veelgemaakte fout: ${o.fout_voorbeeld}`);
+      }
+
+      // Woordenlijsten letterlijk als tabel meegeven - niet parafraseren, dit
+      // zijn de exact overgenomen officiële woordparen uit de bron.
+      for (const w of woordenlijstenVanParagraaf) {
+        regels.push(`\n### Woordenlijst: ${w.titel}`);
+        regels.push("| Bron | Doel | Voorbeeldzin |");
+        regels.push("| --- | --- | --- |");
+        for (const woord of w.woorden) {
+          regels.push(`| ${woord.bron} | ${woord.doel} | ${woord.voorbeeldzin ?? ""} |`);
+        }
+      }
+      return regels.join("\n");
+    })
+    .join("\n\n");
+}
+
+/**
+ * Zet kennisonderdelen om naar het MateriaalRij-shape, zodat de bestaande
+ * matching-helpers hierboven (kiesBesteMateriaal e.d.) hergebruikt kunnen
+ * worden om het best passende onderdeel te vinden (bv. voor het
+ * lesstof-fragment bij Oefenen-feedback).
+ */
+export function onderdelenAlsMateriaalRijen(onderdelen: KennisOnderdeelRij[]): MateriaalRij[] {
+  return onderdelen.map((o, i) => ({
+    id: `${o.paragraaf_id}-${i}`,
+    title: o.naam,
+    content: [o.regel, ...o.voorbeelden, o.gecombineerd_voorbeeld, o.tip, o.uitzondering, o.fout_voorbeeld]
+      .filter((v): v is string => Boolean(v))
+      .join("\n"),
+    hoofdstuk: o.paragraaf_id,
+  }));
+}

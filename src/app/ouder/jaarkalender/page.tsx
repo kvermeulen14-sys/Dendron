@@ -1,10 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
-import { Card } from "@/components/ui/card";
-import { JAAR_EVENT_META } from "@/lib/jaarkalender";
-import { VerwijderJaarEventKnop } from "@/components/verwijder-jaar-event-knop";
 import type { JaarEvent } from "@/lib/types";
 import { JaarOverzicht } from "@/components/jaar-overzicht";
-import { JaarEventForm } from "./jaar-event-form";
+import { JaarkalenderToevoegKnop, JaarkalenderLijst } from "./jaarkalender-beheer";
 import { JaarkalenderAIImport } from "./jaarkalender-ai-import";
 
 export default async function JaarkalenderPage() {
@@ -35,34 +32,13 @@ export default async function JaarkalenderPage() {
         </div>
         <div className="flex gap-2">
           <JaarkalenderAIImport />
-          <JaarEventForm />
+          <JaarkalenderToevoegKnop />
         </div>
       </div>
 
       <JaarOverzicht events={(events ?? []) as JaarEvent[]} />
 
-      {events && events.length > 0 && (
-        <div>
-          <h2 className="mb-3 text-base font-semibold text-slate-900">Alles beheren</h2>
-          <div className="flex flex-col gap-2">
-            {(events as JaarEvent[]).map((e) => (
-              <Card key={e.id} className="flex items-center gap-3 py-3">
-                <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${JAAR_EVENT_META[e.type].dotClass}`} />
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-slate-800">{e.titel}</p>
-                  <p className="text-xs text-slate-500">
-                    {JAAR_EVENT_META[e.type].label} -{" "}
-                    {new Date(e.start_datum + "T00:00:00").toLocaleDateString("nl-NL", { day: "numeric", month: "short", year: "numeric" })}
-                    {e.eind_datum !== e.start_datum &&
-                      ` t/m ${new Date(e.eind_datum + "T00:00:00").toLocaleDateString("nl-NL", { day: "numeric", month: "short", year: "numeric" })}`}
-                  </p>
-                </div>
-                <VerwijderJaarEventKnop id={e.id} />
-              </Card>
-            ))}
-          </div>
-        </div>
-      )}
+      <JaarkalenderLijst events={(events ?? []) as JaarEvent[]} />
     </div>
   );
 }

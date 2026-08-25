@@ -128,9 +128,9 @@ export function ToetsweekPlanner({
               <Icon name="sparkles" size={18} className="mt-0.5 shrink-0 text-accent-600" />
               <p className="text-sm text-slate-700">
                 <span className="font-medium">Tip: wissel vakken af.</span> Leren voor meerdere vakken door
-                elkaar (interleaving) werkt beter voor je geheugen dan alles voor 1 vak achter elkaar doen.
-                Probeer in de agenda leermomenten van verschillende vakken naast elkaar te zetten, in plaats
-                van dagen achter elkaar met steeds hetzelfde vak.
+                elkaar werkt beter voor je geheugen dan alles voor 1 vak achter elkaar doen. Probeer in de
+                agenda leermomenten van verschillende vakken naast elkaar te zetten, in plaats van dagen
+                achter elkaar met steeds hetzelfde vak.
               </p>
             </Card>
           )}

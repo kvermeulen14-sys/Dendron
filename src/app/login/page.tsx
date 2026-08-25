@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Icon } from "@/components/icon";
+import { Logo } from "@/components/logo";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -38,10 +38,9 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-slate-50 px-6 py-16">
       <div className="w-full max-w-sm">
         <div className="mb-6 flex flex-col items-center text-center">
-          <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-accent-600 text-white">
-            <Icon name="book-open" size={26} />
-          </div>
-          <h1 className="text-xl font-semibold text-slate-900">Inloggen</h1>
+          <Logo size="lg" withWordmark={false} className="mb-3" />
+          <p className="font-heading text-2xl font-bold text-slate-900">Dendron</p>
+          <h1 className="mt-2 text-base font-medium text-slate-700">Inloggen</h1>
           <p className="mt-1 text-sm text-slate-500">Log in met je e-mailadres en wachtwoord.</p>
         </div>
 

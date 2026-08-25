@@ -30,7 +30,16 @@ export default async function KindLayout({ children }: { children: React.ReactNo
       navItems={NAV_ITEMS}
       userName={profile.full_name || "Leerling"}
       roleLabel="Mijn omgeving"
-      accentClass="bg-emerald-600"
+      canvasClassName="bg-gradient-to-b from-rose-50 via-rose-50/50 to-slate-50"
+      bottomNav={{
+        items: [
+          { href: "/kind", label: "Start", icon: "sun" },
+          { href: "/kind/agenda", label: "Agenda", icon: "calendar" },
+          { href: "/kind/focus/vrij", label: "Focus", icon: "target" },
+          { href: "/kind/vakken", label: "Hulp", icon: "chat" },
+        ],
+        quickAdd: { href: "/kind/agenda?nieuw=1", label: "Snel iets toevoegen", icon: "plus" },
+      }}
     >
       {children}
     </NavShell>

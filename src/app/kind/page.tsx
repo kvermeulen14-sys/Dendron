@@ -2,12 +2,15 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/card";
 import { Icon } from "@/components/icon";
+import { StickerHeart, StickerSpark, StickerStarOutline } from "@/components/sticker";
 import { KindVandaagLijst } from "@/components/kind-vandaag-lijst";
 import { WeekTerugblikVraag } from "@/components/week-terugblik-vraag";
 import { TweeMinutenOefenen } from "@/components/twee-minuten-oefenen";
 import { WerkdrukWeek } from "@/components/werkdruk-week";
 import { PlanningshulpKnop } from "@/components/planningshulp-knop";
 import { huidigeWeekMaandag } from "@/lib/week";
+import { bepaalLaatsteOnderwerpPerVak } from "@/lib/onderwerp";
+import { bepaalOefenAdvies, type OefenSessieSamenvatting } from "@/lib/oefen-advies";
 import type { PlanningItem, Subject } from "@/lib/types";
 
 export default async function KindOverzicht() {
@@ -38,6 +41,7 @@ export default async function KindOverzicht() {
     { data: materialsData },
     { data: weekData },
     { data: openItemsData },
+    { data: overhoorSessiesData },
   ] = await Promise.all([
     supabase
       .from("planning_items")
@@ -72,7 +76,7 @@ export default async function KindOverzicht() {
       .eq("user_id", user!.id)
       .eq("week_start", weekMaandag)
       .maybeSingle(),
-    supabase.from("materials").select("subject_id").eq("family_id", profile!.family_id),
+    supabase.from("materials").select("subject_id, hoofdstuk, created_at").eq("family_id", profile!.family_id),
     supabase
       .from("planning_items")
       .select("*")
@@ -80,7 +84,41 @@ export default async function KindOverzicht() {
       .gte("due_date", weekMaandag)
       .lte("due_date", weekZondag),
     supabase.from("planning_items").select("*").eq("family_id", profile!.family_id).neq("status", "klaar"),
+    supabase
+      .from("overhoor_sessies")
+      .select("subject_id, hoofdstuk, created_at")
+      .eq("user_id", user!.id)
+      .not("hoofdstuk", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(100),
   ]);
+
+  // Voor "2 minuten oefenen": welk vak heeft nu de meeste aandacht nodig
+  // (lang niet geoefend en/of recent nog moeilijk), en welk vak heeft
+  // binnenkort een toets (stuurt het leerfase-advies bij het starten).
+  const [{ data: oefenScoresData }, { data: aankomendeToetsenData }] = await Promise.all([
+    supabase
+      .from("overhoor_sessies")
+      .select("subject_id, created_at, aantal_goed, aantal_deels, aantal_fout")
+      .eq("user_id", user!.id)
+      .order("created_at", { ascending: false })
+      .limit(100),
+    supabase
+      .from("planning_items")
+      .select("subject_id, due_date")
+      .eq("family_id", profile!.family_id)
+      .eq("type", "toets")
+      .gte("due_date", vandaag)
+      .order("due_date", { ascending: true }),
+  ]);
+  const dagenTotToetsPerVak = new Map<string, number>();
+  for (const t of aankomendeToetsenData ?? []) {
+    if (!t.subject_id || dagenTotToetsPerVak.has(t.subject_id)) continue;
+    const dagen = Math.round(
+      (new Date(t.due_date + "T00:00:00").getTime() - new Date(vandaag + "T00:00:00").getTime()) / 86400000
+    );
+    dagenTotToetsPerVak.set(t.subject_id, dagen);
+  }
 
   const vandaagItems = (vandaagData ?? []) as PlanningItem[];
   const teLaat = (teLaatData ?? []) as PlanningItem[];
@@ -91,18 +129,30 @@ export default async function KindOverzicht() {
 
   const subjectIdsMetLesstof = new Set((materialsData ?? []).map((m) => m.subject_id));
   const subjectsMetLesstof = subjects.filter((s) => subjectIdsMetLesstof.has(s.id));
+  const laatsteOnderwerpPerVak = bepaalLaatsteOnderwerpPerVak(materialsData ?? [], overhoorSessiesData ?? []);
+  const oefenAdvies = bepaalOefenAdvies(
+    subjectsMetLesstof.map((s) => s.id),
+    (oefenScoresData ?? []) as OefenSessieSamenvatting[],
+    laatsteOnderwerpPerVak
+  );
   const weekItems = (weekData ?? []) as PlanningItem[];
   const openItems = (openItemsData ?? []) as PlanningItem[];
 
-  const vandaagGedaan = vandaagItems.filter((i) => i.status === "klaar").length;
+  // Prive bezet wel tijd maar is geen afvinkbare taak - telt niet mee in
+  // "X van Y gedaan" (zie ook capaciteit.ts en de agenda-samenvatting).
+  const vandaagTaken = vandaagItems.filter((i) => i.type !== "prive");
+  const vandaagGedaan = vandaagTaken.filter((i) => i.status === "klaar").length;
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-xl font-semibold text-slate-900">
-          Hoi {profile?.full_name?.split(" ")[0] || ""}
-        </h1>
-        <p className="mt-1 text-sm text-slate-500">Dit staat er voor je klaar.</p>
+      <div className="relative overflow-hidden rounded-[28px] bg-gradient-to-br from-violet-500 via-violet-500 to-fuchsia-500 px-5 py-6 text-white shadow-[0_12px_30px_-12px_rgba(124,58,237,0.55)]">
+        <StickerStarOutline className="pointer-events-none absolute -right-1 top-3 h-9 w-9 text-white/35" />
+        <StickerSpark className="pointer-events-none absolute right-16 top-9 h-4 w-4 text-white/70" />
+        <StickerHeart className="pointer-events-none absolute -bottom-1 right-7 h-7 w-7 -rotate-6 text-white/25" />
+        <p className="font-heading text-2xl font-bold">
+          Hoi {profile?.full_name?.split(" ")[0] || ""}!
+        </p>
+        <p className="mt-1 text-sm text-white/85">Dit staat er voor je klaar vandaag.</p>
       </div>
 
       {!heeftTerugblikDezeWeek && <WeekTerugblikVraag />}
@@ -133,7 +183,7 @@ export default async function KindOverzicht() {
           <Card className="flex items-center gap-3 border-amber-100 bg-amber-50/60 transition-shadow hover:shadow-md">
             <Icon name="brain" size={20} className="text-amber-600" />
             <p className="text-sm font-medium text-amber-800">
-              {voorstellen.length} voorgestelde leermoment(en) wachten op jouw akkoord
+              {voorstellen.length} voorgestelde leermoment(en) - bevestig ze even
             </p>
           </Card>
         </Link>
@@ -142,9 +192,9 @@ export default async function KindOverzicht() {
       <Card>
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-base font-semibold text-slate-900">Vandaag</h2>
-          {vandaagItems.length > 0 && (
+          {vandaagTaken.length > 0 && (
             <span className="text-xs font-medium text-slate-400">
-              {vandaagGedaan} van {vandaagItems.length} gedaan
+              {vandaagGedaan} van {vandaagTaken.length} gedaan
             </span>
           )}
         </div>
@@ -167,9 +217,14 @@ export default async function KindOverzicht() {
         <WerkdrukWeek items={weekItems} weekMaandagIso={weekMaandag} vandaagIso={vandaag} />
       </Card>
 
-      <TweeMinutenOefenen subjects={subjectsMetLesstof} />
+      <TweeMinutenOefenen
+        subjects={subjectsMetLesstof}
+        laatsteOnderwerpPerVak={laatsteOnderwerpPerVak}
+        oefenAdvies={oefenAdvies}
+        dagenTotToetsPerVak={dagenTotToetsPerVak}
+      />
 
-      <PlanningshulpKnop items={openItems} />
+      <PlanningshulpKnop items={openItems} subjects={subjects} />
 
       <Link href="/kind/vakken">
         <Card className="flex items-center gap-3 transition-shadow hover:shadow-md">

@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { vindSubjectVoorTitel } from "@/lib/vak-matching";
 
 export async function maakVak(formData: FormData) {
   const supabase = await createClient();
@@ -25,22 +26,44 @@ export async function maakVak(formData: FormData) {
 
   if (!name) return { error: "Geef het vak een naam." };
 
-  const { error } = await supabase.from("subjects").insert({
-    family_id: profile.family_id,
-    name,
-    code,
-    icon,
-    ai_instructions: aiInstructions,
-    created_by: user.id,
-  });
+  const { data: nieuwVak, error } = await supabase
+    .from("subjects")
+    .insert({
+      family_id: profile.family_id,
+      name,
+      code,
+      icon,
+      ai_instructions: aiInstructions,
+      created_by: user.id,
+    })
+    .select("id, name")
+    .single();
 
   if (error) {
     if (error.code === "23505") return { error: "Deze code is al in gebruik bij een ander vak." };
     return { error: error.message };
   }
 
+  // Roosterregels die al bestonden maar nog aan geen enkel vak gekoppeld
+  // waren (bv. omdat dit vak toen nog niet bestond) meteen proberen te
+  // koppelen - anders blijft zo'n koppeling onzichtbaar totdat er
+  // handmatig naar "Koppel automatisch" bij het rooster gegaan wordt.
+  const { data: ongekoppeldeItems } = await supabase
+    .from("rooster_items")
+    .select("id, titel")
+    .eq("family_id", profile.family_id)
+    .is("subject_id", null);
+  for (const item of ongekoppeldeItems ?? []) {
+    if (vindSubjectVoorTitel(item.titel, [nieuwVak])) {
+      await supabase.from("rooster_items").update({ subject_id: nieuwVak.id }).eq("id", item.id);
+    }
+  }
+
   revalidatePath("/ouder/vakken");
   revalidatePath("/kind/vakken");
+  revalidatePath("/ouder/rooster");
+  revalidatePath("/ouder/agenda");
+  revalidatePath("/kind/agenda");
   return { success: true };
 }
 

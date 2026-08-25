@@ -1,4 +1,5 @@
 import {
+  GripVertical,
   BookOpen,
   PencilLine,
   AlertCircle,
@@ -37,6 +38,11 @@ import {
   ThumbsUp,
   ThumbsDown,
   Meh,
+  Eye,
+  Menu,
+  Sun,
+  User,
+  TriangleAlert,
   type LucideProps,
 } from "lucide-react";
 
@@ -44,6 +50,7 @@ export const ICONS = {
   "book-open": BookOpen,
   "pencil-line": PencilLine,
   "alert-circle": AlertCircle,
+  "alert-triangle": TriangleAlert,
   heart: Heart,
   brain: Brain,
   calendar: Calendar,
@@ -79,6 +86,11 @@ export const ICONS = {
   "thumbs-up": ThumbsUp,
   "thumbs-down": ThumbsDown,
   meh: Meh,
+  eye: Eye,
+  grip: GripVertical,
+  menu: Menu,
+  sun: Sun,
+  user: User,
 } as const;
 
 export type IconName = keyof typeof ICONS;

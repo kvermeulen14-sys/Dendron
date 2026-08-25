@@ -2,7 +2,18 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createGeminiClient, vereistGeminiKey, genereerGestructureerd } from "@/lib/gemini";
-import { GROTE_KENNISBANK_DREMPEL, kiesBesteMateriaal, kiesWillekeurigeSelectie } from "@/lib/kennisbank";
+import {
+  GROTE_KENNISBANK_DREMPEL,
+  kiesBesteMateriaal,
+  kiesWillekeurigeSelectie,
+  bouwKennisbankUitOnderdelen,
+  onderdelenAlsMateriaalRijen,
+  type KennisOnderdeelRij,
+  type KennisParagraafContextRij,
+  type KennisWoordenlijstRij,
+  type MateriaalRij,
+} from "@/lib/kennisbank";
+import { bouwOefenGeschiedenisBlok, type OefenSessieVoorChat } from "@/lib/oefengeschiedenis";
 
 const MAX_KENNISBANK_TEKENS = 14000;
 const MAX_OVERHOOR_MATERIALEN = 6;
@@ -26,6 +37,29 @@ const ResponsSchema = z.object({
     .nullable()
     .describe(
       "Alleen bij een meerkeuzevraag: de letterlijke tekst van de juiste optie uit de 'opties' van de NET beoordeelde vraag (dus niet de nieuwe vraag hierboven) - hiermee kan de app die groen markeren. Null als er nog geen antwoord was, bij een open vraag, of als de vorige vraag geen meerkeuzevraag was."
+    ),
+  beoordeeldOnderdeelNaam: z
+    .string()
+    .nullable()
+    .describe(
+      "Alleen als de lesstof hieronder is opgebouwd uit kennisonderdelen (herkenbaar aan '### naam'-koppen): de EXACTE naam van het onderdeel waar de ZOJUIST BEOORDEELDE vraag over ging (niet de nieuwe vraag hierboven). Null als er nog geen vorige vraag was, of de lesstof geen kennisonderdelen-koppen bevat."
+    ),
+  juisteAntwoord: z
+    .string()
+    .nullable()
+    .describe(
+      "Het EXACTE juiste antwoord op de ZOJUIST BEOORDEELDE vraag (niet de nieuwe vraag hierboven) - kort en concreet (het getal/de term/de formule), geen uitleg. Verplicht bij beoordeling 'deels' of 'fout' op een open vraag. Null bij 'goed' of 'geen', en bij een meerkeuzevraag (die heeft al 'juisteOptie')."
+    ),
+  zelfCheck: z
+    .boolean()
+    .describe(
+      "True als de NIEUWE vraag hierboven een open vraag is waarvan het juiste antwoord lastig exact te typen is (bv. machten, breuken, wortels, of een meerstaps herleiding) - de leerling werkt het dan op papier uit en controleert zelf i.p.v. intypen. Bij een meerkeuzevraag of een vraag met een kort simpel antwoord: altijd false."
+    ),
+  zelfCheckAntwoord: z
+    .string()
+    .nullable()
+    .describe(
+      "Alleen als zelfCheck true is: het volledige juiste antwoord/uitwerking van de NIEUWE vraag hierboven, in dezelfde notatiestijl als de rest (² i.p.v. ^2, breuk-blok voor breuken). Null als zelfCheck false is."
     ),
 });
 
@@ -55,12 +89,10 @@ const MAX_FRAGMENT_TEKENS = 500;
 // (i.p.v. dat de AI de theorie parafraseert, wat kan hallucineren) - de
 // leerling kan zo de echte uitleg uit het boek erbij lezen. Puur
 // deterministisch (geen AI-call), hergebruikt dezelfde matching als de
-// vakdocent-chat.
-function kiesLesstofFragment(
-  materials: { id: string; title: string; content: string; hoofdstuk: string | null }[],
-  zoekTekst: string
-) {
-  const beste = kiesBesteMateriaal(materials, zoekTekst);
+// vakdocent-chat. `materialen` kan hier ook een MateriaalRij-projectie van
+// kennisonderdelen zijn (zie onderdelenAlsMateriaalRijen).
+function kiesLesstofFragment(materialen: MateriaalRij[], zoekTekst: string) {
+  const beste = kiesBesteMateriaal(materialen, zoekTekst);
   if (!beste || !beste.content.trim()) return null;
 
   let fragment = beste.content.trim();
@@ -104,12 +136,52 @@ export async function POST(request: Request) {
     .from("materials")
     .select("id, title, content, hoofdstuk")
     .eq("subject_id", subjectId);
-  if (!materials || materials.length === 0) {
+
+  const { data: kennisOnderdelen } = await supabase
+    .from("kennis_onderdelen")
+    .select("paragraaf_id, naam, regel, voorbeelden, gecombineerd_voorbeeld, tip, uitzondering, fout_voorbeeld")
+    .eq("subject_id", subjectId)
+    .eq("status", "gepubliceerd");
+  const { data: kennisContexten } = await supabase
+    .from("kennis_paragraaf_context")
+    .select("paragraaf_id, titel, leerdoelen, voorkennis, kernbegrippen")
+    .eq("subject_id", subjectId)
+    .eq("status", "gepubliceerd");
+  const { data: kennisWoordenlijsten } = await supabase
+    .from("kennis_woordenlijsten")
+    .select("paragraaf_id, titel, woorden")
+    .eq("subject_id", subjectId)
+    .eq("status", "gepubliceerd");
+
+  // Eerdere sessies waarin de leerling iets nog niet (helemaal) goed had -
+  // zodat de quiz zelf af en toe kan teruggrijpen op recent gemiste stof
+  // i.p.v. dat alleen de vakdocent-chat dat weet (zie oefengeschiedenis.ts).
+  const { data: recenteOefenSessies } = await supabase
+    .from("overhoor_sessies")
+    .select("hoofdstuk, transcript")
+    .eq("subject_id", subjectId)
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false })
+    .limit(3);
+
+  // Zelfde "1 bron van waarheid"-regel als de vakdocent-chat: zodra dit vak
+  // gepubliceerde kennisonderdelen of woordenlijsten heeft, gebruikt Oefenen
+  // die - niet meer de oudere materials-tekst.
+  const heeftKennisOnderdelen = (kennisOnderdelen?.length ?? 0) > 0 || (kennisWoordenlijsten?.length ?? 0) > 0;
+
+  if (!heeftKennisOnderdelen && (!materials || materials.length === 0)) {
     return NextResponse.json(
       { error: "Er is nog geen lesstof voor dit vak, dus overhoren kan nog niet." },
       { status: 400 }
     );
   }
+
+  // Gebruikt voor het kiezen van het lesstof-fragment bij feedback (en, bij
+  // een grote kennisbank, voor de willekeurige deelselectie hieronder) -
+  // bij kennisonderdelen is dit een projectie ervan naar hetzelfde vorm.
+  const materialenVoorMatching: MateriaalRij[] = heeftKennisOnderdelen
+    ? onderdelenAlsMateriaalRijen((kennisOnderdelen ?? []) as KennisOnderdeelRij[])
+    : (materials ?? []);
 
   const leerfaseInstructie = LEERFASE_INSTRUCTIE[leerfase] ?? LEERFASE_INSTRUCTIE.tussentijds;
 
@@ -119,9 +191,21 @@ export async function POST(request: Request) {
   if (modus === "uitleg") {
     if (!vorigeVraag) return NextResponse.json({ error: "Geen vraag om uit te leggen." }, { status: 400 });
 
-    const overhoorMaterialenUitleg =
-      materials.length > GROTE_KENNISBANK_DREMPEL ? kiesWillekeurigeSelectie(materials, MAX_OVERHOOR_MATERIALEN) : materials;
-    let kennisbankUitleg = overhoorMaterialenUitleg.map((m) => `## ${m.title}\n${m.content}`).join("\n\n");
+    let kennisbankUitleg: string;
+    if (heeftKennisOnderdelen) {
+      kennisbankUitleg = bouwKennisbankUitOnderdelen(
+        (kennisOnderdelen ?? []) as KennisOnderdeelRij[],
+        (kennisContexten ?? []) as KennisParagraafContextRij[],
+        (kennisWoordenlijsten ?? []) as KennisWoordenlijstRij[]
+      );
+    } else {
+      const materialenLijst = materials ?? [];
+      const overhoorMaterialenUitleg =
+        materialenLijst.length > GROTE_KENNISBANK_DREMPEL
+          ? kiesWillekeurigeSelectie(materialenLijst, MAX_OVERHOOR_MATERIALEN)
+          : materialenLijst;
+      kennisbankUitleg = overhoorMaterialenUitleg.map((m) => `## ${m.title}\n${m.content}`).join("\n\n");
+    }
     if (kennisbankUitleg.length > MAX_KENNISBANK_TEKENS) {
       kennisbankUitleg = kennisbankUitleg.slice(0, MAX_KENNISBANK_TEKENS) + "\n[...ingekort...]";
     }
@@ -149,12 +233,24 @@ ${kennisbankUitleg}`;
     }
   }
 
-  const overhoorMaterialen =
-    materials.length > GROTE_KENNISBANK_DREMPEL ? kiesWillekeurigeSelectie(materials, MAX_OVERHOOR_MATERIALEN) : materials;
-  let kennisbank = overhoorMaterialen.map((m) => `## ${m.title}\n${m.content}`).join("\n\n");
+  let kennisbank: string;
+  if (heeftKennisOnderdelen) {
+    kennisbank = bouwKennisbankUitOnderdelen(
+      (kennisOnderdelen ?? []) as KennisOnderdeelRij[],
+      (kennisContexten ?? []) as KennisParagraafContextRij[],
+      (kennisWoordenlijsten ?? []) as KennisWoordenlijstRij[]
+    );
+  } else {
+    const materialenLijst = materials ?? [];
+    const overhoorMaterialen =
+      materialenLijst.length > GROTE_KENNISBANK_DREMPEL ? kiesWillekeurigeSelectie(materialenLijst, MAX_OVERHOOR_MATERIALEN) : materialenLijst;
+    kennisbank = overhoorMaterialen.map((m) => `## ${m.title}\n${m.content}`).join("\n\n");
+  }
   if (kennisbank.length > MAX_KENNISBANK_TEKENS) {
     kennisbank = kennisbank.slice(0, MAX_KENNISBANK_TEKENS) + "\n[...ingekort...]";
   }
+  const oefenGeschiedenisBlok = bouwOefenGeschiedenisBlok((recenteOefenSessies ?? []) as OefenSessieVoorChat[]);
+  kennisbank += oefenGeschiedenisBlok;
 
   const spellingInstructie = spellingStrict
     ? "Let bij het beoordelen streng op correcte spelling - een verder inhoudelijk goed antwoord met een spelfout beoordeel je als 'deels' in plaats van 'goed'."
@@ -173,11 +269,18 @@ ${
 }
 ${
   vorigeVraag && vorigAntwoord
-    ? `Beoordeel eerst dit antwoord van de leerling:\nVraag: ${vorigeVraag}\nAntwoord van de leerling: ${vorigAntwoord}\nGeef een beoordeling (goed/deels/fout). Bij 'goed': korte felicitatie MET in 1 zin WAAROM het klopt (zo blijft ook een gokje dat toevallig goed was leerzaam, en wordt goed gokken niet beloond met niets). Bij 'deels' of 'fout': geef GEEN kale foutmelding en niet alleen een hint, maar een echte, behulpzame uitleg (2-4 zinnen) die het onderliggende idee verduidelijkt - zodat de leerling begrijpt WAAROM het niet (helemaal) klopte en hoe het wel zit. BELANGRIJK: een antwoord dat geen echte inhoudelijke poging is (bijvoorbeeld enkel "?", "weet niet", "geen idee", of duidelijk willekeurige tekst) is ALTIJD 'fout' - beoordeel zo'n antwoord nooit als 'goed' of 'deels', ook al lijkt het toevallig ergens op te passen.\n\n`
+    ? vorigAntwoord.startsWith("(zelf gecontroleerd:")
+      ? `De leerling heeft de vorige vraag op papier uitgewerkt en zelf tegen het juiste antwoord gecontroleerd, met dit resultaat: ${vorigAntwoord}\nVraag: ${vorigeVraag}\nVertrouw dit zelf-gerapporteerde resultaat direct - beoordeel niet zelf opnieuw. Zet "beoordeling" op 'goed' bij "had ik goed", of 'fout' bij "nog niet helemaal goed". Geef bij 'goed' een korte felicitatie. Geef bij 'fout' een korte, bemoedigende uitleg (2-3 zinnen) van het onderliggende idee, zodat het de volgende keer wel lukt. Laat "juisteAntwoord" op null (de leerling heeft het antwoord al gezien) en vul "beoordeeldOnderdeelNaam" in zoals hieronder beschreven.\n\n`
+      : `Beoordeel eerst dit antwoord van de leerling:\nVraag: ${vorigeVraag}\nAntwoord van de leerling: ${vorigAntwoord}\nGeef een beoordeling (goed/deels/fout). Bij 'goed': korte felicitatie MET in 1 zin WAAROM het klopt (zo blijft ook een gokje dat toevallig goed was leerzaam, en wordt goed gokken niet beloond met niets). Bij 'deels' of 'fout': geef GEEN kale foutmelding en niet alleen een hint, maar een echte, behulpzame uitleg (2-4 zinnen) die het onderliggende idee verduidelijkt - zodat de leerling begrijpt WAAROM het niet (helemaal) klopte en hoe het wel zit, EN vul "juisteAntwoord" in met het exacte juiste antwoord (kort, geen uitleg - alleen bij een open vraag, niet bij meerkeuze). BELANGRIJK: een antwoord dat geen echte inhoudelijke poging is (bijvoorbeeld enkel "?", "weet niet", "geen idee", of duidelijk willekeurige tekst) is ALTIJD 'fout' - beoordeel zo'n antwoord nooit als 'goed' of 'deels', ook al lijkt het toevallig ergens op te passen. Vul ook "beoordeeldOnderdeelNaam" in als de lesstof hieronder "### naam"-koppen bevat: de EXACTE naam van het kopje waar deze zojuist beoordeelde vraag het beste bij past.\n\n`
     : "Er is nog geen vorig antwoord - laat feedback leeg en beoordeling op 'geen'.\n\n"
+}${
+  oefenGeschiedenisBlok
+    ? `Weef er, als dat past bij het gekozen onderwerp, af en toe (niet elke vraag, en niet als allereerste) een NIEUWE vraag tussendoor die aansluit bij het RECENTE OEFENGESCHIEDENIS-blok hieronder - herhaald ophalen van iets wat nog niet helemaal beklijfde is precies waar oefenen het meest oplevert. Maak er geen sleur van, en nooit verwijtend ("dit had je fout") - gewoon een frisse nieuwe vraag over hetzelfde onderwerp.\n`
+    : ""
 }Stel daarna een NIEUWE vraag over de lesstof hieronder. Deze vragen zijn deze sessie al gesteld, stel geen vraag die daar erg op lijkt: ${
     Array.isArray(gesteldeVragen) && gesteldeVragen.length > 0 ? gesteldeVragen.join(" | ") : "(nog geen)"
   }
+Bepaal voor deze NIEUWE vraag ook "zelfCheck": true als het juiste antwoord lastig exact te typen is (machten, breuken, wortels, een meerstaps herleiding) - vul dan ook "zelfCheckAntwoord" met het volledige juiste antwoord. Bij een meerkeuzevraag of een vraag met een kort, simpel antwoord (een getal, woord, jaartal): "zelfCheck" false en "zelfCheckAntwoord" null.
 
 LESSTOF:
 ${kennisbank}`;
@@ -194,9 +297,34 @@ ${kennisbank}`;
     // Bij een niet-volledig-goed antwoord: het echte lesstof-fragment erbij
     // zoeken (deterministisch, geen AI-parafrase) zodat de leerling de
     // theorie zelf kan naslaan terwijl het nog vers is.
+    //
+    // Bij kennisonderdelen eerst proberen het onderdeel op te zoeken dat de
+    // AI zelf noemde (beoordeeldOnderdeelNaam) - exact en betrouwbaar, i.p.v.
+    // te gokken via woord-overlap. Die keyword-matching (kiesLesstofFragment)
+    // was gebouwd voor hele materials-paragrafen (met een paragraafnummer als
+    // sterk signaal); bij korte, losse kennisonderdelen zonder paragraafnummer
+    // in de vraagtekst zelf bleek die matching onbetrouwbaar en koos hij
+    // geregeld een onderdeel dat inhoudelijk niets met de vraag te maken had.
     let lesstofFragment: { titel: string; tekst: string } | null = null;
     if (vorigeVraag && vorigAntwoord && (geparsed.beoordeling === "deels" || geparsed.beoordeling === "fout")) {
-      lesstofFragment = kiesLesstofFragment(materials, `${vorigeVraag} ${vorigAntwoord}`);
+      const onderdeelViaNaam =
+        heeftKennisOnderdelen && geparsed.beoordeeldOnderdeelNaam
+          ? (kennisOnderdelen ?? []).find(
+              (o) => o.naam.trim().toLowerCase() === geparsed.beoordeeldOnderdeelNaam!.trim().toLowerCase()
+            )
+          : undefined;
+
+      if (onderdeelViaNaam) {
+        lesstofFragment = {
+          titel: onderdeelViaNaam.naam,
+          tekst: [onderdeelViaNaam.regel, ...onderdeelViaNaam.voorbeelden].join(" "),
+        };
+      } else if (!heeftKennisOnderdelen) {
+        lesstofFragment = kiesLesstofFragment(materialenVoorMatching, `${vorigeVraag} ${vorigAntwoord}`);
+      }
+      // heeftKennisOnderdelen zonder geldige naam-match: liever geen fragment
+      // tonen dan een willekeurig/irrelevant onderdeel via de zwakke
+      // keyword-matching.
     }
 
     return NextResponse.json({ ...geparsed, lesstofFragment });

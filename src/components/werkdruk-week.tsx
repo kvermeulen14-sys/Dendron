@@ -116,7 +116,7 @@ export function WerkdrukWeek({
       {zonderInschattingTotaal > 0 && (
         <p className="text-xs text-slate-400">
           {zonderInschattingTotaal} {zonderInschattingTotaal === 1 ? "taak heeft" : "taken hebben"} nog geen
-          tijdsinschatting - dit overzicht wordt betrouwbaarder als die erbij staat.
+          tijdsinschatting - dit overzicht klopt beter als je die erbij zet.
         </p>
       )}
     </div>

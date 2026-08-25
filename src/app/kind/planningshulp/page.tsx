@@ -2,7 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { Icon } from "@/components/icon";
 import { PlanningHulpChat } from "@/components/planning-hulp-chat";
-import type { PlanningItem } from "@/lib/types";
+import type { PlanningItem, Subject } from "@/lib/types";
 
 export default async function PlanningshulpPage() {
   const supabase = await createClient();
@@ -11,12 +11,15 @@ export default async function PlanningshulpPage() {
   } = await supabase.auth.getUser();
   const { data: profile } = await supabase.from("profiles").select("family_id").eq("id", user!.id).single();
 
-  const { data: items } = await supabase
-    .from("planning_items")
-    .select("*")
-    .eq("family_id", profile!.family_id)
-    .neq("status", "klaar")
-    .order("due_date", { ascending: true });
+  const [{ data: items }, { data: subjects }] = await Promise.all([
+    supabase
+      .from("planning_items")
+      .select("*")
+      .eq("family_id", profile!.family_id)
+      .neq("status", "klaar")
+      .order("due_date", { ascending: true }),
+    supabase.from("subjects").select("*").eq("family_id", profile!.family_id),
+  ]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -31,7 +34,7 @@ export default async function PlanningshulpPage() {
         </p>
       </div>
 
-      <PlanningHulpChat items={(items ?? []) as PlanningItem[]} />
+      <PlanningHulpChat items={(items ?? []) as PlanningItem[]} subjects={(subjects ?? []) as Subject[]} />
     </div>
   );
 }

@@ -18,6 +18,11 @@ export function createGeminiClient() {
 
 export const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 
+// Bij een bijgevoegde foto (bv. een opgave uit het boek) telt nauwkeurig
+// lezen zwaarder dan snelheid - flash mist daar geregeld details (een
+// verkeerd cijfer, een verwisselde rechthoek I/II) die pro beter goed leest.
+export const GEMINI_VISION_MODEL = process.env.GEMINI_VISION_MODEL || "gemini-2.5-pro";
+
 // Voor gestructureerde JSON-extractie (geen open gesprek) is "denken" niet
 // nodig - zonder dit uit te zetten gaat een deel van maxOutputTokens op aan
 // interne redenering, waardoor de uiteindelijke JSON-output soms halverwege
@@ -40,7 +45,8 @@ export async function genereerGestructureerd<T>(
   client: GoogleGenAI,
   schema: z.ZodType<T>,
   contents: ContentListUnion,
-  maxOutputTokens = 8192
+  maxOutputTokens = 8192,
+  opties: { debugFouten?: boolean } = {}
 ): Promise<T> {
   async function eenPoging(): Promise<T> {
     const response = await client.models.generateContent({
@@ -65,10 +71,20 @@ export async function genereerGestructureerd<T>(
   // een nieuwe poging het meestal gewoon oplost.
   try {
     return await eenPoging();
-  } catch {
+  } catch (eersteFout) {
     try {
       return await eenPoging();
-    } catch {
+    } catch (tweedeFout) {
+      // Volledige fout (bv. de exacte zod-validatiefout of API-foutmelding)
+      // alleen naar de serverlogs, nooit naar de gebruiker - die krijgt een
+      // begrijpelijke generieke melding, maar dit maakt het bij herhaalde
+      // fouten mogelijk om de echte oorzaak in de Netlify-functielogs terug
+      // te vinden.
+      console.error("genereerGestructureerd: 2 pogingen mislukt.", { eersteFout, tweedeFout });
+      if (opties.debugFouten) {
+        const detail = tweedeFout instanceof Error ? tweedeFout.message : String(tweedeFout);
+        throw new Error(`De AI gaf geen volledig/geldig resultaat terug - probeer het opnieuw. [detail: ${detail.slice(0, 400)}]`);
+      }
       throw new Error("De AI gaf geen volledig/geldig resultaat terug - probeer het opnieuw.");
     }
   }

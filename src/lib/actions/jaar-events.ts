@@ -46,6 +46,40 @@ export async function maakJaarEvent(formData: FormData) {
   return { success: true };
 }
 
+export async function bewerkJaarEvent(id: string, formData: FormData) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Niet ingelogd." };
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .single();
+  if (!profile || profile.role !== "ouder") {
+    return { error: "Alleen ouders kunnen de jaarkalender beheren." };
+  }
+
+  const titel = String(formData.get("titel") || "").trim();
+  const type = String(formData.get("type") || "anders");
+  const startDatum = String(formData.get("startDatum") || "");
+  const eindDatum = String(formData.get("eindDatum") || startDatum);
+
+  if (!titel || !startDatum) return { error: "Vul een titel en startdatum in." };
+  if (eindDatum < startDatum) return { error: "De einddatum kan niet voor de startdatum liggen." };
+
+  const { error } = await supabase
+    .from("jaar_events")
+    .update({ titel, type, start_datum: startDatum, eind_datum: eindDatum })
+    .eq("id", id);
+
+  if (error) return { error: error.message };
+  revalidateJaarkalender();
+  return { success: true };
+}
+
 export async function verwijderJaarEvent(id: string) {
   const supabase = await createClient();
   await supabase.from("jaar_events").delete().eq("id", id);

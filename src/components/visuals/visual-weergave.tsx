@@ -1,5 +1,14 @@
 import type { ReactNode } from "react";
-import type { BreukSpec, BreukTerm, DiagramSpec, GetallenlijnSpec, GrafiekSpec, TabelSpec, VisualSpec } from "@/lib/visuals";
+import type {
+  BreukSpec,
+  BreukTerm,
+  DiagramSpec,
+  GetallenlijnSpec,
+  GrafiekPunt,
+  GrafiekSpec,
+  TabelSpec,
+  VisualSpec,
+} from "@/lib/visuals";
 
 const STROOK_KLEUREN = ["stroke-accent-600", "stroke-emerald-600", "stroke-amber-600"];
 const TEKST_KLEUREN = ["text-accent-600", "text-emerald-600", "text-amber-600"];
@@ -42,6 +51,14 @@ function GrafiekWeergave({ spec }: { spec: GrafiekSpec }) {
   const xAsZichtbaar = spec.yMin <= 0 && spec.yMax >= 0;
   const yAsZichtbaar = spec.xMin <= 0 && spec.xMax >= 0;
 
+  const puntPerLabel = new Map<string, GrafiekPunt>(spec.punten.map((p) => [p.label, p]));
+  // Een lijnstuk tekent letterlijk de rechte tussen de 2 opgezochte punten -
+  // dat kan nooit "mis" gaan zoals een a/b/c-formule die de hele lijn door
+  // het venster trekt, want dit stopt precies bij de 2 echte punten.
+  const lijnstukken = spec.lijnstukken
+    .map((l) => ({ ...l, van: puntPerLabel.get(l.van), naar: puntPerLabel.get(l.naar) }))
+    .filter((l): l is typeof l & { van: GrafiekPunt; naar: GrafiekPunt } => Boolean(l.van && l.naar));
+
   return (
     <Kaart titel={spec.titel}>
       <svg viewBox={`0 0 ${width} ${height}`} className="h-auto w-full max-w-[340px]" role="img" aria-label={spec.titel}>
@@ -63,6 +80,18 @@ function GrafiekWeergave({ spec }: { spec: GrafiekSpec }) {
           <polyline key={i} points={d} className={STROOK_KLEUREN[i % STROOK_KLEUREN.length]} strokeWidth={2} fill="none" />
         ))}
 
+        {lijnstukken.map((l, i) => (
+          <line
+            key={i}
+            x1={px(l.van.x)}
+            y1={py(clamp(l.van.y))}
+            x2={px(l.naar.x)}
+            y2={py(clamp(l.naar.y))}
+            className={STROOK_KLEUREN[(spec.functies.length + i) % STROOK_KLEUREN.length]}
+            strokeWidth={2}
+          />
+        ))}
+
         {spec.punten.map((p, i) => (
           <g key={i}>
             <circle cx={px(p.x)} cy={py(clamp(p.y))} r={3} className="fill-slate-700" />
@@ -74,8 +103,13 @@ function GrafiekWeergave({ spec }: { spec: GrafiekSpec }) {
       </svg>
       <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
         {spec.functies.map((f, i) => (
-          <span key={i} className={`font-medium ${TEKST_KLEUREN[i % TEKST_KLEUREN.length]}`}>
+          <span key={`f-${i}`} className={`font-medium ${TEKST_KLEUREN[i % TEKST_KLEUREN.length]}`}>
             {f.label}
+          </span>
+        ))}
+        {spec.lijnstukken.map((l, i) => (
+          <span key={`l-${i}`} className={`font-medium ${TEKST_KLEUREN[(spec.functies.length + i) % TEKST_KLEUREN.length]}`}>
+            {l.label}
           </span>
         ))}
       </div>
