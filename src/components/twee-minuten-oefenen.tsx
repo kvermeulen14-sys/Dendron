@@ -11,7 +11,8 @@ import { VisualWeergave } from "@/components/visuals/visual-weergave";
 import { slaOverhoorResultaatOp, type OverhoorTranscriptRegel } from "@/lib/actions/overhoor";
 import { eenRegel, normaliseerWiskundeNotatie } from "@/lib/tekst";
 import { extraheerVisuals, type VisualSpec } from "@/lib/visuals";
-import type { Subject } from "@/lib/types";
+import { bepaalLeerfaseAdvies, type OefenAdvies } from "@/lib/oefen-advies";
+import type { Leerfase, Subject } from "@/lib/types";
 
 type Beoordeling = "goed" | "deels" | "fout" | "geen";
 type Fase = "kies" | "vraag" | "feedback" | "klaar";
@@ -42,14 +43,22 @@ const BEOORDELING_STIJL: Record<Beoordeling, string> = {
 export function TweeMinutenOefenen({
   subjects,
   laatsteOnderwerpPerVak,
+  oefenAdvies,
+  dagenTotToetsPerVak,
 }: {
   subjects: Subject[];
   /** Hoofdstuk per vak-id om de vragen op te richten, zodat er niet zomaar uit de hele lesstof geput wordt. */
   laatsteOnderwerpPerVak?: Map<string, string>;
+  /** Welk vak nu de meeste aandacht verdient (lang niet geoefend en/of recent moeilijk) - zie lib/oefen-advies.ts. */
+  oefenAdvies?: OefenAdvies | null;
+  /** Dagen tot de eerstvolgende toets per vak - stuurt het automatische leerfase-advies bij het starten. */
+  dagenTotToetsPerVak?: Map<string, number>;
 }) {
   const [open, setOpen] = useState(false);
   const [fase, setFase] = useState<Fase>("kies");
   const [subject, setSubject] = useState<Subject | null>(null);
+  const [leerfase, setLeerfase] = useState<Leerfase>("tussentijds");
+  const [leerfaseReden, setLeerfaseReden] = useState<string | null>(null);
   const [vraagNr, setVraagNr] = useState(0);
   const [vraag, setVraag] = useState<string | null>(null);
   const [vraagVisuals, setVraagVisuals] = useState<VisualSpec[]>([]);
@@ -83,9 +92,14 @@ export function TweeMinutenOefenen({
 
   if (subjects.length === 0) return null;
 
+  const aanbevolenVak = oefenAdvies ? subjects.find((s) => s.id === oefenAdvies.subjectId) : undefined;
+  const overigeVakken = aanbevolenVak ? subjects.filter((s) => s.id !== aanbevolenVak.id) : subjects;
+
   function reset() {
     setFase("kies");
     setSubject(null);
+    setLeerfase("tussentijds");
+    setLeerfaseReden(null);
     setVraagNr(0);
     setVraag(null);
     setVraagVisuals([]);
@@ -124,13 +138,19 @@ export function TweeMinutenOefenen({
     const onderwerp = laatsteOnderwerpPerVak?.get(s.id);
     const scope = onderwerp ? `Onderwerp: "${onderwerp}". Vraagstijl: mix van open en meerkeuze vragen.` : undefined;
     setScopeInstructie(scope);
+    // Vlak voor een toets voor dit vak: strenger oefenen, zonder hints -
+    // zie bepaalLeerfaseAdvies in lib/oefen-advies.ts.
+    const advies = bepaalLeerfaseAdvies(dagenTotToetsPerVak?.get(s.id) ?? null);
+    const gekozenLeerfase = advies?.leerfase ?? "tussentijds";
+    setLeerfase(gekozenLeerfase);
+    setLeerfaseReden(advies?.reden ?? null);
     try {
       const res = await fetch("/api/overhoor", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           subjectId: s.id,
-          leerfase: "tussentijds",
+          leerfase: gekozenLeerfase,
           spellingStrict: false,
           gesteldeVragen: [],
           scopeInstructie: scope,
@@ -170,7 +190,7 @@ export function TweeMinutenOefenen({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           subjectId: subject.id,
-          leerfase: "tussentijds",
+          leerfase,
           spellingStrict: false,
           gesteldeVragen,
           vorigeVraag: vraag,
@@ -219,7 +239,7 @@ export function TweeMinutenOefenen({
   function volgendeVraag() {
     if (vraagNr >= AANTAL_VRAGEN) {
       setFase("klaar");
-      void slaOverhoorResultaatOp(subject!.id, "tussentijds", score, transcript);
+      void slaOverhoorResultaatOp(subject!.id, leerfase, score, transcript, laatsteOnderwerpPerVak?.get(subject!.id) ?? null);
       return;
     }
     setVraag(volgende?.vraag ?? null);
@@ -275,7 +295,15 @@ export function TweeMinutenOefenen({
         </span>
         <div>
           <p className="text-sm font-semibold text-slate-900">2 minuten oefenen</p>
-          <p className="text-xs text-slate-500">{AANTAL_VRAGEN} snelle oefenvragen, kies zelf een vak</p>
+          <p className="text-xs text-slate-500">
+            {aanbevolenVak ? (
+              <>
+                <span className="font-medium text-accent-700">{aanbevolenVak.name}</span> - {oefenAdvies!.tekst}
+              </>
+            ) : (
+              `${AANTAL_VRAGEN} snelle oefenvragen, kies zelf een vak`
+            )}
+          </p>
         </div>
       </Card>
 
@@ -283,20 +311,47 @@ export function TweeMinutenOefenen({
         <div className="flex flex-col gap-4">
           {fase === "kies" && (
             <>
-              <p className="text-sm text-slate-600">Kies een vak voor {AANTAL_VRAGEN} snelle oefenvragen.</p>
-              <div className="flex flex-wrap gap-2">
-                {subjects.map((s) => (
+              {aanbevolenVak && oefenAdvies ? (
+                <div className="flex flex-col gap-2">
+                  <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-accent-700">
+                    <Icon name="sparkles" size={13} />
+                    Dit heeft nu de meeste aandacht nodig
+                  </p>
                   <button
-                    key={s.id}
                     disabled={bezig}
-                    onClick={() => start(s)}
-                    className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:border-accent-300 hover:bg-accent-50 disabled:opacity-50"
+                    onClick={() => start(aanbevolenVak)}
+                    className="flex items-start gap-3 rounded-xl border-2 border-accent-400 bg-accent-50/60 px-3.5 py-3 text-left transition-colors hover:bg-accent-50 disabled:opacity-50"
                   >
-                    <Icon name={s.icon} size={16} />
-                    {s.name}
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent-100 text-accent-600">
+                      <Icon name={aanbevolenVak.icon} size={17} />
+                    </span>
+                    <span>
+                      <span className="block text-sm font-semibold text-slate-900">{aanbevolenVak.name}</span>
+                      <span className="block text-xs text-slate-600">{oefenAdvies.tekst}</span>
+                    </span>
                   </button>
-                ))}
-              </div>
+                </div>
+              ) : (
+                <p className="text-sm text-slate-600">Kies een vak voor {AANTAL_VRAGEN} snelle oefenvragen.</p>
+              )}
+              {overigeVakken.length > 0 && (
+                <div className="flex flex-col gap-2">
+                  {aanbevolenVak && <p className="text-xs font-medium text-slate-400">Of kies zelf een vak</p>}
+                  <div className="flex flex-wrap gap-2">
+                    {overigeVakken.map((s) => (
+                      <button
+                        key={s.id}
+                        disabled={bezig}
+                        onClick={() => start(s)}
+                        className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:border-accent-300 hover:bg-accent-50 disabled:opacity-50"
+                      >
+                        <Icon name={s.icon} size={16} />
+                        {s.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               {error && <p className="text-sm text-rose-600">{error}</p>}
             </>
           )}
@@ -308,6 +363,13 @@ export function TweeMinutenOefenen({
                 style={{ width: `${(Math.min(vraagNr, AANTAL_VRAGEN) / AANTAL_VRAGEN) * 100}%` }}
               />
             </div>
+          )}
+
+          {fase === "vraag" && subject && leerfaseReden && (
+            <p className="flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-xs font-medium text-rose-700">
+              <Icon name="alert-circle" size={13} className="shrink-0" />
+              {leerfaseReden}
+            </p>
           )}
 
           {fase === "vraag" && subject && (

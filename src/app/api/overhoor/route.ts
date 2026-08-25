@@ -13,6 +13,7 @@ import {
   type KennisWoordenlijstRij,
   type MateriaalRij,
 } from "@/lib/kennisbank";
+import { bouwOefenGeschiedenisBlok, type OefenSessieVoorChat } from "@/lib/oefengeschiedenis";
 
 const MAX_KENNISBANK_TEKENS = 14000;
 const MAX_OVERHOOR_MATERIALEN = 6;
@@ -152,6 +153,17 @@ export async function POST(request: Request) {
     .eq("subject_id", subjectId)
     .eq("status", "gepubliceerd");
 
+  // Eerdere sessies waarin de leerling iets nog niet (helemaal) goed had -
+  // zodat de quiz zelf af en toe kan teruggrijpen op recent gemiste stof
+  // i.p.v. dat alleen de vakdocent-chat dat weet (zie oefengeschiedenis.ts).
+  const { data: recenteOefenSessies } = await supabase
+    .from("overhoor_sessies")
+    .select("hoofdstuk, transcript")
+    .eq("subject_id", subjectId)
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false })
+    .limit(3);
+
   // Zelfde "1 bron van waarheid"-regel als de vakdocent-chat: zodra dit vak
   // gepubliceerde kennisonderdelen of woordenlijsten heeft, gebruikt Oefenen
   // die - niet meer de oudere materials-tekst.
@@ -237,6 +249,8 @@ ${kennisbankUitleg}`;
   if (kennisbank.length > MAX_KENNISBANK_TEKENS) {
     kennisbank = kennisbank.slice(0, MAX_KENNISBANK_TEKENS) + "\n[...ingekort...]";
   }
+  const oefenGeschiedenisBlok = bouwOefenGeschiedenisBlok((recenteOefenSessies ?? []) as OefenSessieVoorChat[]);
+  kennisbank += oefenGeschiedenisBlok;
 
   const spellingInstructie = spellingStrict
     ? "Let bij het beoordelen streng op correcte spelling - een verder inhoudelijk goed antwoord met een spelfout beoordeel je als 'deels' in plaats van 'goed'."
@@ -259,6 +273,10 @@ ${
       ? `De leerling heeft de vorige vraag op papier uitgewerkt en zelf tegen het juiste antwoord gecontroleerd, met dit resultaat: ${vorigAntwoord}\nVraag: ${vorigeVraag}\nVertrouw dit zelf-gerapporteerde resultaat direct - beoordeel niet zelf opnieuw. Zet "beoordeling" op 'goed' bij "had ik goed", of 'fout' bij "nog niet helemaal goed". Geef bij 'goed' een korte felicitatie. Geef bij 'fout' een korte, bemoedigende uitleg (2-3 zinnen) van het onderliggende idee, zodat het de volgende keer wel lukt. Laat "juisteAntwoord" op null (de leerling heeft het antwoord al gezien) en vul "beoordeeldOnderdeelNaam" in zoals hieronder beschreven.\n\n`
       : `Beoordeel eerst dit antwoord van de leerling:\nVraag: ${vorigeVraag}\nAntwoord van de leerling: ${vorigAntwoord}\nGeef een beoordeling (goed/deels/fout). Bij 'goed': korte felicitatie MET in 1 zin WAAROM het klopt (zo blijft ook een gokje dat toevallig goed was leerzaam, en wordt goed gokken niet beloond met niets). Bij 'deels' of 'fout': geef GEEN kale foutmelding en niet alleen een hint, maar een echte, behulpzame uitleg (2-4 zinnen) die het onderliggende idee verduidelijkt - zodat de leerling begrijpt WAAROM het niet (helemaal) klopte en hoe het wel zit, EN vul "juisteAntwoord" in met het exacte juiste antwoord (kort, geen uitleg - alleen bij een open vraag, niet bij meerkeuze). BELANGRIJK: een antwoord dat geen echte inhoudelijke poging is (bijvoorbeeld enkel "?", "weet niet", "geen idee", of duidelijk willekeurige tekst) is ALTIJD 'fout' - beoordeel zo'n antwoord nooit als 'goed' of 'deels', ook al lijkt het toevallig ergens op te passen. Vul ook "beoordeeldOnderdeelNaam" in als de lesstof hieronder "### naam"-koppen bevat: de EXACTE naam van het kopje waar deze zojuist beoordeelde vraag het beste bij past.\n\n`
     : "Er is nog geen vorig antwoord - laat feedback leeg en beoordeling op 'geen'.\n\n"
+}${
+  oefenGeschiedenisBlok
+    ? `Weef er, als dat past bij het gekozen onderwerp, af en toe (niet elke vraag, en niet als allereerste) een NIEUWE vraag tussendoor die aansluit bij het RECENTE OEFENGESCHIEDENIS-blok hieronder - herhaald ophalen van iets wat nog niet helemaal beklijfde is precies waar oefenen het meest oplevert. Maak er geen sleur van, en nooit verwijtend ("dit had je fout") - gewoon een frisse nieuwe vraag over hetzelfde onderwerp.\n`
+    : ""
 }Stel daarna een NIEUWE vraag over de lesstof hieronder. Deze vragen zijn deze sessie al gesteld, stel geen vraag die daar erg op lijkt: ${
     Array.isArray(gesteldeVragen) && gesteldeVragen.length > 0 ? gesteldeVragen.join(" | ") : "(nog geen)"
   }

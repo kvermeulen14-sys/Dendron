@@ -62,6 +62,26 @@ export default async function KindVakDetailPage({
     .order("created_at", { ascending: false })
     .limit(10);
 
+  // Voor het automatische leerfase-advies bij Oefenen: hoe dichter bij een
+  // toets voor dit vak, hoe strenger (zonder hints) er het beste geoefend
+  // wordt - zie bepaalLeerfaseAdvies in lib/oefen-advies.ts.
+  const vandaagIso = new Date().toISOString().slice(0, 10);
+  const { data: eerstvolgendeToets } = await supabase
+    .from("planning_items")
+    .select("due_date")
+    .eq("subject_id", id)
+    .eq("type", "toets")
+    .gte("due_date", vandaagIso)
+    .order("due_date", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  const dagenTotToets = eerstvolgendeToets
+    ? Math.round(
+        (new Date(eerstvolgendeToets.due_date + "T00:00:00").getTime() - new Date(vandaagIso + "T00:00:00").getTime()) /
+          86400000
+      )
+    : null;
+
   // Voor Oefenen: hoofdstuk -> onderwerpen (paragrafen), zodat een leerling
   // precies kan kiezen WAT geoefend wordt i.p.v. alleen "heel hoofdstuk" of
   // "alle lesstof" - zelfde structuur als de kennisbank-beheerpagina.
@@ -117,6 +137,7 @@ export default async function KindVakDetailPage({
         initialModus={initialModus}
         hoofdstukStructuur={hoofdstukStructuur}
         overhoorSessies={(overhoorSessies ?? []) as OverhoorSessie[]}
+        dagenTotToets={dagenTotToets}
       />
     </div>
   );

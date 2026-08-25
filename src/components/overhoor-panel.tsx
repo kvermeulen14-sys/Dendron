@@ -10,8 +10,9 @@ import { VisualWeergave } from "@/components/visuals/visual-weergave";
 import { slaOverhoorResultaatOp, type OverhoorTranscriptRegel } from "@/lib/actions/overhoor";
 import { eenRegel, normaliseerWiskundeNotatie } from "@/lib/tekst";
 import { extraheerVisuals, type VisualSpec } from "@/lib/visuals";
+import { bepaalLeerfaseAdvies } from "@/lib/oefen-advies";
+import type { Leerfase } from "@/lib/types";
 
-type Leerfase = "eerste" | "tussentijds" | "laatste";
 type Beoordeling = "goed" | "deels" | "fout" | "geen";
 type Stijl = "open" | "meerkeuze";
 type WizardStap = "hoofdstuk" | "stijl" | null;
@@ -61,16 +62,23 @@ export function OverhoorPanel({
   subjectName,
   hoofdstukStructuur = [],
   sessieActiefChange,
+  dagenTotToets = null,
 }: {
   subjectId: string;
   subjectName: string;
   hoofdstukStructuur?: HoofdstukStructuur[];
   /** Meldt aan de omgeving of er een sessie loopt, zodat elders (bv. lesstof toevoegen) verborgen kan worden. */
   sessieActiefChange?: (actief: boolean) => void;
+  /** Dagen tot de eerstvolgende toets voor dit vak - stuurt het automatische leerfase-advies hieronder. */
+  dagenTotToets?: number | null;
 }) {
+  const leerfaseAdvies = bepaalLeerfaseAdvies(dagenTotToets);
+
   const [gestart, setGestart] = useState(false);
   const [spellingStrict, setSpellingStrict] = useState(false);
-  const [leerfase, setLeerfase] = useState<Leerfase>("tussentijds");
+  // Vlak voor een toets start dit automatisch op "vlak voor de toets" (zonder
+  // hints) - de leerling kan dit hieronder altijd zelf nog aanpassen.
+  const [leerfase, setLeerfase] = useState<Leerfase>(() => leerfaseAdvies?.leerfase ?? "tussentijds");
 
   const [wizardStap, setWizardStap] = useState<WizardStap>(null);
   const [gekozenHoofdstuk, setGekozenHoofdstuk] = useState<string | null>(null);
@@ -312,18 +320,29 @@ export function OverhoorPanel({
 
         <div>
           <p className="mb-1.5 text-sm font-medium text-slate-700">In welke fase zit je?</p>
+          {leerfaseAdvies && (
+            <p className="mb-2 flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700">
+              <Icon name="alert-circle" size={14} className="shrink-0" />
+              {leerfaseAdvies.reden}
+            </p>
+          )}
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
             {LEERFASE_OPTIES.map((opt) => (
               <button
                 key={opt.value}
                 onClick={() => setLeerfase(opt.value)}
                 className={clsx(
-                  "rounded-xl border px-3 py-2.5 text-left text-xs transition-colors",
+                  "relative rounded-xl border px-3 py-2.5 text-left text-xs transition-colors",
                   leerfase === opt.value
                     ? "border-slate-900 bg-slate-900 text-white"
                     : "border-slate-200 text-slate-600 hover:bg-slate-50"
                 )}
               >
+                {leerfaseAdvies?.leerfase === opt.value && (
+                  <span className="absolute -top-2 right-2 rounded-full bg-rose-500 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">
+                    Aanbevolen
+                  </span>
+                )}
                 <p className="font-medium">{opt.label}</p>
                 <p className={clsx("mt-0.5", leerfase === opt.value ? "text-slate-300" : "text-slate-400")}>
                   {opt.uitleg}

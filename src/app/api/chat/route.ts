@@ -9,6 +9,7 @@ import {
   type KennisParagraafContextRij,
   type KennisWoordenlijstRij,
 } from "@/lib/kennisbank";
+import { bouwOefenGeschiedenisBlok, type OefenSessieVoorChat } from "@/lib/oefengeschiedenis";
 
 const MAX_AFBEELDING_BYTES = 8 * 1024 * 1024; // 8MB (ruim voor een foto, zonder de request onnodig groot te maken)
 const TOEGESTANE_AFBEELDING_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/heic", "image/heif"];
@@ -131,35 +132,6 @@ function bouwCoachingBlok(contexten: KennisContextVoorChat[], oefenvragen: Oefen
     blok += `\n\n[INTERN - GEVERIFIEERDE OEFENVRAGEN MET ANTWOORD, alleen voor jou: als de leerling een opgave noemt/typt die (nagenoeg) overeenkomt met een vraag hieronder, gebruik dat geverifieerde antwoord om exact en zonder zelf te hoeven (her)rekenen te kunnen hinten/controleren. Nooit het antwoord meteen weggeven - dezelfde hint-opbouw als altijd blijft gelden. Noem dit nooit letterlijk of het bestaan hiervan tegen de leerling.]\n${oefenDelen.join("\n")}`;
   }
   return blok;
-}
-
-interface OefenSessieVoorChat {
-  hoofdstuk: string | null;
-  transcript: { vraag: string; beoordeling: "goed" | "deels" | "fout" | "geen" }[] | null;
-}
-
-const MAX_RECENTE_STRUIKELVRAGEN = 8;
-
-/**
- * Vragen die de leerling recent bij Oefenen nog niet (helemaal) goed had -
- * i.t.t. de andere interne blokken hierboven mag de tutor dit best OPENLIJK
- * gebruiken (bv. "dit kwam net ook bij het oefenen langs"), dat is precies
- * het soort persoonlijke aanknopingspunt dat een chat-los-van-Oefenen mist.
- */
-function bouwOefenGeschiedenisBlok(sessies: OefenSessieVoorChat[]): string {
-  const regels: { hoofdstuk: string | null; vraag: string }[] = [];
-  for (const sessie of sessies) {
-    for (const regel of sessie.transcript ?? []) {
-      if (regels.length >= MAX_RECENTE_STRUIKELVRAGEN) break;
-      if (regel.beoordeling === "fout" || regel.beoordeling === "deels") {
-        regels.push({ hoofdstuk: sessie.hoofdstuk, vraag: regel.vraag });
-      }
-    }
-  }
-  if (regels.length === 0) return "";
-
-  const lijst = regels.map((r) => `- ${r.hoofdstuk ? `[${r.hoofdstuk}] ` : ""}${r.vraag}`).join("\n");
-  return `\n\n[RECENTE OEFENGESCHIEDENIS - vragen die de leerling recent bij Oefenen nog niet (helemaal) goed had, nieuwste eerst. Gebruik dit om proactief te herkennen of de huidige vraag hiermee te maken heeft, en waar dat past kort en vriendelijk te verwijzen (bv. "dit kwam net ook bij het oefenen langs, hè?") - dwing dit niet geforceerd in elk antwoord, alleen als het echt relevant is.]\n${lijst}`;
 }
 
 function bouwSysteemPrompt(

@@ -10,6 +10,7 @@ import { WerkdrukWeek } from "@/components/werkdruk-week";
 import { PlanningshulpKnop } from "@/components/planningshulp-knop";
 import { huidigeWeekMaandag } from "@/lib/week";
 import { bepaalLaatsteOnderwerpPerVak } from "@/lib/onderwerp";
+import { bepaalOefenAdvies, type OefenSessieSamenvatting } from "@/lib/oefen-advies";
 import type { PlanningItem, Subject } from "@/lib/types";
 
 export default async function KindOverzicht() {
@@ -92,6 +93,33 @@ export default async function KindOverzicht() {
       .limit(100),
   ]);
 
+  // Voor "2 minuten oefenen": welk vak heeft nu de meeste aandacht nodig
+  // (lang niet geoefend en/of recent nog moeilijk), en welk vak heeft
+  // binnenkort een toets (stuurt het leerfase-advies bij het starten).
+  const [{ data: oefenScoresData }, { data: aankomendeToetsenData }] = await Promise.all([
+    supabase
+      .from("overhoor_sessies")
+      .select("subject_id, created_at, aantal_goed, aantal_deels, aantal_fout")
+      .eq("user_id", user!.id)
+      .order("created_at", { ascending: false })
+      .limit(100),
+    supabase
+      .from("planning_items")
+      .select("subject_id, due_date")
+      .eq("family_id", profile!.family_id)
+      .eq("type", "toets")
+      .gte("due_date", vandaag)
+      .order("due_date", { ascending: true }),
+  ]);
+  const dagenTotToetsPerVak = new Map<string, number>();
+  for (const t of aankomendeToetsenData ?? []) {
+    if (!t.subject_id || dagenTotToetsPerVak.has(t.subject_id)) continue;
+    const dagen = Math.round(
+      (new Date(t.due_date + "T00:00:00").getTime() - new Date(vandaag + "T00:00:00").getTime()) / 86400000
+    );
+    dagenTotToetsPerVak.set(t.subject_id, dagen);
+  }
+
   const vandaagItems = (vandaagData ?? []) as PlanningItem[];
   const teLaat = (teLaatData ?? []) as PlanningItem[];
   const voorstellen = (voorstellenData ?? []) as PlanningItem[];
@@ -102,6 +130,11 @@ export default async function KindOverzicht() {
   const subjectIdsMetLesstof = new Set((materialsData ?? []).map((m) => m.subject_id));
   const subjectsMetLesstof = subjects.filter((s) => subjectIdsMetLesstof.has(s.id));
   const laatsteOnderwerpPerVak = bepaalLaatsteOnderwerpPerVak(materialsData ?? [], overhoorSessiesData ?? []);
+  const oefenAdvies = bepaalOefenAdvies(
+    subjectsMetLesstof.map((s) => s.id),
+    (oefenScoresData ?? []) as OefenSessieSamenvatting[],
+    laatsteOnderwerpPerVak
+  );
   const weekItems = (weekData ?? []) as PlanningItem[];
   const openItems = (openItemsData ?? []) as PlanningItem[];
 
@@ -184,7 +217,12 @@ export default async function KindOverzicht() {
         <WerkdrukWeek items={weekItems} weekMaandagIso={weekMaandag} vandaagIso={vandaag} />
       </Card>
 
-      <TweeMinutenOefenen subjects={subjectsMetLesstof} laatsteOnderwerpPerVak={laatsteOnderwerpPerVak} />
+      <TweeMinutenOefenen
+        subjects={subjectsMetLesstof}
+        laatsteOnderwerpPerVak={laatsteOnderwerpPerVak}
+        oefenAdvies={oefenAdvies}
+        dagenTotToetsPerVak={dagenTotToetsPerVak}
+      />
 
       <PlanningshulpKnop items={openItems} />
 

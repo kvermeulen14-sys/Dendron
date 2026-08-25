@@ -23,6 +23,7 @@ export function VakWerkruimte({
   initialModus = "chat",
   hoofdstukStructuur = [],
   overhoorSessies = [],
+  dagenTotToets = null,
 }: {
   subjectId: string;
   subjectName: string;
@@ -31,6 +32,8 @@ export function VakWerkruimte({
   initialModus?: (typeof TABS)[number]["modus"];
   hoofdstukStructuur?: { hoofdstuk: string; onderwerpen: { paragraafId: string; titel: string }[] }[];
   overhoorSessies?: OverhoorSessie[];
+  /** Dagen tot de eerstvolgende toets voor dit vak (null = geen toets gepland) - stuurt het automatische leerfase-advies bij Oefenen. */
+  dagenTotToets?: number | null;
 }) {
   const [modus, setModus] = useState<(typeof TABS)[number]["modus"]>(initialModus);
   const [oefenSessieActief, setOefenSessieActief] = useState(false);
@@ -68,6 +71,7 @@ export function VakWerkruimte({
             subjectName={subjectName}
             hoofdstukStructuur={hoofdstukStructuur}
             sessieActiefChange={setOefenSessieActief}
+            dagenTotToets={dagenTotToets}
           />
           {!oefenSessieActief && overhoorSessies.length > 0 && (
             <Card>
