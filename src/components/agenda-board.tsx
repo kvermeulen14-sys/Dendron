@@ -2630,9 +2630,11 @@ export function AgendaBoard({
                       // Pauze-streepje: alleen tonen als er echt een gat zit
                       // tussen het einde van het vorige blok en het begin van
                       // dit blok - zo blijft in 1 oogopslag zichtbaar of
-                      // lessen op elkaar aansluiten of niet.
+                      // lessen op elkaar aansluiten of niet. Een kort
+                      // wisselmoment (bv. 5 min tussen lesuren) is geen
+                      // pauze - pas een gat van meer dan 5 minuten telt.
                       const vorige = i > 0 ? roosterBlokkenMetDeadline[i - 1]!.b : null;
-                      const heeftPauzeErvoor = vorige ? b.startMinuten > vorige.startMinuten + vorige.duurMinuten : false;
+                      const heeftPauzeErvoor = vorige ? b.startMinuten - (vorige.startMinuten + vorige.duurMinuten) > 5 : false;
                       return (
                         <div key={i} className="contents">
                           {heeftPauzeErvoor && (
@@ -2781,14 +2783,9 @@ export function AgendaBoard({
                               {item.start_time && <span className="text-slate-400">{tijdKort(item.start_time)} </span>}
                               {item.title}
                             </p>
-                            {subjectCode(item.subject_id) && (
-                              <span className="shrink-0 rounded bg-slate-100 px-1 py-0.5 text-[10px] font-bold text-slate-500">
-                                {subjectCode(item.subject_id)}
-                              </span>
-                            )}
                           </div>
                           <p className="truncate text-sm text-slate-500">
-                            {[meta.label, !subjectCode(item.subject_id) ? subjectNaam(item.subject_id) : null]
+                            {[meta.label, subjectNaam(item.subject_id)]
                               .filter(Boolean)
                               .join(" - ")}
                             {item.estimated_minutes && ` - ~${formatMinuten(item.estimated_minutes)}`}
