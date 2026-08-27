@@ -18,7 +18,6 @@ import { PlanningshulpKnop } from "@/components/planningshulp-knop";
 import { RoosterVakDeadlineModal } from "@/components/rooster-vak-deadline-modal";
 import { NuEnStraks } from "@/components/nu-en-straks";
 import { CapaciteitRing } from "@/components/capaciteit-ring";
-import { vakKleur } from "@/lib/vak-kleur";
 import { vakAfkorting } from "@/lib/vak-afkorting";
 import { kiesKlaarLabel, kiesVierTekst } from "@/lib/motiverend";
 import { useKlaarBevestiging } from "@/lib/use-klaar-bevestiging";
@@ -446,8 +445,6 @@ export function AgendaBoard({
   // Waar het kaartje zou landen als je nu loslaat - als kwartier-lijn zichtbaar.
   const [dropMinuut, setDropMinuut] = useState<number | null>(null);
   const [resizeDuur, setResizeDuur] = useState<{ id: string; duur: number } | null>(null);
-  const [lijstSleep, setLijstSleep] = useState<{ id: string; x: number; y: number } | null>(null);
-  const [lijstDoelIso, setLijstDoelIso] = useState<string | null>(null);
   const resizeRef = useRef<{ id: string; startY: number; startDuur: number; huidig: number } | null>(null);
   const weekendVoorkeur = useSyncExternalStore(
     abonneerWeekendVoorkeur,
@@ -908,36 +905,6 @@ export function AgendaBoard({
       }
       router.refresh();
     });
-  }
-
-  // Slepen in de lijstweergave (mobiel). HTML5-drag doet op touch niets, dus
-  // dit loopt via pointer events, met een eigen greepje: dat is duidelijker dan
-  // ingedrukt houden en het houdt gewoon scrollen intact.
-  function startLijstSlepen(e: ReactPointerEvent<HTMLElement>, item: PlanningItem) {
-    e.preventDefault();
-    e.stopPropagation();
-    e.currentTarget.setPointerCapture(e.pointerId);
-    setLijstSleep({ id: item.id, x: e.clientX, y: e.clientY });
-    setLijstDoelIso(null);
-  }
-
-  function lijstSlepen(e: ReactPointerEvent<HTMLElement>) {
-    if (!lijstSleep) return;
-    setLijstSleep({ ...lijstSleep, x: e.clientX, y: e.clientY });
-    const onder = document.elementFromPoint(e.clientX, e.clientY);
-    const dag = onder?.closest<HTMLElement>("[data-dag-iso]");
-    setLijstDoelIso(dag?.dataset.dagIso ?? null);
-  }
-
-  function eindigLijstSlepen(e: ReactPointerEvent<HTMLElement>) {
-    if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
-    const sleep = lijstSleep;
-    const doel = lijstDoelIso;
-    setLijstSleep(null);
-    setLijstDoelIso(null);
-    if (!sleep || !doel) return;
-    const item = items.find((i) => i.id === sleep.id);
-    if (item) verplaats(item, doel);
   }
 
   function startDuurSlepen(e: ReactPointerEvent<HTMLElement>, item: PlanningItem) {
@@ -2200,6 +2167,7 @@ export function AgendaBoard({
             // ingepland werkmoment.
             const dagItems = itemsPerWerkDag.get(iso) ?? [];
             const dagDeadlineItems = itemsPerDag.get(iso) ?? [];
+            const dagNotities = roosterNotities.filter((n) => n.datum === iso && n.status === "open");
             const tijdItems = dagItems.filter((it) => it.status !== "voorstel" && it.start_time);
             const roosterBlokken = roosterPerDag.get(iso) ?? [];
             const jaarEvent = eventsOpDatum(jaarEvents, dag)[0] ?? null;
@@ -2279,10 +2247,27 @@ export function AgendaBoard({
                   // items zonder die koppeling (bv. via Planningshulp
                   // aangemaakt) vallen terug op "eerste lesuur claimt 'm".
                   const geclaimdeVakIdsGrid = new Set<string>();
+                  const geclaimdeNotitieVakIdsGrid = new Set<string>();
                   return roosterBlokken.map((b, bi) => {
                   const klikbaar = !b.isFietsen && Boolean(b.subjectId);
                   const blokTijd = b.tijd.split("-")[0];
                   let deadlines: PlanningItem[] = [];
+                  let heeftNotitie = false;
+                  if (klikbaar) {
+                    const exactNotitie = dagNotities.some(
+                      (n) => n.subject_id === b.subjectId && n.rooster_item_id === b.roosterItemId
+                    );
+                    if (exactNotitie) {
+                      heeftNotitie = true;
+                    } else {
+                      const algeclaimdNotitie = b.subjectId ? geclaimdeNotitieVakIdsGrid.has(b.subjectId) : false;
+                      const zonderLesuurNotitie = dagNotities.some(
+                        (n) => n.subject_id === b.subjectId && !n.rooster_item_id
+                      );
+                      heeftNotitie = !algeclaimdNotitie && zonderLesuurNotitie;
+                      if (heeftNotitie && b.subjectId) geclaimdeNotitieVakIdsGrid.add(b.subjectId);
+                    }
+                  }
                   if (klikbaar) {
                     const vakItems = dagDeadlineItems.filter(
                       (it) => it.subject_id === b.subjectId && (it.type === "huiswerk" || it.type === "toets")
@@ -2350,7 +2335,10 @@ export function AgendaBoard({
                         heeftDeadline &&
                           (heeftToets
                             ? "border-l-toets-400 bg-toets-50 text-toets-800 ring-1 ring-inset ring-toets-200"
-                            : "border-l-huiswerk-400 bg-huiswerk-50 text-huiswerk-800 ring-1 ring-inset ring-huiswerk-200"),
+                            : "border-l-huiswerk-400 bg-huiswerk-100 text-huiswerk-800 ring-1 ring-inset ring-huiswerk-200"),
+                        !heeftDeadline &&
+                          heeftNotitie &&
+                          "border-l-rose-300 bg-rose-100 text-rose-800 ring-1 ring-inset ring-rose-200",
                         heeftAandacht && "border-l-rose-500 ring-1 ring-inset ring-rose-300",
                         klikbaar && "cursor-pointer hover:ring-1 hover:ring-inset hover:ring-accent-300"
                       )}
@@ -2362,6 +2350,7 @@ export function AgendaBoard({
                           {overgenomenInBlok.length > 0 && (
                             <Icon name="arrow-right-circle" size={9} className="mr-0.5 mb-px inline text-amber-600" />
                           )}
+                          {heeftNotitie && <Icon name="check" size={9} className="mr-0.5 mb-px inline text-rose-600" />}
                           <span className="line-clamp-2">
                             {!b.isFietsen && `${b.tijd.split("-")[0]} `}
                             {b.titel}
@@ -2371,14 +2360,11 @@ export function AgendaBoard({
                         {heeftDeadline && (
                           <span
                             className={clsx(
-                              "flex shrink-0 flex-col items-center gap-0.5 rounded px-1 py-0.5",
+                              "flex h-4 w-4 shrink-0 items-center justify-center rounded",
                               heeftToets ? "bg-toets-500" : "bg-huiswerk-500"
                             )}
                           >
-                            <Icon name={heeftToets ? "target" : "pencil-line"} size={9} className="text-white" />
-                            {subjectCode(b.subjectId) && (
-                              <span className="text-[8px] font-black leading-none text-white">{subjectCode(b.subjectId)}</span>
-                            )}
+                            <Icon name={heeftToets ? "target" : "pencil-line"} size={10} className="text-white" />
                           </span>
                         )}
                       </div>
@@ -2539,6 +2525,7 @@ export function AgendaBoard({
           // (de losse takenlijst verderop) gebruikt bewust dagItems, op
           // werkdatum.
           const dagDeadlineItems = itemsPerDag.get(iso) ?? [];
+          const dagNotities = roosterNotities.filter((n) => n.datum === iso && n.status === "open");
           const dagItems = [...(itemsPerWerkDag.get(iso) ?? [])].sort((a, b) => {
             if (a.start_time && b.start_time) return a.start_time.localeCompare(b.start_time);
             if (a.start_time) return -1;
@@ -2565,10 +2552,12 @@ export function AgendaBoard({
           // deadline getoond worden, verdwijnen verderop uit de losse
           // takenlijst (dat zou dubbelop zijn).
           const geclaimdeVakIds = new Set<string>();
+          const geclaimdeNotitieVakIds = new Set<string>();
           const roosterBlokkenMetDeadline = roosterBlokken.map((b) => {
             const klikbaar = !b.isFietsen && Boolean(b.subjectId);
             const blokTijd = b.tijd.split("-")[0];
             let deadlines: PlanningItem[] = [];
+            let heeftNotitie = false;
             if (klikbaar) {
               const vakItems = dagDeadlineItems.filter(
                 (it) => it.subject_id === b.subjectId && (it.type === "huiswerk" || it.type === "toets")
@@ -2591,8 +2580,17 @@ export function AgendaBoard({
                   deadlines = [...deadlines, item];
                 }
               }
+              const exactNotitie = dagNotities.some((n) => n.subject_id === b.subjectId && n.rooster_item_id === b.roosterItemId);
+              if (exactNotitie) {
+                heeftNotitie = true;
+              } else {
+                const algeclaimdNotitie = b.subjectId ? geclaimdeNotitieVakIds.has(b.subjectId) : false;
+                const zonderLesuurNotitie = dagNotities.some((n) => n.subject_id === b.subjectId && !n.rooster_item_id);
+                heeftNotitie = !algeclaimdNotitie && zonderLesuurNotitie;
+                if (heeftNotitie && b.subjectId) geclaimdeNotitieVakIds.add(b.subjectId);
+              }
             }
-            return { b, klikbaar, deadlines, blokTijd };
+            return { b, klikbaar, deadlines, blokTijd, heeftNotitie };
           });
           const voorRoosterGetoondeIds = new Set(
             roosterBlokkenMetDeadline.flatMap(({ deadlines }) => deadlines.map((d) => d.id))
@@ -2602,11 +2600,7 @@ export function AgendaBoard({
             <div
               key={iso}
               data-dag-iso={iso}
-              className={clsx(
-                "scroll-mt-4 rounded-3xl p-2 transition-colors",
-                eventMeta?.dayTintClass,
-                lijstDoelIso === iso && "bg-accent-50 ring-2 ring-accent-400"
-              )}
+              className={clsx("scroll-mt-4 rounded-3xl p-2 transition-colors", eventMeta?.dayTintClass)}
             >
               <div className="mb-2.5 flex flex-wrap items-center gap-x-2.5 gap-y-1">
                 <p className="font-heading text-lg font-bold capitalize text-slate-900">{formatDatumLabel(iso)}</p>
@@ -2626,89 +2620,108 @@ export function AgendaBoard({
                 if (roosterBlokkenMetDeadline.length === 0) return null;
                 return (
                   <div className="mb-3 flex flex-col gap-1 rounded-3xl bg-white/70 p-2 ring-1 ring-slate-900/5">
-                    {roosterBlokkenMetDeadline.map(({ b, klikbaar, deadlines, blokTijd }, i) => {
+                    {roosterBlokkenMetDeadline.map(({ b, klikbaar, deadlines, blokTijd, heeftNotitie }, i) => {
                       const heeftToets = deadlines.some((d) => d.type === "toets");
                       const heeftDeadline = deadlines.length > 0;
                       const alleKlaar = heeftDeadline && deadlines.every((d) => d.status === "klaar");
                       const heeftAandacht = deadlines.some((d) => aandachtItemIds.has(d.id));
                       const overgenomenInBlok = deadlines.filter((d) => overgenomenPerItem.has(d.id));
                       const vakSubject = b.subjectId ? subjects.find((s) => s.id === b.subjectId) : null;
-                      const kleur = vakKleur(b.subjectId);
+                      // Pauze-streepje: alleen tonen als er echt een gat zit
+                      // tussen het einde van het vorige blok en het begin van
+                      // dit blok - zo blijft in 1 oogopslag zichtbaar of
+                      // lessen op elkaar aansluiten of niet.
+                      const vorige = i > 0 ? roosterBlokkenMetDeadline[i - 1]!.b : null;
+                      const heeftPauzeErvoor = vorige ? b.startMinuten > vorige.startMinuten + vorige.duurMinuten : false;
                       return (
-                        <div
-                          key={i}
-                          onClick={
-                            klikbaar
-                              ? () =>
-                              setDeadlineVak({
-                                subjectId: b.subjectId!,
-                                titel: b.titel,
-                                datum: iso,
-                                lesuurTijd: blokTijd,
-                                lesuurId: b.roosterItemId,
-                              })
-                              : undefined
-                          }
-                          className={clsx(
-                            "flex items-center gap-2.5 rounded-2xl px-1.5 py-1.5 text-sm transition-colors",
-                            klikbaar && "cursor-pointer hover:bg-violet-50/70",
-                            heeftDeadline &&
-                              (alleKlaar
-                                ? "bg-emerald-50 ring-1 ring-inset ring-emerald-200"
-                                : heeftToets
-                                  ? "bg-toets-50 ring-1 ring-inset ring-toets-200"
-                                  : "bg-huiswerk-50 ring-1 ring-inset ring-huiswerk-200"),
-                            heeftAandacht && "ring-2 ring-inset ring-rose-400"
+                        <div key={i} className="contents">
+                          {heeftPauzeErvoor && (
+                            <div className="flex items-center gap-2 px-1.5 py-0.5 text-[10px] font-medium text-slate-300">
+                              <span className="h-px flex-1 bg-slate-200" />
+                              pauze
+                              <span className="h-px flex-1 bg-slate-200" />
+                            </div>
                           )}
-                        >
-                          <span
+                          <div
+                            onClick={
+                              klikbaar
+                                ? () =>
+                                setDeadlineVak({
+                                  subjectId: b.subjectId!,
+                                  titel: b.titel,
+                                  datum: iso,
+                                  lesuurTijd: blokTijd,
+                                  lesuurId: b.roosterItemId,
+                                })
+                                : undefined
+                            }
                             className={clsx(
-                              "relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl",
-                              b.isFietsen
-                                ? "bg-slate-100 text-slate-400"
-                                : !heeftDeadline
-                                  ? [kleur.bg, kleur.text]
-                                  : alleKlaar
-                                    ? "bg-emerald-500 text-white"
-                                    : heeftToets
-                                      ? "bg-toets-500 text-white"
-                                      : "bg-huiswerk-500 text-white"
+                              "flex items-center gap-2.5 rounded-2xl px-1.5 py-1.5 text-sm transition-colors",
+                              klikbaar && "cursor-pointer hover:bg-violet-50/70",
+                              heeftDeadline &&
+                                (alleKlaar
+                                  ? "bg-emerald-50 ring-1 ring-inset ring-emerald-200"
+                                  : heeftToets
+                                    ? "bg-toets-50 ring-1 ring-inset ring-toets-200"
+                                    : "bg-huiswerk-50 ring-1 ring-inset ring-huiswerk-200"),
+                              !heeftDeadline && heeftNotitie && "bg-rose-50 ring-1 ring-inset ring-rose-200",
+                              heeftAandacht && "ring-2 ring-inset ring-rose-400"
                             )}
                           >
-                            {heeftAandacht && (
-                              <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-rose-600 text-white ring-2 ring-white">
-                                <Icon name="alert-triangle" size={10} />
-                              </span>
-                            )}
-                            {heeftDeadline && !alleKlaar ? (
-                              <Icon name={heeftToets ? "target" : "pencil-line"} size={16} />
-                            ) : (
-                              <Icon
-                                name={
-                                  b.isFietsen
-                                    ? "bike"
-                                    : !heeftDeadline
-                                      ? (vakSubject?.icon ?? "school")
-                                      : "check"
-                                }
-                                size={17}
-                              />
-                            )}
-                          </span>
-                          <span className="min-w-0 flex-1 truncate">
-                            <span className="font-semibold tabular-nums text-slate-400">{b.tijd}</span>{" "}
-                            <span className={b.isFietsen ? "text-slate-400" : "font-medium text-slate-800"}>{b.titel}</span>
+                            <span
+                              className={clsx(
+                                "relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl",
+                                b.isFietsen
+                                  ? "bg-slate-100 text-slate-400"
+                                  : !heeftDeadline
+                                    ? "bg-slate-100 text-slate-500"
+                                    : alleKlaar
+                                      ? "bg-emerald-500 text-white"
+                                      : heeftToets
+                                        ? "bg-toets-500 text-white"
+                                        : "bg-huiswerk-500 text-white"
+                              )}
+                            >
+                              {heeftAandacht && (
+                                <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-rose-600 text-white ring-2 ring-white">
+                                  <Icon name="alert-triangle" size={10} />
+                                </span>
+                              )}
+                              {!heeftAandacht && heeftNotitie && (
+                                <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-rose-500 text-white ring-2 ring-white">
+                                  <Icon name="check" size={9} />
+                                </span>
+                              )}
+                              {heeftDeadline && !alleKlaar ? (
+                                <Icon name={heeftToets ? "target" : "pencil-line"} size={16} />
+                              ) : (
+                                <Icon
+                                  name={
+                                    b.isFietsen
+                                      ? "bike"
+                                      : !heeftDeadline
+                                        ? (vakSubject?.icon ?? "school")
+                                        : "check"
+                                  }
+                                  size={17}
+                                />
+                              )}
+                            </span>
+                            <span className="min-w-0 flex-1 truncate">
+                              <span className="font-semibold tabular-nums text-slate-400">{b.tijd}</span>{" "}
+                              <span className={b.isFietsen ? "text-slate-400" : "font-medium text-slate-800"}>{b.titel}</span>
+                              {overgenomenInBlok.length > 0 && (
+                                <span className="ml-1.5 whitespace-nowrap text-[11px] font-medium text-amber-700">
+                                  overgenomen (les verviel)
+                                </span>
+                              )}
+                            </span>
                             {overgenomenInBlok.length > 0 && (
-                              <span className="ml-1.5 whitespace-nowrap text-[11px] font-medium text-amber-700">
-                                overgenomen (les verviel)
-                              </span>
+                              <Icon name="arrow-right-circle" size={13} className="shrink-0 text-amber-600" />
                             )}
-                          </span>
-                          {overgenomenInBlok.length > 0 && (
-                            <Icon name="arrow-right-circle" size={13} className="shrink-0 text-amber-600" />
-                          )}
-                          {b.bron === "gewijzigd" && <Icon name="pencil-line" size={13} className="shrink-0 text-amber-500" />}
-                          {!heeftDeadline && klikbaar && <Icon name="plus" size={15} className="shrink-0 text-violet-400" />}
+                            {b.bron === "gewijzigd" && <Icon name="pencil-line" size={13} className="shrink-0 text-amber-500" />}
+                            {!heeftDeadline && klikbaar && <Icon name="plus" size={15} className="shrink-0 text-violet-400" />}
+                          </div>
                         </div>
                       );
                     })}
@@ -2739,28 +2752,14 @@ export function AgendaBoard({
                             : isVoorstel && "border-dashed"
                         )}
                       >
-                        {!isVoorstel && (
-                          <span
-                            onPointerDown={(e) => startLijstSlepen(e, item)}
-                            onPointerMove={lijstSlepen}
-                            onPointerUp={eindigLijstSlepen}
-                            onPointerCancel={eindigLijstSlepen}
-                            onClick={(e) => e.stopPropagation()}
-                            title="Sleep naar een andere dag"
-                            aria-label="Sleep naar een andere dag"
-                            className={clsx(
-                              "-ml-1 flex shrink-0 cursor-grab touch-none items-center self-stretch px-1 text-slate-300 hover:text-slate-500 active:cursor-grabbing",
-                              lijstSleep?.id === item.id && "text-accent-500"
-                            )}
-                          >
-                            <Icon name="grip" size={18} />
-                          </span>
-                        )}
-
                         <span
                           className={clsx(
                             "relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full border",
-                            isKlaar ? "border-emerald-200 bg-emerald-100 text-emerald-600" : meta.badgeClass
+                            isKlaar
+                              ? "border-emerald-200 bg-emerald-100 text-emerald-600"
+                              : item.type === "prive"
+                                ? "border-transparent bg-prive-500 text-white"
+                                : meta.badgeClass
                           )}
                         >
                           {!isKlaar && aandachtItemIds.has(item.id) && (
@@ -2768,7 +2767,7 @@ export function AgendaBoard({
                               <Icon name="alert-triangle" size={10} />
                             </span>
                           )}
-                          <Icon name={isKlaar ? "check" : meta.icon} size={18} />
+                          <Icon name={isKlaar && item.type !== "prive" ? "check" : meta.icon} size={18} />
                         </span>
 
                         <div className="min-w-0 flex-1">
@@ -2879,22 +2878,6 @@ export function AgendaBoard({
         <span className="text-slate-300">|</span>
         <span>Tik op een taak voor details</span>
       </div>
-
-      {/* Wat je vasthoudt tijdens het slepen in de lijstweergave. */}
-      {lijstSleep &&
-        (() => {
-          const item = items.find((i) => i.id === lijstSleep.id);
-          if (!item) return null;
-          return (
-            <div
-              className="pointer-events-none fixed z-50 flex max-w-[60vw] items-center gap-1.5 rounded-xl border border-accent-300 bg-white px-2.5 py-1.5 shadow-lg"
-              style={{ left: lijstSleep.x + 12, top: lijstSleep.y - 16 }}
-            >
-              <span className={clsx("h-4 w-1 shrink-0 rounded-full", KAART_STIJL[item.type].rail)} />
-              <span className="truncate text-xs font-semibold text-slate-700">{item.title}</span>
-            </div>
-          );
-        })()}
 
       {deadlineVak && (
         <RoosterVakDeadlineModal

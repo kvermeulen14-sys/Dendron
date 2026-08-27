@@ -104,6 +104,8 @@ export interface RoosterUitzondering {
   eind_tijd: string | null;
   created_by: string;
   created_at: string;
+  /** Alleen aanwezig als de query 'm meestuurt (join op created_by) - rol van wie de uitzondering maakte. */
+  profiles?: { role: Role } | null;
 }
 
 export interface RoosterNotitie {

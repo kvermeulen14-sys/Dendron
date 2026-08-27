@@ -224,6 +224,11 @@ export function UitzonderingenBeheer({
                   <p className="text-sm font-medium text-slate-800">
                     {DAGNAMEN[isoWeekdag(datumObj)]} {datumObj.toLocaleDateString("nl-NL", { day: "numeric", month: "short" })} -{" "}
                     {u.type === "vervallen" ? (u.origineel_item_id ? "vervalt" : "hele dag vervalt") : u.titel}
+                    {u.profiles?.role === "kind" && (
+                      <span className="ml-2 rounded-full bg-prive-100 px-2 py-0.5 text-[11px] font-medium text-prive-700">
+                        Gemeld door leerling
+                      </span>
+                    )}
                   </p>
                   {u.type !== "vervallen" && u.start_tijd && (
                     <p className="text-xs text-slate-500">

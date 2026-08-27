@@ -33,7 +33,7 @@ export default async function RoosterPage() {
     supabase.from("rooster_items").select("*").eq("family_id", profile!.family_id),
     supabase
       .from("rooster_uitzonderingen")
-      .select("*")
+      .select("*, profiles:created_by(role)")
       .eq("family_id", profile!.family_id)
       .order("datum", { ascending: true }),
     supabase.from("subjects").select("*").eq("family_id", profile!.family_id),

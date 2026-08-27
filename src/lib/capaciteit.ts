@@ -161,7 +161,11 @@ export function berekenDagCapaciteit({
   // plafond waarop de meter zich baseert, ook als er op papier meer tijd is.
   const beschikbaarMinuten = Math.min(MAX_PLAN_MINUTEN, Math.max(0, ruwBeschikbaar - priveMinuten));
 
-  const werk = gepland.filter((i) => i.type !== "prive");
+  // Een toets zelf is geen werk om in te plannen (die vindt plaats tijdens
+  // een lesuur dat al via het rooster van de beschikbare tijd afgaat) - alleen
+  // wat je ervoor moet leren of maken (leermoment/huiswerk) telt hier mee,
+  // anders telt dezelfde tijd dubbel.
+  const werk = gepland.filter((i) => i.type !== "prive" && i.type !== "toets");
   const geplandMinuten = werk.reduce((som, i) => som + (i.estimated_minutes ?? 0), 0);
   // Een afgevinkte taak heeft niks meer om in te vullen - dat blijft dus
   // scoped op wat nog open staat, anders zou hij een niet-meer-relevante
