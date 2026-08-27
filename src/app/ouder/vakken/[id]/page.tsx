@@ -142,8 +142,9 @@ export default async function VakDetailPage({
         {(!materials || materials.length === 0) && (
           <Card>
             <p className="text-sm text-slate-500">
-              Nog geen lesstof toegevoegd. Zonder lesstof kan de AI-vakdocent nog niet
-              vakspecifiek helpen.
+              {heeftKennisbank
+                ? "Geen losse lesstof-bestanden - dit vak gebruikt alleen de kennisonderdelen hierboven, en dat is prima: de AI-vakdocent en Oefenen gebruiken die als 1 bron van waarheid."
+                : "Nog geen lesstof toegevoegd. Zonder lesstof kan de AI-vakdocent nog niet vakspecifiek helpen."}
             </p>
           </Card>
         )}

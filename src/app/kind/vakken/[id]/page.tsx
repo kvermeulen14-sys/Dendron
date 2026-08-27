@@ -85,20 +85,56 @@ export default async function KindVakDetailPage({
 
   // Voor Oefenen: hoofdstuk -> onderwerpen (paragrafen), zodat een leerling
   // precies kan kiezen WAT geoefend wordt i.p.v. alleen "heel hoofdstuk" of
-  // "alle lesstof" - zelfde structuur als de kennisbank-beheerpagina.
-  const { data: kennisContexten } = await supabase
-    .from("kennis_paragraaf_context")
-    .select("paragraaf_id, hoofdstuk, titel")
-    .eq("subject_id", id)
-    .eq("status", "gepubliceerd");
+  // "alle lesstof" - zelfde structuur als de kennisbank-beheerpagina. Een
+  // paragraaf krijgt alleen een kennis_paragraaf_context-rij als er
+  // grammatica/leerdoelen/video's zijn (zie verwerkKennisBrontekst) - een
+  // paragraaf die ALLEEN een woordenlijst is (heel gewoon bij taalvakken)
+  // heeft dus geen context-rij, maar moet wel gewoon kiesbaar zijn. Daarom
+  // hier ook kennis_onderdelen en kennis_woordenlijsten meenemen i.p.v.
+  // alleen kennis_paragraaf_context.
+  const [{ data: kennisContexten }, { data: kennisOnderdelenPar }, { data: kennisWoordenlijstenPar }] = await Promise.all([
+    supabase
+      .from("kennis_paragraaf_context")
+      .select("paragraaf_id, hoofdstuk, titel")
+      .eq("subject_id", id)
+      .eq("status", "gepubliceerd"),
+    supabase
+      .from("kennis_onderdelen")
+      .select("paragraaf_id, hoofdstuk")
+      .eq("subject_id", id)
+      .eq("status", "gepubliceerd")
+      .not("paragraaf_id", "is", null),
+    supabase
+      .from("kennis_woordenlijsten")
+      .select("paragraaf_id, hoofdstuk, titel")
+      .eq("subject_id", id)
+      .eq("status", "gepubliceerd"),
+  ]);
 
   let hoofdstukStructuur: { hoofdstuk: string; onderwerpen: { paragraafId: string; titel: string }[] }[] = [];
-  if (kennisContexten && kennisContexten.length > 0) {
+  const heeftKennisbankData =
+    (kennisContexten?.length ?? 0) > 0 || (kennisOnderdelenPar?.length ?? 0) > 0 || (kennisWoordenlijstenPar?.length ?? 0) > 0;
+  if (heeftKennisbankData) {
+    // paragraaf_id -> beste titel: context-titel wint (rijkst), anders de
+    // eerste woordenlijst-titel, anders gewoon het paragraafnummer.
+    const perParagraaf = new Map<string, { hoofdstuk: string; titel: string | null }>();
+    for (const c of kennisContexten ?? []) {
+      perParagraaf.set(c.paragraaf_id, { hoofdstuk: c.hoofdstuk, titel: c.titel });
+    }
+    for (const w of kennisWoordenlijstenPar ?? []) {
+      if (!w.paragraaf_id || perParagraaf.has(w.paragraaf_id)) continue;
+      perParagraaf.set(w.paragraaf_id, { hoofdstuk: w.hoofdstuk, titel: w.titel });
+    }
+    for (const o of kennisOnderdelenPar ?? []) {
+      if (!o.paragraaf_id || perParagraaf.has(o.paragraaf_id)) continue;
+      perParagraaf.set(o.paragraaf_id, { hoofdstuk: o.hoofdstuk, titel: null });
+    }
+
     const perHoofdstuk = new Map<string, { paragraafId: string; titel: string }[]>();
-    for (const c of kennisContexten) {
-      const lijst = perHoofdstuk.get(c.hoofdstuk) ?? [];
-      lijst.push({ paragraafId: c.paragraaf_id, titel: c.titel });
-      perHoofdstuk.set(c.hoofdstuk, lijst);
+    for (const [paragraafId, info] of perParagraaf) {
+      const lijst = perHoofdstuk.get(info.hoofdstuk) ?? [];
+      lijst.push({ paragraafId, titel: info.titel || `Paragraaf ${paragraafId}` });
+      perHoofdstuk.set(info.hoofdstuk, lijst);
     }
     hoofdstukStructuur = Array.from(perHoofdstuk.entries())
       .map(([hoofdstuk, onderwerpen]) => ({
