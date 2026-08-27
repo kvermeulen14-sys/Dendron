@@ -8,6 +8,7 @@ import { MateriaalForm } from "@/components/materiaal-form";
 import { LesstofOpschonenKnop } from "@/components/lesstof-opschonen-knop";
 import { MateriaalBewerkForm } from "@/components/materiaal-bewerk-form";
 import { KennisbankUploader } from "@/components/kennisbank-uploader";
+import { KennisbankWizard } from "@/components/kennisbank-wizard";
 import { OverhoorResultaten } from "@/components/overhoor-resultaten";
 import { KennisOnderdelenBeheer } from "@/components/kennis-onderdelen-beheer";
 import { VakBewerkForm } from "./vak-bewerk-form";
@@ -98,6 +99,8 @@ export default async function VakDetailPage({
         <h2 className="mb-3 text-base font-semibold text-slate-900">Overhoor-resultaten</h2>
         <OverhoorResultaten sessies={(overhoorSessies ?? []) as OverhoorSessie[]} />
       </Card>
+
+      <KennisbankWizard subjectId={id} />
 
       <div>
         <h2 className="mb-3 text-base font-semibold text-slate-900">Kennisonderdelen (regel-niveau)</h2>

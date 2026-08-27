@@ -695,3 +695,123 @@ export async function verwijderParagraaf(subjectId: string, paragraafId: string)
   revalidateVak(subjectId);
   return { success: true };
 }
+
+// ---------------------------------------------------------------------------
+// Kennisbank-wizard: 1 laagdrempelig invoerpunt voor RUWE lesstof (foto, PDF,
+// of losse geplakte tekst) - alles hierboven (verwerkKennisBrontekst,
+// verwerkTaalvakBrontekst) verwacht namelijk al een kant-en-klaar
+// geëxporteerd .md-bestand met '## koppen' en woordenlijsten als
+// pipe-tabellen. In de praktijk heeft een ouder dat nooit klaarliggen - wel
+// een foto van een boekpagina of zomaar geplakte tekst. Deze functie zet dat
+// eerst om naar precies dat verwachte format (met dezelfde nadruk op
+// LETTERLIJK overnemen van woorden/uitdrukkingen, nooit parafraseren) en
+// hergebruikt daarna de bestaande, beproefde pipeline ongewijzigd.
+// ---------------------------------------------------------------------------
+
+const TranscriptieSchema = z.object({
+  tekst: z
+    .string()
+    .describe(
+      "De volledige inhoud, zo LETTERLIJK mogelijk overgetypt. Een tabel typ je over als tekst-tabel met | tussen de kolommen."
+    ),
+});
+
+const HerformatteerSchema = z.object({
+  markdown: z
+    .string()
+    .describe("De volledige lesstof, herstructureerd naar schone markdown volgens de gegeven regels."),
+});
+
+function bouwHerformatteerPrompt(bestandsnaam: string, ruweTekst: string): string {
+  return [
+    "Herstructureer de volgende ruwe lesstof (kwam uit een foto, PDF, of losse geplakte tekst) naar schone markdown, klaar voor een kennisbank-import. Dit is lesstof voor een leerling van 2 havo.",
+    "",
+    `Bestandsnaam: ${bestandsnaam}`,
+    "",
+    "Regels:",
+    "- Geef elk apart onderdeel (paragraafinfo/leerdoelen, een woordenlijst, grammatica-uitleg, een oefenbank) een eigen '## kop' met een duidelijke titel.",
+    "- Is er een LETTERLIJKE woorden-/uitdrukkingenlijst (brontaal <-> doeltaal, evt. met voorbeeldzin)? Zet die als markdown-tabel met | pipes | (headerrij + scheidingsregel + datarijen), en neem de woorden/zinnen LETTERLIJK over zoals ze al staan - nooit vertalen, aanvullen of parafraseren.",
+    "- Overige inhoud (grammatica-uitleg, leerdoelen, voorkennis, kernbegrippen, oefenvragen MET antwoorden, coach-aanwijzingen) laat je als gewone doorlopende tekst onder de kop, zo compleet en getrouw mogelijk aan de bron.",
+    "- Negeer opmaak-ruis (paginanummers, kopregels van het boek, watermerken) die geen leerinhoud is.",
+    "- Verzin nooit iets dat niet in de bron staat.",
+    "",
+    "Ruwe inhoud:",
+    ruweTekst,
+  ].join("\n");
+}
+
+/**
+ * 1 invoerpunt voor de kennisbank-wizard: accepteert een los bestand (foto,
+ * PDF, tekst/markdown) OF geplakte tekst, plus een verplichte paragraaf-hint
+ * (de wizard vraagt daar apart naar - zie kennisbank-wizard.tsx) omdat een
+ * foto/PDF-bestandsnaam zelden een bruikbaar paragraafnummer bevat.
+ */
+export async function verwerkKennisbankBestand(formData: FormData) {
+  const ouder = await ouderProfiel();
+  if ("error" in ouder) return { error: ouder.error };
+  const { supabase, familyId } = ouder;
+
+  const subjectId = String(formData.get("subjectId") || "");
+  const paragraafHint = String(formData.get("paragraafHint") || "").trim();
+  const file = formData.get("file");
+  const tekstInvoer = String(formData.get("tekst") || "").trim();
+
+  if (!subjectId) return { error: "Kies eerst een vak." };
+  if (!paragraafHint) return { error: "Vul in voor welke paragraaf/unit dit is (bv '1.2' of '3')." };
+  if (!(file instanceof File) && !tekstInvoer) return { error: "Upload een bestand of plak tekst." };
+
+  const { data: subject } = await supabase.from("subjects").select("id, family_id").eq("id", subjectId).single();
+  if (!subject || subject.family_id !== familyId) return { error: "Vak niet gevonden." };
+
+  const bestandsnaam = file instanceof File && file.name ? file.name : "geplakte-tekst.txt";
+
+  try {
+    const client = createGeminiClient();
+
+    let ruweTekst: string;
+    if (file instanceof File) {
+      const isTekstBestand = file.type.startsWith("text/") || /\.(md|markdown|txt)$/i.test(file.name);
+      if (isTekstBestand) {
+        ruweTekst = Buffer.from(await file.arrayBuffer()).toString("utf-8");
+      } else if (file.type === "application/pdf" || file.type.startsWith("image/")) {
+        const base64 = Buffer.from(await file.arrayBuffer()).toString("base64");
+        const transcriptie = await genereerGestructureerd(
+          client,
+          TranscriptieSchema,
+          [
+            {
+              role: "user",
+              parts: [
+                { inlineData: { mimeType: file.type, data: base64 } },
+                {
+                  text: "Typ de volledige inhoud van dit lesmateriaal (voor een leerling van 2 havo) zo LETTERLIJK mogelijk over, inclusief eventuele tabellen (als tekst-tabel met | tussen de kolommen). Verzin niets, laat niets weg, parafraseer niet.",
+                },
+              ],
+            },
+          ],
+          8192
+        );
+        ruweTekst = transcriptie.tekst;
+      } else {
+        return { error: "Alleen tekst/markdown-bestanden, PDF's en foto's worden ondersteund." };
+      }
+    } else {
+      ruweTekst = tekstInvoer;
+    }
+
+    ruweTekst = ruweTekst.trim();
+    if (!ruweTekst) return { error: "Geen inhoud gevonden om te verwerken." };
+    if (ruweTekst.length > MAX_BRONTEKST_LENGTE) ruweTekst = ruweTekst.slice(0, MAX_BRONTEKST_LENGTE);
+
+    const herformatteerd = await genereerGestructureerd(
+      client,
+      HerformatteerSchema,
+      bouwHerformatteerPrompt(bestandsnaam, ruweTekst),
+      8192
+    );
+
+    return await verwerkTaalvakBrontekst(subjectId, herformatteerd.markdown, bestandsnaam, paragraafHint);
+  } catch (e) {
+    return { error: e instanceof Error ? `AI-verwerking mislukt: ${e.message}` : "AI-verwerking mislukt." };
+  }
+}
