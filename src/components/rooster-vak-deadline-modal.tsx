@@ -176,34 +176,37 @@ export function RoosterVakDeadlineModal({
                       </div>
                     </div>
 
-                    <div className="flex gap-2">
-                      <Button
-                        size="sm"
-                        variant={isKlaar ? "secondary" : "primary"}
+                    <div className="flex justify-end gap-1">
+                      <button
                         disabled={bezig}
                         onClick={() => zetKlaar(d.id, !isKlaar)}
-                        icon={<Icon name="check" size={14} />}
+                        aria-label={isKlaar ? "Weer openzetten" : "Klaar melden"}
+                        title={isKlaar ? "Weer openzetten" : "Klaar melden"}
+                        className={clsx(
+                          "rounded-lg p-1.5 disabled:opacity-50",
+                          isKlaar ? "bg-emerald-100 text-emerald-700" : "text-slate-400 hover:bg-white hover:text-emerald-600"
+                        )}
                       >
-                        {isKlaar ? "Heropenen" : "Klaar"}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="secondary"
+                        <Icon name="check" size={15} />
+                      </button>
+                      <button
                         disabled={bezig}
                         onClick={() => setBewerkId(d.id)}
-                        icon={<Icon name="pencil-line" size={14} />}
+                        aria-label="Bewerken"
+                        title="Bewerken"
+                        className="rounded-lg p-1.5 text-slate-400 hover:bg-white hover:text-slate-700 disabled:opacity-50"
                       >
-                        Bewerken
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="danger"
+                        <Icon name="pencil-line" size={15} />
+                      </button>
+                      <button
                         disabled={bezig}
                         onClick={() => verwijder(d.id)}
-                        icon={<Icon name="trash" size={14} />}
+                        aria-label="Verwijderen"
+                        title="Verwijderen"
+                        className="rounded-lg p-1.5 text-slate-400 hover:bg-white hover:text-rose-600 disabled:opacity-50"
                       >
-                        Verwijderen
-                      </Button>
+                        <Icon name="trash" size={15} />
+                      </button>
                     </div>
                   </div>
                 );
@@ -293,22 +296,22 @@ export function RoosterVakDeadlineModal({
               </div>
             </form>
           ) : (
-            <div className={clsx("flex gap-2", bestaandeDeadlines.length > 0 && "border-t border-slate-100 pt-3")}>
+            <div className={clsx("flex justify-center gap-3", bestaandeDeadlines.length > 0 && "border-t border-slate-100 pt-2.5")}>
               <button
                 type="button"
                 onClick={() => openToevoegen("huiswerk")}
-                className="flex flex-1 items-center justify-center gap-1.5 rounded-full border border-huiswerk-200 bg-huiswerk-50 px-3 py-2 text-xs font-semibold text-huiswerk-700 transition-colors hover:bg-huiswerk-100"
+                className="flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium text-slate-400 transition-colors hover:bg-slate-50 hover:text-slate-600"
               >
-                <Icon name="plus" size={13} />
-                Huiswerk toevoegen
+                <Icon name="plus" size={11} />
+                Huiswerk
               </button>
               <button
                 type="button"
                 onClick={() => openToevoegen("toets")}
-                className="flex flex-1 items-center justify-center gap-1.5 rounded-full border border-toets-200 bg-toets-50 px-3 py-2 text-xs font-semibold text-toets-700 transition-colors hover:bg-toets-100"
+                className="flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium text-slate-400 transition-colors hover:bg-slate-50 hover:text-slate-600"
               >
-                <Icon name="plus" size={13} />
-                Toets toevoegen
+                <Icon name="plus" size={11} />
+                Toets
               </button>
             </div>
           )}

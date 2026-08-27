@@ -1927,6 +1927,12 @@ export function AgendaBoard({
                   const isVoorstel = item.status === "voorstel";
                   const isKlaar = item.status === "klaar";
                   const heeftAandacht = !isKlaar && aandachtItemIds.has(item.id);
+                  // Nog niet gepland huiswerk/toets: dit kaartje heeft dan
+                  // maar 1 functie - inplannen via de coach. Geen klaar-knop
+                  // (er is nog niks om af te vinken) en het hele kaartje
+                  // (niet een los knopje) opent de coach.
+                  const moetIngepland =
+                    !isVoorstel && !isKlaar && !item.start_time && (item.type === "huiswerk" || item.type === "toets");
                   return (
                     <div
                       key={item.id}
@@ -1940,7 +1946,16 @@ export function AgendaBoard({
                         setDraggedId(null);
                         setDragOverIso(null);
                       }}
-                      onClick={() => openDetail(item)}
+                      onClick={() => {
+                        if (moetIngepland) {
+                          const vak = subjectNaam(item.subject_id);
+                          setPlanningshulp({
+                            openingsbericht: `Ik heb ${item.type === "toets" ? "een toets" : "huiswerk"}${vak ? ` voor ${vak}` : ""} ("${item.title}"), moet af zijn op ${formatDatumLabel(item.due_date)}. Kun je helpen bedenken wanneer ik hier het beste aan kan werken, rekening houdend met de rest van mijn week?`,
+                          });
+                        } else {
+                          openDetail(item);
+                        }
+                      }}
                       className={clsx(
                         "flex cursor-pointer gap-1.5 rounded-lg border bg-white py-1 pr-1.5 text-xs shadow-sm transition-opacity",
                         heeftAandacht ? "border-rose-300" : "border-slate-200",
@@ -2007,40 +2022,23 @@ export function AgendaBoard({
                               <Icon name={pending ? "loader" : "trash"} size={11} className={pending ? "animate-spin" : undefined} />
                             </button>
                           </>
+                        ) : moetIngepland ? (
+                          <span className="flex items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">
+                            <Icon name="chat" size={10} />
+                            Inplannen
+                          </span>
                         ) : (
-                          <>
-                            {/* Huiswerk/toets zonder werkmoment: niet zelf een
-                                tijd erop plakken (die dag kan de deadline zelf
-                                zijn), maar de coach erbij halen die met de rest
-                                van de week rekening houdt. */}
-                            {!item.start_time && !isKlaar && (item.type === "huiswerk" || item.type === "toets") && (
-                              <button
-                                disabled={pending}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  const vak = subjectNaam(item.subject_id);
-                                  setPlanningshulp({
-                                    openingsbericht: `Ik heb ${item.type === "toets" ? "een toets" : "huiswerk"}${vak ? ` voor ${vak}` : ""} ("${item.title}"), moet af zijn op ${formatDatumLabel(item.due_date)}. Kun je helpen bedenken wanneer ik hier het beste aan kan werken, rekening houdend met de rest van mijn week?`,
-                                  });
-                                }}
-                                className="flex items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 hover:bg-slate-200 disabled:opacity-50"
-                              >
-                                <Icon name="chat" size={10} />
-                                Plan met de coach
-                              </button>
-                            )}
-                            <button
-                              disabled={pending}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                toggleStatus(item);
-                              }}
-                              aria-label={isKlaar ? "Weer openzetten" : "Klaar markeren"}
-                              className="text-slate-400 hover:text-slate-700 disabled:opacity-30"
-                            >
-                              <Icon name="check" size={11} />
-                            </button>
-                          </>
+                          <button
+                            disabled={pending}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleStatus(item);
+                            }}
+                            aria-label={isKlaar ? "Weer openzetten" : "Klaar markeren"}
+                            className="text-slate-400 hover:text-slate-700 disabled:opacity-30"
+                          >
+                            <Icon name="check" size={11} />
+                          </button>
                         )}
                       </div>
                       </div>
