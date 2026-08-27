@@ -247,6 +247,9 @@ export interface KennisOefenvraag {
 
 export type KennisWoordenlijstRichting = "bron_naar_doel" | "doel_naar_bron" | "gemengd";
 
+/** woordenschat = losse woorden/korte termen (stampwerk), zinnen = complete standaardzinnen/uitdrukkingen (letterlijk leren). */
+export type KennisWoordenlijstCategorie = "woordenschat" | "zinnen";
+
 export interface KennisWoord {
   bron: string;
   doel: string;
@@ -260,6 +263,7 @@ export interface KennisWoordenlijst {
   hoofdstuk: string;
   paragraaf_id: string;
   titel: string;
+  categorie: KennisWoordenlijstCategorie;
   richting: KennisWoordenlijstRichting;
   woorden: KennisWoord[];
   volgorde: number;

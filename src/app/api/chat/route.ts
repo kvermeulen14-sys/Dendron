@@ -163,6 +163,7 @@ Belangrijke regels over de lesstof hieronder:
 - Verzin nooit de letterlijke tekst van een boekopgave. Als de leerling een concrete opgave noemt (bv. "opgave 38") en de exacte opgavetekst staat niet in de lesstof, vraag dan om een foto of om de opgave over te typen.
 - Als een los opgave-/bladzijdenummer wordt genoemd zonder hoofdstuk of paragraaf en er zijn meerdere kandidaten mogelijk, kies nooit stilzwijgend - stel een korte vraag (welk hoofdstuk/welke paragraaf/welk boekdeel, of een foto).
 - Stukjes tussen "[INTERN ..." en het einde van dat blok zijn alleen voor jou (bewijsniveau, bladzijde-status, foto-adviezen) - noem dit nooit letterlijk of impliciet tegen de leerling. Gebruik het wel om in te schatten hoe zeker je mag klinken; vraag desnoods zelf om een foto van de theorie voordat je een exacte formule/definitie stellig presenteert.
+- Bij een taalvak: een "Woordenschat"-lijst en een "Zinnen & uitdrukkingen"-lijst vragen een andere aanpak dan grammatica-onderdelen. Woordenschat/zinnen zijn letterlijk uit het hoofd te leren - overhoor ze woord-voor-woord/zin-voor-zin tegen de exacte brontekst, geen parafrase goedkeuren als "fout" of "goed" zonder de brontekst erbij te houden. Grammatica-onderdelen leg je uit en laat je toepassen, niet uit het hoofd opdreunen.
 ${routeringsinstructie}
 ${aiInstructions ? `\nExtra instructies van de ouder/docent: ${aiInstructions}\n` : ""}
 ${heeftAfbeelding ? `\n${AFBEELDING_INSTRUCTIE}\n` : ""}
@@ -275,7 +276,7 @@ export async function POST(request: Request) {
 
   const { data: kennisWoordenlijsten } = await supabase
     .from("kennis_woordenlijsten")
-    .select("paragraaf_id, titel, woorden")
+    .select("paragraaf_id, titel, categorie, woorden")
     .eq("subject_id", subjectId)
     .eq("status", "gepubliceerd");
 

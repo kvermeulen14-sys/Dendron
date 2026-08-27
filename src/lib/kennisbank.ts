@@ -143,6 +143,7 @@ export interface KennisParagraafContextRij {
 export interface KennisWoordenlijstRij {
   paragraaf_id: string;
   titel: string;
+  categorie?: "woordenschat" | "zinnen";
   woorden: { bron: string; doel: string; voorbeeldzin: string | null }[];
 }
 
@@ -179,9 +180,13 @@ export function bouwKennisbankUitOnderdelen(
       }
 
       // Woordenlijsten letterlijk als tabel meegeven - niet parafraseren, dit
-      // zijn de exact overgenomen officiële woordparen uit de bron.
+      // zijn de exact overgenomen officiële woordparen/zinnen uit de bron.
+      // Categorie in de kop, zodat de tutor woordenschat (losse termen,
+      // stampwerk) en zinnen/uitdrukkingen (letterlijk complete zinnen leren)
+      // niet door elkaar behandelt.
       for (const w of woordenlijstenVanParagraaf) {
-        regels.push(`\n### Woordenlijst: ${w.titel}`);
+        const soort = w.categorie === "zinnen" ? "Zinnen & uitdrukkingen" : "Woordenschat";
+        regels.push(`\n### ${soort}: ${w.titel}`);
         regels.push("| Bron | Doel | Voorbeeldzin |");
         regels.push("| --- | --- | --- |");
         for (const woord of w.woorden) {

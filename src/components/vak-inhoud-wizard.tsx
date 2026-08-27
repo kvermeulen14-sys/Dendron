@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import {
   analyseerKennisbankBestand,
   bevestigKennisbankBestand,
+  pasKennisbankStructuurAan,
   type KennisbankVoorstel,
 } from "@/lib/actions/kennis-bron-import";
 
@@ -55,6 +56,10 @@ export function VakInhoudWizard({ subjectId }: { subjectId: string }) {
   const [items, setItems] = useState<WizardItem[]>([]);
   const [tekst, setTekst] = useState("");
   const [slepen, setSlepen] = useState(false);
+  const [chatBerichten, setChatBerichten] = useState<{ rol: "ouder" | "ai"; tekst: string }[]>([]);
+  const [chatInvoer, setChatInvoer] = useState("");
+  const [chatBezig, setChatBezig] = useState(false);
+  const [chatFout, setChatFout] = useState<string | null>(null);
 
   function patchItem(id: string, patch: Partial<WizardItem>) {
     setItems((huidig) => huidig.map((it) => (it.id === id ? { ...it, ...patch } : it)));
@@ -113,6 +118,34 @@ export function VakInhoudWizard({ subjectId }: { subjectId: string }) {
 
   function verwijderItem(id: string) {
     setItems((huidig) => huidig.filter((it) => it.id !== id));
+  }
+
+  async function stuurChatInstructie() {
+    const instructie = chatInvoer.trim();
+    const teIndelenItems = items.filter((it) => it.status === "voorstel" || it.status === "verwerken");
+    if (!instructie || teIndelenItems.length === 0) return;
+
+    setChatBezig(true);
+    setChatFout(null);
+    setChatInvoer("");
+    setChatBerichten((huidig) => [...huidig, { rol: "ouder", tekst: instructie }]);
+
+    const res = await pasKennisbankStructuurAan(
+      teIndelenItems.map((it) => ({ bestandsnaam: it.bestandsnaam, hoofdstuk: it.hoofdstuk, paragraafId: it.paragraafId, titel: it.titel ?? "" })),
+      chatBerichten,
+      instructie
+    );
+    setChatBezig(false);
+    if ("error" in res && res.error) {
+      setChatFout(res.error);
+      return;
+    }
+    if (!("items" in res)) return;
+    setChatBerichten((huidig) => [...huidig, { rol: "ai", tekst: res.antwoord }]);
+    for (const upd of res.items) {
+      const match = teIndelenItems.find((it) => it.bestandsnaam === upd.bestandsnaam);
+      if (match) patchItem(match.id, { hoofdstuk: upd.hoofdstuk, paragraafId: upd.paragraafId, titel: upd.titel });
+    }
   }
 
   return (
@@ -287,6 +320,80 @@ export function VakInhoudWizard({ subjectId }: { subjectId: string }) {
                 )}
             </div>
           ))}
+        </div>
+      )}
+
+      {items.some((it) => it.status === "voorstel" || it.status === "verwerken") && (
+        <div className="flex flex-col gap-2.5 rounded-xl border border-accent-200 bg-accent-50/40 p-3">
+          <div className="flex items-center gap-2">
+            <Icon name="chat" size={16} className="text-accent-600" />
+            <p className="text-sm font-semibold text-slate-900">Overzicht & bijsturen</p>
+          </div>
+          <p className="text-xs text-slate-500">
+            Dit is de indeling van alle bestanden hierboven samen. Klopt er iets niet? Typ het hieronder (bv. &quot;zet
+            U1_L3_A.md bij Unit 2&quot;) - de indeling boven wordt dan bijgewerkt. De velden per bestand blijven ook
+            gewoon met de hand aan te passen.
+          </p>
+
+          <div className="flex flex-col gap-2 rounded-lg bg-white p-2.5 text-xs">
+            {Object.entries(
+              items
+                .filter((it) => it.status === "voorstel" || it.status === "verwerken")
+                .reduce<Record<string, WizardItem[]>>((groepen, it) => {
+                  const key = it.hoofdstuk || "(nog geen hoofdstuk)";
+                  (groepen[key] ??= []).push(it);
+                  return groepen;
+                }, {})
+            ).map(([hoofdstuk, lijst]) => (
+              <div key={hoofdstuk}>
+                <p className="font-semibold text-slate-700">{hoofdstuk}</p>
+                <ul className="ml-3.5 list-disc text-slate-500">
+                  {lijst.map((it) => (
+                    <li key={it.id}>
+                      {it.paragraafId || "?"} - {it.titel || it.bestandsnaam}
+                      {it.isWoordenlijst && " (woordenlijst)"}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+
+          {chatBerichten.length > 0 && (
+            <div className="flex flex-col gap-1.5">
+              {chatBerichten.map((b, i) => (
+                <p
+                  key={i}
+                  className={clsx(
+                    "max-w-[85%] rounded-xl px-2.5 py-1.5 text-xs",
+                    b.rol === "ouder" ? "self-end bg-accent-600 text-white" : "self-start bg-white text-slate-700"
+                  )}
+                >
+                  {b.tekst}
+                </p>
+              ))}
+            </div>
+          )}
+          {chatFout && <p className="text-xs text-rose-600">{chatFout}</p>}
+
+          <div className="flex gap-2">
+            <input
+              value={chatInvoer}
+              onChange={(e) => setChatInvoer(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void stuurChatInstructie();
+                }
+              }}
+              placeholder="Typ een aanpassing..."
+              disabled={chatBezig}
+              className="flex-1 rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100 disabled:opacity-50"
+            />
+            <Button size="md" variant="secondary" loading={chatBezig} disabled={!chatInvoer.trim()} onClick={stuurChatInstructie}>
+              Stuur
+            </Button>
+          </div>
         </div>
       )}
     </div>

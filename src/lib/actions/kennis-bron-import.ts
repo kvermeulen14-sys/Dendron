@@ -72,7 +72,11 @@ const BlokClassificatieSchema = z.object({
     .array(
       z.object({
         index: z.number(),
-        type: z.enum(["woordenlijst", "overig"]).describe("'woordenlijst' = tabel met letterlijke woord-/uitdrukkingparen, anders 'overig'."),
+        type: z
+          .enum(["woordenschat", "zinnen", "overig"])
+          .describe(
+            "'woordenschat' = tabel met losse woorden/korte termen (brontaal<->doeltaal, stampwerk). 'zinnen' = tabel met complete standaardzinnen/uitdrukkingen (letterlijk leren). Anders 'overig'."
+          ),
       })
     )
     .max(80),
@@ -192,7 +196,9 @@ function parseWoordenTabel(body: string): string[][] | null {
 function bouwClassificatiePrompt(koppen: { index: number; heading: string }[]): string {
   return [
     "Dit zijn de koppen (headings) van 1 kennisbank-bestand voor een taalvak (bv Engels/Frans/Duits), lesstof voor een leerling van 2 havo.",
-    "Classificeer per kop of de bijbehorende sectie een LETTERLIJKE woorden-/uitdrukkingenlijst is: een tabel met woordparen brontaal <-> doeltaal (evt. met een voorbeeldzin) - type 'woordenlijst'.",
+    "Classificeer per kop of de bijbehorende sectie een LETTERLIJKE woorden-/zinnentabel is (brontaal <-> doeltaal, evt. met een voorbeeldzin):",
+    "- 'woordenschat': losse woorden of korte termen (bv los zelfstandig naamwoord/werkwoord) - stampwerk.",
+    "- 'zinnen': complete standaardzinnen of vaste uitdrukkingen (bv \"How do I get to the station?\") - letterlijk uit het hoofd leren.",
     "Alle andere secties (grammatica-uitleg, oefenbank/opgaven met antwoorden, leesteksten, inleidingen, coachregels e.d.) zijn 'overig'.",
     "",
     koppen.map((k) => `${k.index}. ${k.heading}`).join("\n"),
@@ -241,7 +247,7 @@ export async function verwerkTaalvakBrontekst(
   const hoofdstuk = overrideHoofdstuk?.trim() || `Hoofdstuk ${paragraafId.split(".")[0]}`;
 
   const blokken = splitsInBlokken(tekst);
-  const woordenlijstIndices = new Set<number>();
+  const woordenlijstTypePerIndex = new Map<number, "woordenschat" | "zinnen">();
   if (blokken.length > 0) {
     try {
       const client = createGeminiClient();
@@ -252,7 +258,7 @@ export async function verwerkTaalvakBrontekst(
         4096
       );
       for (const b of classificatie.blokken) {
-        if (b.type === "woordenlijst") woordenlijstIndices.add(b.index);
+        if (b.type === "woordenschat" || b.type === "zinnen") woordenlijstTypePerIndex.set(b.index, b.type);
       }
     } catch {
       // Classificatie mislukt: geen blokken als woordenlijst behandelen, de
@@ -266,7 +272,7 @@ export async function verwerkTaalvakBrontekst(
   let aantalWoordenlijsten = 0;
   let aantalWoorden = 0;
   let volgorde = 0;
-  for (const idx of woordenlijstIndices) {
+  for (const [idx, categorie] of woordenlijstTypePerIndex) {
     const blok = blokken[idx];
     const rijen = parseWoordenTabel(blok.body);
     if (!rijen || rijen.length === 0) continue;
@@ -282,6 +288,7 @@ export async function verwerkTaalvakBrontekst(
       hoofdstuk,
       paragraaf_id: paragraafId,
       titel: blok.heading,
+      categorie,
       richting: "gemengd" as const,
       woorden,
       volgorde: volgorde++,
@@ -313,6 +320,8 @@ export async function bewerkKennisWoordenlijst(id: string, subjectId: string, fo
   const { supabase } = ouder;
 
   const titel = String(formData.get("titel") || "").trim();
+  const categorieRuw = String(formData.get("categorie") || "");
+  const categorie = categorieRuw === "zinnen" ? "zinnen" : "woordenschat";
   const woordenRuw = String(formData.get("woorden") || "");
   const woorden: KennisWoord[] = woordenRuw
     .split("\n")
@@ -328,7 +337,7 @@ export async function bewerkKennisWoordenlijst(id: string, subjectId: string, fo
 
   const { error } = await supabase
     .from("kennis_woordenlijsten")
-    .update({ titel, woorden, updated_at: new Date().toISOString() })
+    .update({ titel, categorie, woorden, updated_at: new Date().toISOString() })
     .eq("id", id);
   if (error) return { error: error.message };
 
@@ -885,6 +894,78 @@ export async function bevestigKennisbankBestand(
       8192
     );
     return await verwerkTaalvakBrontekst(subjectId, herformatteerd.markdown, bestandsnaam, paragraafId.trim(), hoofdstuk.trim());
+  } catch (e) {
+    return { error: e instanceof Error ? `AI-verwerking mislukt: ${e.message}` : "AI-verwerking mislukt." };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Structuur-overzicht bijsturen via chat: nadat alle bestanden een eigen
+// voorstel hebben (fase 1 hierboven), kan de ouder in 1 keer de HELE indeling
+// (welk bestand bij welk hoofdstuk/paragraaf/titel) bijsturen met een losse
+// instructie ("zet dit bij Unit 2 i.p.v. Unit 1"), i.p.v. elk bestand apart
+// met de hand te moeten verplaatsen. Schrijft niets weg - past alleen het
+// voorstel aan, bevestigen (per bestand) gebeurt nog steeds via
+// bevestigKennisbankBestand hierboven.
+// ---------------------------------------------------------------------------
+
+const StructuurAanpassingSchema = z.object({
+  items: z
+    .array(
+      z.object({
+        bestandsnaam: z.string(),
+        hoofdstuk: z.string(),
+        paragraafId: z.string(),
+        titel: z.string(),
+      })
+    )
+    .describe("VOLLEDIGE bijgewerkte lijst - elk bestand uit de huidige indeling, ook de ongewijzigde."),
+  antwoord: z.string().describe("Kort, vriendelijk antwoord aan de ouder over wat je hebt aangepast (of een vraag als de instructie onduidelijk is). Max 2 zinnen."),
+});
+
+function bouwStructuurAanpassingPrompt(
+  items: { bestandsnaam: string; hoofdstuk: string; paragraafId: string; titel: string }[],
+  berichten: { rol: "ouder" | "ai"; tekst: string }[],
+  instructie: string
+): string {
+  return [
+    "Dit is de huidige voorgestelde indeling van geüploade kennisbank-bestanden voor een schoolvak (2 havo, methode met units/hoofdstukken). Elk bestand krijgt een hoofdstuk/unit, een paragraaf-/lesnummer en een titel.",
+    "",
+    "Huidige indeling:",
+    items.map((it) => `- "${it.bestandsnaam}": hoofdstuk "${it.hoofdstuk}", paragraaf/les "${it.paragraafId}", titel "${it.titel}"`).join("\n"),
+    berichten.length > 0 ? "\nEerder gesprek hierover:" : "",
+    berichten.map((b) => `${b.rol === "ouder" ? "Ouder" : "Jij"}: ${b.tekst}`).join("\n"),
+    "",
+    `Nieuwe instructie van de ouder: "${instructie}"`,
+    "",
+    "Pas de indeling aan volgens deze instructie. Geef de VOLLEDIGE bijgewerkte lijst terug, met exact dezelfde bestandsnamen als hierboven (niets weglaten, ook bestanden die niet veranderen horen erbij) - alleen hoofdstuk/paragraafId/titel mogen wijzigen.",
+  ].join("\n");
+}
+
+/**
+ * Past het voorgestelde hoofdstuk/paragraaf/titel van meerdere nog-niet-
+ * bevestigde bestanden in 1 keer aan op basis van een vrije instructie van de
+ * ouder - voor de losse "1 bestand per keer"-velden in de wizard, maar dan
+ * voor de hele batch tegelijk ("dit hoort allemaal bij Unit 2").
+ */
+export async function pasKennisbankStructuurAan(
+  items: { bestandsnaam: string; hoofdstuk: string; paragraafId: string; titel: string }[],
+  berichten: { rol: "ouder" | "ai"; tekst: string }[],
+  instructie: string
+) {
+  const ouder = await ouderProfiel();
+  if ("error" in ouder) return { error: ouder.error };
+  if (!instructie.trim()) return { error: "Typ een instructie." };
+  if (items.length === 0) return { error: "Nog geen bestanden om in te delen." };
+
+  try {
+    const client = createGeminiClient();
+    return await genereerGestructureerd(
+      client,
+      StructuurAanpassingSchema,
+      bouwStructuurAanpassingPrompt(items, berichten, instructie),
+      4096
+    );
   } catch (e) {
     return { error: e instanceof Error ? `AI-verwerking mislukt: ${e.message}` : "AI-verwerking mislukt." };
   }
