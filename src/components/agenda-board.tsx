@@ -23,6 +23,7 @@ import { vakAfkorting } from "@/lib/vak-afkorting";
 import { kiesKlaarLabel, kiesVierTekst } from "@/lib/motiverend";
 import { useKlaarBevestiging } from "@/lib/use-klaar-bevestiging";
 import { DuurTerugblik } from "@/components/duur-terugblik";
+import { DuurKiezer, formatMinuten } from "@/components/duur-kiezer";
 import { berekenKalibratie, schattingAdvies } from "@/lib/kalibratie";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { Card } from "@/components/ui/card";
@@ -90,16 +91,6 @@ function isoPlusDagen(iso: string, dagen: number) {
   return naarIsoDatum(d);
 }
 
-function formatMinuten(minuten: number) {
-  const uren = Math.floor(minuten / 60);
-  const rest = minuten % 60;
-  if (uren === 0) return `${rest} min`;
-  if (rest === 0) return `${uren} u`;
-  return `${uren}u ${rest}m`;
-}
-
-const TIJD_OPTIES = [15, 30, 45, 60, 90, 120];
-
 type HerhalingType = "geen" | "dagelijks" | "wekelijks" | "maandelijks";
 const HERHALING_OPTIES: { value: HerhalingType; label: string }[] = [
   { value: "geen", label: "Niet herhalen" },
@@ -124,15 +115,13 @@ const STATUS_META = {
 const UUR_HOOGTE = 48;
 const STANDAARD_VAN_UUR = 6;
 const STANDAARD_TOT_UUR = 22;
-const MIN_BLOK_PX = 34;
+const MIN_BLOK_PX = 40;
 const ONBEKENDE_DUUR_MINUTEN = 30;
 
 /** Slepen landt altijd op een kwartier, zodat er geen 16:07-afspraken ontstaan. */
 const SNAP_MINUTEN = 15;
 const MIN_DUUR_MINUTEN = 15;
 const MAX_DUUR_MINUTEN = 8 * 60;
-/** Vanaf deze hoogte past er naast de titel ook nog een regel met tijd en duur. */
-const METAREGEL_VANAF_PX = 46;
 
 // Of het weekend ingeklapt is, is een voorkeur van de gebruiker en hoort dus
 // bewaard te blijven. Via een kleine externe store i.p.v. een effect, zodat er
@@ -477,6 +466,11 @@ export function AgendaBoard({
   );
 
   const vandaagIso = useMemo(() => naarIsoDatum(new Date()), []);
+  const vandaagDatum = useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, []);
   const dezeWeekMaandag = useMemo(() => naarMaandagVanWeek(new Date()), []);
   const weekMaandag = useMemo(
     () => voegDagenToe(dezeWeekMaandag, weekOffset * 7),
@@ -486,14 +480,14 @@ export function AgendaBoard({
     () => Array.from({ length: 7 }, (_, i) => voegDagenToe(weekMaandag, i)),
     [weekMaandag]
   );
-  // Bredere reeks voor de lijstweergave: deze week plus de komende 3 weken in
-  // 1 keer zichtbaar (i.p.v. steeds "volgende week" te moeten klikken), zodat
-  // er ook echt vooruitgepland kan worden. Het roosterraster (desktop) blijft
-  // op de smallere weekDagen - dat is bewust een 1-weeks grid.
+  // Lijstweergave: altijd vanaf vandaag, 2 weken vooruit - dus geen losse
+  // navigatie en geen dagen die al voorbij zijn (die vallen er vanzelf af
+  // zodra de datum opschuift). Los van weekOffset, dat is puur voor het
+  // roosterraster (desktop) - dat blijft een navigeerbaar 1-weeks grid.
   const LIJST_WEKEN = 2;
   const lijstDagen = useMemo(
-    () => Array.from({ length: LIJST_WEKEN * 7 }, (_, i) => voegDagenToe(weekMaandag, i)),
-    [weekMaandag]
+    () => Array.from({ length: LIJST_WEKEN * 7 }, (_, i) => voegDagenToe(vandaagDatum, i)),
+    [vandaagDatum]
   );
 
   // Due_date-gebaseerd: wat is er deze dag daadwerkelijk verschuldigd - blijft
@@ -1477,23 +1471,7 @@ export function AgendaBoard({
                   <label className="mb-1.5 block text-sm font-medium text-slate-700">
                     Geschatte tijd (optioneel)
                   </label>
-                  <div className="flex flex-wrap gap-1.5">
-                    {TIJD_OPTIES.map((minuten) => (
-                      <button
-                        type="button"
-                        key={minuten}
-                        onClick={() => setEstimatedMinutes((huidig) => (huidig === minuten ? null : minuten))}
-                        className={clsx(
-                          "rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors",
-                          estimatedMinutes === minuten
-                            ? "border-slate-900 bg-slate-900 text-white"
-                            : "border-slate-200 text-slate-600 hover:bg-slate-50"
-                        )}
-                      >
-                        {formatMinuten(minuten)}
-                      </button>
-                    ))}
-                  </div>
+                  <DuurKiezer value={estimatedMinutes} onChange={setEstimatedMinutes} />
                   {advies ? (
                     <button
                       type="button"
@@ -1628,23 +1606,7 @@ export function AgendaBoard({
                   <label className="mb-1.5 block text-sm font-medium text-slate-700">
                     Geschatte tijd (optioneel)
                   </label>
-                  <div className="flex flex-wrap gap-1.5">
-                    {TIJD_OPTIES.map((minuten) => (
-                      <button
-                        type="button"
-                        key={minuten}
-                        onClick={() => setBewerkEstimatedMinutes((huidig) => (huidig === minuten ? null : minuten))}
-                        className={clsx(
-                          "rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors",
-                          bewerkEstimatedMinutes === minuten
-                            ? "border-slate-900 bg-slate-900 text-white"
-                            : "border-slate-200 text-slate-600 hover:bg-slate-50"
-                        )}
-                      >
-                        {formatMinuten(minuten)}
-                      </button>
-                    ))}
-                  </div>
+                  <DuurKiezer value={bewerkEstimatedMinutes} onChange={setBewerkEstimatedMinutes} />
                   <input type="hidden" name="estimatedMinutes" value={bewerkEstimatedMinutes ?? ""} />
                 </div>
               </>
@@ -2363,25 +2325,36 @@ export function AgendaBoard({
                         klikbaar && "cursor-pointer hover:ring-1 hover:ring-inset hover:ring-accent-300"
                       )}
                     >
-                      {b.bron === "gewijzigd" && <Icon name="pencil-line" size={9} className="mr-0.5 mb-px inline" />}
-                      {heeftAandacht && <Icon name="alert-triangle" size={9} className="mr-0.5 mb-px inline text-rose-600" />}
-                      {heeftDeadline &&
-                        (heeftToets ? (
-                          <span className="mr-0.5 text-[8px] font-black tracking-tighter">TOETS</span>
-                        ) : (
-                          <span className="mr-0.5 text-[8px] font-black tracking-tighter">HUISWERK</span>
-                        ))}
-                      {overgenomenInBlok.length > 0 && (
-                        <Icon name="arrow-right-circle" size={9} className="mr-0.5 mb-px inline text-amber-600" />
-                      )}
-                      <span className="line-clamp-2">
-                        {!b.isFietsen && `${b.tijd.split("-")[0]} `}
-                        {b.titel}
-                      </span>
+                      <div className="flex items-start gap-1">
+                        <span className="min-w-0 flex-1">
+                          {b.bron === "gewijzigd" && <Icon name="pencil-line" size={9} className="mr-0.5 mb-px inline" />}
+                          {heeftAandacht && <Icon name="alert-triangle" size={9} className="mr-0.5 mb-px inline text-rose-600" />}
+                          {overgenomenInBlok.length > 0 && (
+                            <Icon name="arrow-right-circle" size={9} className="mr-0.5 mb-px inline text-amber-600" />
+                          )}
+                          <span className="line-clamp-2">
+                            {!b.isFietsen && `${b.tijd.split("-")[0]} `}
+                            {b.titel}
+                          </span>
+                          {klikbaar && !heeftDeadline && <Icon name="plus" size={9} className="ml-0.5 mb-px inline text-accent-500" />}
+                        </span>
+                        {heeftDeadline && (
+                          <span
+                            className={clsx(
+                              "flex shrink-0 flex-col items-center gap-0.5 rounded px-1 py-0.5",
+                              heeftToets ? "bg-toets-500" : "bg-huiswerk-500"
+                            )}
+                          >
+                            <Icon name={heeftToets ? "target" : "pencil-line"} size={9} className="text-white" />
+                            {subjectCode(b.subjectId) && (
+                              <span className="text-[8px] font-black leading-none text-white">{subjectCode(b.subjectId)}</span>
+                            )}
+                          </span>
+                        )}
+                      </div>
                       {overgenomenInBlok.length > 0 && (
                         <span className="mt-0.5 block text-[9px] font-medium text-amber-700">overgenomen (les verviel)</span>
                       )}
-                      {klikbaar && !heeftDeadline && <Icon name="plus" size={9} className="ml-0.5 mb-px inline text-accent-500" />}
                     </div>
                   );
                   });
@@ -2435,24 +2408,21 @@ export function AgendaBoard({
                       <span className="min-w-0 flex-1 leading-tight">
                         <span
                           className={clsx(
-                            "block text-[11px] font-semibold text-slate-800",
-                            hoogte >= METAREGEL_VANAF_PX ? "line-clamp-2" : "truncate",
+                            "block truncate text-[11px] font-semibold text-slate-800",
                             isKlaar && "line-through"
                           )}
                         >
                           {item.title}
                         </span>
-                        {hoogte >= METAREGEL_VANAF_PX && (
-                          <span className="mt-0.5 block truncate text-[10px] text-slate-400 tabular-nums">
-                            {tijdKort(item.start_time!)} &middot;{" "}
-                            {item.type === "toets" ? (
-                              <span className="font-semibold text-toets-700">{toetsAftelling(item.due_date)}</span>
-                            ) : (
-                              formatMinuten(duur)
-                            )}
-                            {code && <span className="ml-1 font-semibold text-slate-500">{code}</span>}
-                          </span>
-                        )}
+                        <span className="mt-0.5 block truncate text-[10px] text-slate-400 tabular-nums">
+                          {tijdKort(item.start_time!)} &middot;{" "}
+                          {item.type === "toets" ? (
+                            <span className="font-semibold text-toets-700">{toetsAftelling(item.due_date)}</span>
+                          ) : (
+                            formatMinuten(duur)
+                          )}
+                          {code && <span className="ml-1 font-semibold text-slate-500">{code}</span>}
+                        </span>
                       </span>
 
                       {/* Onderrand slepen = hoe lang het duurt. Dat voedt meteen
@@ -2681,7 +2651,7 @@ export function AgendaBoard({
                               </span>
                             )}
                             {heeftDeadline && !alleKlaar ? (
-                              <span className="text-[9px] font-extrabold tracking-tight">{heeftToets ? "TOETS" : "HW"}</span>
+                              <Icon name={heeftToets ? "target" : "pencil-line"} size={16} />
                             ) : (
                               <Icon
                                 name={

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { Modal } from "@/components/ui/modal";
 import { Icon } from "@/components/icon";
+import { DuurKiezer } from "@/components/duur-kiezer";
 import { PlanningHulpChat } from "@/components/planning-hulp-chat";
 import { bewerkPlanningItem, maakPlanningItem, updatePlanningStatus, verwijderPlanningItem } from "@/lib/actions/planning";
 import {
@@ -63,6 +64,7 @@ export function RoosterVakDeadlineModal({
   const [bezig, setBezig] = useState(false);
   const [planningshulp, setPlanningshulp] = useState<{ type: "huiswerk" | "toets" } | null>(null);
   const [bewerkId, setBewerkId] = useState<string | null>(null);
+  const [estimatedMinutes, setEstimatedMinutes] = useState<number | null>(null);
 
   function sluit() {
     onClose();
@@ -70,11 +72,13 @@ export function RoosterVakDeadlineModal({
     setBewerkId(null);
     setToevoegenOpen(false);
     setNotitieTekst("");
+    setEstimatedMinutes(null);
   }
 
   function openToevoegen(t: "huiswerk" | "toets" | "herinnering") {
     setType(t);
     setToevoegenOpen(true);
+    setEstimatedMinutes(null);
   }
 
   async function voegNotitieToe() {
@@ -193,52 +197,16 @@ export function RoosterVakDeadlineModal({
                 const isKlaar = d.status === "klaar";
                 const watMoetJeDoen = d.description || d.title;
                 return bewerkId === d.id ? (
-                  <form
+                  <BewerkDeadlineForm
                     key={d.id}
-                    action={async (formData) => {
-                      setError(null);
-                      setBezig(true);
-                      const res = await bewerkPlanningItem(d.id, formData);
-                      setBezig(false);
-                      if (res?.error) {
-                        setError(res.error);
-                        return;
-                      }
+                    item={d}
+                    isToets={isToets}
+                    onAnnuleren={() => setBewerkId(null)}
+                    onOpgeslagen={() => {
                       setBewerkId(null);
                       router.refresh();
                     }}
-                    className="flex flex-col gap-2.5 rounded-2xl border border-slate-200 p-3"
-                  >
-                    <input type="hidden" name="title" value={d.title} />
-                    <input type="hidden" name="dueDate" value={d.due_date} />
-                    <input type="hidden" name="subjectId" value={d.subject_id ?? ""} />
-                    {d.start_time && <input type="hidden" name="startTime" value={d.start_time} />}
-                    <p className={clsx("text-xs font-semibold uppercase tracking-wide", isToets ? "text-toets-700" : "text-huiswerk-700")}>
-                      {isToets ? "Toets" : "Huiswerk"}
-                    </p>
-                    <textarea
-                      name="description"
-                      defaultValue={d.description ?? ""}
-                      rows={2}
-                      autoFocus
-                      placeholder={isToets ? "Waar gaat de toets over?" : "Wat moet je doen?"}
-                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
-                    />
-                    <input
-                      type="number"
-                      name="estimatedMinutes"
-                      min={0}
-                      defaultValue={d.estimated_minutes ?? ""}
-                      placeholder="Geschatte tijd in minuten"
-                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
-                    />
-                    <div className="flex gap-2">
-                      <SubmitButton>Opslaan</SubmitButton>
-                      <Button type="button" size="md" variant="secondary" onClick={() => setBewerkId(null)}>
-                        Annuleren
-                      </Button>
-                    </div>
-                  </form>
+                  />
                 ) : (
                   <div
                     key={d.id}
@@ -408,13 +376,8 @@ export function RoosterVakDeadlineModal({
 
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-slate-700">Hoeveel tijd denk je nodig te hebben?</label>
-                <input
-                  type="number"
-                  name="estimatedMinutes"
-                  min={0}
-                  placeholder="in minuten, bijv. 30"
-                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
-                />
+                <DuurKiezer value={estimatedMinutes} onChange={setEstimatedMinutes} />
+                <input type="hidden" name="estimatedMinutes" value={estimatedMinutes ?? ""} />
                 <p className="mt-1 text-xs text-slate-400">
                   Dit is voor de hele taak samen, niet per keer dat je ermee bezig gaat. Weet je het niet? Sla dit veld
                   gewoon over.
@@ -488,5 +451,63 @@ export function RoosterVakDeadlineModal({
         </Modal>
       )}
     </>
+  );
+}
+
+function BewerkDeadlineForm({
+  item,
+  isToets,
+  onAnnuleren,
+  onOpgeslagen,
+}: {
+  item: PlanningItem;
+  isToets: boolean;
+  onAnnuleren: () => void;
+  onOpgeslagen: () => void;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const [estimatedMinutes, setEstimatedMinutes] = useState<number | null>(item.estimated_minutes ?? null);
+
+  return (
+    <form
+      action={async (formData) => {
+        setError(null);
+        const res = await bewerkPlanningItem(item.id, formData);
+        if (res?.error) {
+          setError(res.error);
+          return;
+        }
+        onOpgeslagen();
+      }}
+      className="flex flex-col gap-2.5 rounded-2xl border border-slate-200 p-3"
+    >
+      <input type="hidden" name="title" value={item.title} />
+      <input type="hidden" name="dueDate" value={item.due_date} />
+      <input type="hidden" name="subjectId" value={item.subject_id ?? ""} />
+      {item.start_time && <input type="hidden" name="startTime" value={item.start_time} />}
+      <p className={clsx("text-xs font-semibold uppercase tracking-wide", isToets ? "text-toets-700" : "text-huiswerk-700")}>
+        {isToets ? "Toets" : "Huiswerk"}
+      </p>
+      <textarea
+        name="description"
+        defaultValue={item.description ?? ""}
+        rows={2}
+        autoFocus
+        placeholder={isToets ? "Waar gaat de toets over?" : "Wat moet je doen?"}
+        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
+      />
+      <div>
+        <label className="mb-1.5 block text-xs font-medium text-slate-600">Geschatte tijd</label>
+        <DuurKiezer value={estimatedMinutes} onChange={setEstimatedMinutes} />
+        <input type="hidden" name="estimatedMinutes" value={estimatedMinutes ?? ""} />
+      </div>
+      {error && <p className="text-sm text-rose-600">{error}</p>}
+      <div className="flex gap-2">
+        <SubmitButton>Opslaan</SubmitButton>
+        <Button type="button" size="md" variant="secondary" onClick={onAnnuleren}>
+          Annuleren
+        </Button>
+      </div>
+    </form>
   );
 }
