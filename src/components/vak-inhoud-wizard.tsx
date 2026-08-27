@@ -11,6 +11,8 @@ import {
   pasKennisbankStructuurAan,
   type KennisbankVoorstel,
 } from "@/lib/actions/kennis-bron-import";
+import { bewerkVak } from "@/lib/actions/subjects";
+import type { Subject } from "@/lib/types";
 
 type VerwerkResultaat =
   | { error: string }
@@ -50,7 +52,7 @@ let volgendeId = 0;
  * opgeslagen. Elk bestand doorloopt zelfstandig analyseren -> voorstel ->
  * bevestigen, zodat een fout bij 1 bestand de rest niet blokkeert.
  */
-export function VakInhoudWizard({ subjectId }: { subjectId: string }) {
+export function VakInhoudWizard({ subjectId, subject }: { subjectId: string; subject: Subject }) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [items, setItems] = useState<WizardItem[]>([]);
@@ -131,6 +133,7 @@ export function VakInhoudWizard({ subjectId }: { subjectId: string }) {
     setChatBerichten((huidig) => [...huidig, { rol: "ouder", tekst: instructie }]);
 
     const res = await pasKennisbankStructuurAan(
+      subjectId,
       teIndelenItems.map((it) => ({ bestandsnaam: it.bestandsnaam, hoofdstuk: it.hoofdstuk, paragraafId: it.paragraafId, titel: it.titel ?? "" })),
       chatBerichten,
       instructie
@@ -159,6 +162,21 @@ export function VakInhoudWizard({ subjectId }: { subjectId: string }) {
       if (!item) continue;
       if (actie.actie === "importeren") void bevestig(item);
       else if (actie.actie === "verwijderen") verwijderItem(item.id);
+    }
+
+    if (res.tutorInstructies !== null) {
+      const formData = new FormData();
+      formData.set("name", subject.name);
+      formData.set("code", subject.code ?? "");
+      formData.set("icon", subject.icon);
+      formData.set("aiInstructions", res.tutorInstructies);
+      const tutorRes = await bewerkVak(subjectId, formData);
+      if ("error" in tutorRes && tutorRes.error) {
+        setChatBerichten((huidig) => [...huidig, { rol: "ai", tekst: `Tutor-instructies bijwerken mislukt: ${tutorRes.error}` }]);
+      } else {
+        setChatBerichten((huidig) => [...huidig, { rol: "ai", tekst: "Tutor-instructies van dit vak zijn bijgewerkt." }]);
+        router.refresh();
+      }
     }
   }
 
@@ -345,9 +363,10 @@ export function VakInhoudWizard({ subjectId }: { subjectId: string }) {
           </div>
           <p className="text-xs text-slate-500">
             Dit is de indeling van alle bestanden hierboven samen. Typ hieronder een aanpassing (bv. &quot;zet
-            U1_L3_A.md bij Unit 2&quot;) of een opdracht (bv. &quot;importeer deze 3&quot; of &quot;haal dit bestand
-            weg&quot;) - de bot mag de indeling aanpassen én bestanden direct importeren (als concept) of uit de
-            wachtrij halen. De velden per bestand blijven ook gewoon met de hand aan te passen.
+            U1_L3_A.md bij Unit 2&quot;) of een opdracht (bv. &quot;importeer deze 3&quot;, &quot;haal dit bestand
+            weg&quot; of &quot;stem de vakdocent af op deze kennisbank&quot;) - de bot mag de indeling aanpassen,
+            bestanden direct importeren (als concept) of uit de wachtrij halen, én de instructies van de AI-vakdocent
+            van dit vak bijwerken. De velden per bestand blijven ook gewoon met de hand aan te passen.
           </p>
 
           <div className="flex flex-col gap-2 rounded-lg bg-white p-2.5 text-xs">

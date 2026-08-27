@@ -937,17 +937,40 @@ const StructuurAanpassingSchema = z.object({
       })
     )
     .describe("ALLEEN acties die de ouder expliciet vraagt (bv 'importeer deze', 'sla dit op', 'haal dit bestand weg') - leeg bij een gewone structuurwijziging."),
+  tutorInstructies: z
+    .string()
+    .nullable()
+    .describe(
+      "VOLLEDIGE nieuwe instructietekst voor de AI-vakdocent van dit vak, ALLEEN als de ouder expliciet vraagt om de tutor/vakdocent aan te passen of af te stemmen op de kennisbank. Anders null - nooit ongevraagd wijzigen."
+    ),
   antwoord: z.string().describe("Kort, vriendelijk antwoord aan de ouder over wat je hebt aangepast/gedaan (of een vraag als de instructie onduidelijk is). Max 2 zinnen."),
 });
 
+interface VakContext {
+  naam: string;
+  huidigeTutorInstructies: string;
+  gepubliceerdeHoofdstukken: string[];
+  heeftWoordenschat: boolean;
+  heeftZinnen: boolean;
+}
+
 function bouwStructuurAanpassingPrompt(
+  vak: VakContext,
   items: { bestandsnaam: string; hoofdstuk: string; paragraafId: string; titel: string }[],
   berichten: { rol: "ouder" | "ai"; tekst: string }[],
   instructie: string
 ): string {
   return [
-    "Dit is de huidige voorgestelde indeling van geüploade kennisbank-bestanden voor een schoolvak (2 havo, methode met units/hoofdstukken), nog niet opgeslagen. Elk bestand krijgt een hoofdstuk/unit, een paragraaf-/lesnummer en een titel.",
-    "Jij bent de assistent van deze wizard en mag zelf bestanden importeren of uit de wachtrij halen als de ouder dat vraagt - niet alleen de indeling voorstellen.",
+    `Vak: ${vak.naam} (2 havo, methode met units/hoofdstukken).`,
+    `Huidige instructietekst voor de AI-vakdocent van dit vak: ${vak.huidigeTutorInstructies ? `"${vak.huidigeTutorInstructies}"` : "(nog geen)"}`,
+    `Al gepubliceerde kennisbank: hoofdstukken ${vak.gepubliceerdeHoofdstukken.length > 0 ? vak.gepubliceerdeHoofdstukken.join(", ") : "(nog geen)"}${
+      vak.heeftWoordenschat || vak.heeftZinnen
+        ? `, bevat ${[vak.heeftWoordenschat && "woordenschat-lijsten", vak.heeftZinnen && "zinnen/uitdrukkingen-lijsten"].filter(Boolean).join(" en ")}`
+        : ""
+    }.`,
+    "",
+    "Dit is de huidige voorgestelde indeling van nu geüploade kennisbank-bestanden, nog niet opgeslagen. Elk bestand krijgt een hoofdstuk/unit, een paragraaf-/lesnummer en een titel.",
+    "Jij bent de assistent van deze wizard en mag zelf bestanden importeren of uit de wachtrij halen als de ouder dat vraagt, en de tutor-instructies van dit vak bijwerken als de ouder dat vraagt - niet alleen dingen voorstellen.",
     "",
     "Huidige indeling:",
     items.map((it) => `- "${it.bestandsnaam}": hoofdstuk "${it.hoofdstuk}", paragraaf/les "${it.paragraafId}", titel "${it.titel}"`).join("\n"),
@@ -959,6 +982,7 @@ function bouwStructuurAanpassingPrompt(
     "Instructies:",
     "- Pas de indeling aan volgens de instructie. Geef de VOLLEDIGE bijgewerkte lijst terug, met exact dezelfde bestandsnamen als hierboven (niets weglaten, ook bestanden die niet veranderen horen erbij) - alleen hoofdstuk/paragraafId/titel mogen wijzigen.",
     "- Vraagt de ouder expliciet om een bestand te importeren/opslaan/verwerken, of te verwijderen/weghalen? Zet dat in 'acties'. Anders 'acties' leeg laten - een indeling aanpassen is geen actie.",
+    "- Vraagt de ouder om de AI-vakdocent/tutor aan te passen of beter te laten aansluiten bij de kennisbank van dit vak? Schrijf dan in 'tutorInstructies' een VOLLEDIGE nieuwe instructietekst (geen diff) - kort en concreet, gericht op HOE de tutor moet coachen bij dit specifieke vak (bv. bij een taalvak: woordenschat/zinnen letterlijk laten overhoren, grammatica uitleggen), passend bij de hoofdstukken/categorieën hierboven en bij wat de ouder vraagt. Bouw voort op de huidige instructietekst i.p.v. 'm te negeren, tenzij de ouder vraagt om 'm te vervangen. Anders 'tutorInstructies': null.",
     "- Twijfel je welk bestand bedoeld wordt (bv. bij 'importeer ze allemaal' terwijl dat niet duidelijk alle bestanden hoeft te zijn)? Vraag in 'antwoord' om verduidelijking en laat 'acties' dan leeg.",
   ].join("\n");
 }
@@ -966,26 +990,47 @@ function bouwStructuurAanpassingPrompt(
 /**
  * Past het voorgestelde hoofdstuk/paragraaf/titel van meerdere nog-niet-
  * bevestigde bestanden in 1 keer aan op basis van een vrije instructie van de
- * ouder, en/of voert direct een importeer-/verwijderactie uit die de ouder
- * expliciet vraagt - voor de losse "1 bestand per keer"-bediening in de
- * wizard, maar dan conversationeel voor de hele batch tegelijk.
+ * ouder, voert direct een importeer-/verwijderactie uit die de ouder
+ * expliciet vraagt, en/of stelt nieuwe instructietekst voor de AI-vakdocent
+ * van dit vak voor (afgestemd op de - deels al gepubliceerde, deels net
+ * geüploade - kennisbank) - voor de losse "1 bestand per keer"-bediening in
+ * de wizard, maar dan conversationeel voor de hele batch (en de tutor) ineens.
  */
 export async function pasKennisbankStructuurAan(
+  subjectId: string,
   items: { bestandsnaam: string; hoofdstuk: string; paragraafId: string; titel: string }[],
   berichten: { rol: "ouder" | "ai"; tekst: string }[],
   instructie: string
 ) {
   const ouder = await ouderProfiel();
   if ("error" in ouder) return { error: ouder.error };
+  const { supabase, familyId } = ouder;
   if (!instructie.trim()) return { error: "Typ een instructie." };
   if (items.length === 0) return { error: "Nog geen bestanden om in te delen." };
+
+  const { data: subject } = await supabase.from("subjects").select("name, ai_instructions, family_id").eq("id", subjectId).single();
+  if (!subject || subject.family_id !== familyId) return { error: "Vak niet gevonden." };
+
+  const [{ data: hoofdstukRijen }, { data: woordenlijstRijen }] = await Promise.all([
+    supabase.from("kennis_paragraaf_context").select("hoofdstuk").eq("subject_id", subjectId).eq("status", "gepubliceerd"),
+    supabase.from("kennis_woordenlijsten").select("categorie").eq("subject_id", subjectId).eq("status", "gepubliceerd"),
+  ]);
+  const vak: VakContext = {
+    naam: subject.name,
+    huidigeTutorInstructies: subject.ai_instructions ?? "",
+    gepubliceerdeHoofdstukken: Array.from(new Set((hoofdstukRijen ?? []).map((r) => r.hoofdstuk))).sort((a, b) =>
+      a.localeCompare(b, undefined, { numeric: true })
+    ),
+    heeftWoordenschat: (woordenlijstRijen ?? []).some((r) => r.categorie === "woordenschat"),
+    heeftZinnen: (woordenlijstRijen ?? []).some((r) => r.categorie === "zinnen"),
+  };
 
   try {
     const client = createGeminiClient();
     return await genereerGestructureerd(
       client,
       StructuurAanpassingSchema,
-      bouwStructuurAanpassingPrompt(items, berichten, instructie),
+      bouwStructuurAanpassingPrompt(vak, items, berichten, instructie),
       4096
     );
   } catch (e) {

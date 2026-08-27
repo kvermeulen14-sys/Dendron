@@ -105,7 +105,7 @@ export default async function VakDetailPage({
         <OverhoorResultaten sessies={(overhoorSessies ?? []) as OverhoorSessie[]} />
       </Card>
 
-      <VakInhoudWizard subjectId={id} />
+      <VakInhoudWizard subjectId={id} subject={subject as Subject} />
 
       <div>
         <div className="mb-3 flex items-center justify-between gap-2">
