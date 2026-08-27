@@ -10,6 +10,11 @@ const DAGNAMEN = ["", "Maandag", "Dinsdag", "Woensdag", "Donderdag", "Vrijdag", 
 const PLANNING_TYPES = ["huiswerk", "toets", "leermoment", "prive"] as const;
 const MAX_VOORSTELLEN = 4;
 
+const VoorstelOptieSchema = z.object({
+  datum: z.string().describe("YYYY-MM-DD. Nooit een datum in het verleden."),
+  tijd: z.string().nullable().describe("HH:MM (24-uurs), of null als er geen concreet tijdstip is."),
+});
+
 const VoorstelSchema = z.object({
   actie: z.enum(["aanmaken", "verplaats", "deadline_verzetten", "klaar_melden", "heropenen", "verwijderen"]),
   planningItemId: z
@@ -22,12 +27,25 @@ const VoorstelSchema = z.object({
     .string()
     .nullable()
     .describe(
-      "YYYY-MM-DD. Verplicht bij aanmaken (de datum van het nieuwe item) en bij deadline_verzetten. Bij verplaats: de nieuwe datum, of null om de datum te laten staan en alleen de tijd te wijzigen. Nooit een datum in het verleden."
+      "YYYY-MM-DD. Verplicht bij aanmaken (de datum van het nieuwe item) en bij deadline_verzetten. Bij verplaats: gebruik bij voorkeur 'opties' hieronder (2-3 mogelijke momenten) - nieuweDatum/nieuweTijd zijn de fallback als er maar 1 duidelijke optie is. Nooit een datum in het verleden."
     ),
   nieuweTijd: z
     .string()
     .nullable()
     .describe("HH:MM (24-uurs). Optioneel bij aanmaken/verplaats - een concreet tijdstip. Null = geen specifiek tijdstip."),
+  opties: z
+    .array(VoorstelOptieSchema)
+    .max(3)
+    .nullable()
+    .describe(
+      "ALLEEN bij verplaats voor een werkmoment (huiswerk/toets, zie 'verplaats' hieronder): 2-3 verschillende, echt haalbare momenten (verschillende dagen en/of tijden) waar de leerling meteen 1 van kan kiezen, i.p.v. 1 voorstel afwachten en dan pas een alternatief kunnen vragen. Null bij andere acties, of als er echt maar 1 zinnig moment is."
+    ),
+  nieuweGeschatteMinuten: z
+    .number()
+    .nullable()
+    .describe(
+      "ALLEEN bij verplaats: als de leerling aangeeft dat de eerder geschatte tijd niet klopt (bv 'dat duurt geen 2 uur maar 1 uur'), zet hier de gecorrigeerde inschatting in minuten - dat past dan METEEN de taak zelf aan (niet alleen dit ene moment) en helpt bij het kiezen van een moment dat er beter bij past. Anders null."
+    ),
   type: z
     .enum(PLANNING_TYPES)
     .nullable()
@@ -176,9 +194,12 @@ export async function POST(request: Request) {
 
   const prompt = `Je bent een rustige, meedenkende planning-buddy voor een leerling in de tweede klas van het Havo die moeite heeft met plannen. Je bent geen schema-generator en geen ouder/docent - je denkt samen met de leerling na over een planningsdilemma, EN je kunt de agenda voor ze aanpassen als dat helpt.
 
-Wat je kunt voorstellen (via "voorstellen" hieronder - elk voorstel krijgt de leerling apart te zien met een eigen "Ja doe dit"/"Nee laat maar"-knop, dus je voert NOOIT zelf iets uit, je stelt het alleen voor):
+Wat je kunt voorstellen (via "voorstellen" hieronder - elk voorstel krijgt de leerling apart te zien met een eigen bevestigingsknop, dus je voert NOOIT zelf iets uit, je stelt het alleen voor):
 - "aanmaken": een nieuw item toevoegen - huiswerk, een toets, een leermoment, of iets privés (bv. "kamer opruimen", "voetbaltraining", "afspreken met een vriend(in)").
-- "verplaats": een werkmoment/moment plannen of verzetten. BELANGRIJK: bij huiswerk en een toets is de deadline (due_date, hierboven getoond) HEILIG - die verandert een "verplaats"-voorstel NOOIT, ook al kies je een "nieuweDatum" die eerder valt. Je plant dan alleen WANNEER de leerling eraan gaat werken, vóór die deadline - de deadline zelf blijft gewoon staan en het item blijft daar ook gewoon zichtbaar. Noem in je antwoord dus nooit dat je "de deadline verzet", maar dat je een werkmoment inplant. Bij leermoment/prive IS de datum al het moment zelf, dus daar verplaats je gewoon normaal.
+- "verplaats": een werkmoment/moment plannen of verzetten. BELANGRIJK: bij huiswerk en een toets is de deadline (due_date, hierboven getoond) HEILIG - die verandert een "verplaats"-voorstel NOOIT, ook al kies je een datum die eerder valt. Je plant dan alleen WANNEER de leerling eraan gaat werken, vóór die deadline - de deadline zelf blijft gewoon staan en het item blijft daar ook gewoon zichtbaar. Noem in je antwoord dus nooit dat je "de deadline verzet", maar dat je een werkmoment inplant. Bij leermoment/prive IS de datum al het moment zelf, dus daar verplaats je gewoon normaal.
+  - Geef bij het plannen van een werkmoment (huiswerk/toets) BIJ VOORKEUR 2-3 concrete opties tegelijk via het "opties"-veld (verschillende dagen en/of tijden) in plaats van maar 1 voorstel - dan kan de leerling er meteen 1 kiezen zonder eerst "nee, iets anders graag" te moeten zeggen. Gebruik nieuweDatum/nieuweTijd alleen als er echt maar 1 zinnig moment is.
+  - Geeft de leerling aan dat de eerder geschatte tijd niet klopt (bv "dat duurt geen 2 uur maar 1 uur")? Zet dat in "nieuweGeschatteMinuten" op hetzelfde verplaats-voorstel - dat corrigeert dan meteen de taak zelf, niet alleen dit ene moment.
+  - Past een goed moment niet omdat de dag al vol staat met iets flexibels (een klusje als "kamer opruimen", of een leermoment)? Dan mag je in DEZELFDE beurt een tweede "verplaats"-voorstel doen om dat te verschuiven, zodat er ruimte komt - leg in je antwoord kort uit dat je dat voorstelt. Twijfel je of iets een vaste afspraak is (sport, iemand ontmoeten, een verjaardag) in plaats van iets flexibels? Vraag dat dan eerst, stel nooit zomaar voor om een echte afspraak te verzetten.
 - "deadline_verzetten": ALLEEN voor huiswerk/toets, en ALLEEN als de deadline zelf écht verandert (bv. een les valt uit/wordt verzet, de docent verzet de inleverdatum/toetsdatum). Gebruik dit NOOIT om te plannen wanneer de leerling eraan werkt - dat is altijd "verplaats".
 - "klaar_melden" / "heropenen": een bestaand item als klaar markeren, of terugzetten naar open.
 - "verwijderen": een bestaand item weghalen - ook een toets kan hiermee weg (de eraan gekoppelde leermomenten verdwijnen dan automatisch mee, dat regelt de app zelf, daar hoef je geen apart voorstel voor te doen).
@@ -242,6 +263,10 @@ Nieuw bericht van de leerling: ${message}`;
       if (!v.planningItemId || !geldigeIds.has(v.planningItemId)) return false;
       if ((v.actie === "verplaats" || v.actie === "deadline_verzetten") && v.nieuweDatum && v.nieuweDatum < vandaagIso) return false;
       if (v.actie === "deadline_verzetten" && !v.nieuweDatum) return false;
+      if (v.actie === "verplaats" && v.opties) {
+        v.opties = v.opties.filter((o) => o.datum >= vandaagIso);
+        if (v.opties.length === 0) v.opties = null;
+      }
       return true;
     });
 

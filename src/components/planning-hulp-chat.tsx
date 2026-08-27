@@ -10,6 +10,7 @@ import { MarkdownTekst } from "@/components/markdown-tekst";
 import {
   maakPlanningItemSimpel,
   plandWerkmoment,
+  updatePlanningDuur,
   updatePlanningStatus,
   verplaatsPlanningItem,
   verplaatsPlanningItemNaarTijd,
@@ -19,11 +20,19 @@ import { PLANNING_TYPE_META } from "@/lib/planning";
 import type { PlanningItem, PlanningType, Subject } from "@/lib/types";
 
 type Actie = "aanmaken" | "verplaats" | "deadline_verzetten" | "klaar_melden" | "heropenen" | "verwijderen";
+interface VoorstelOptie {
+  datum: string;
+  tijd: string | null;
+}
 interface Voorstel {
   actie: Actie;
   planningItemId: string | null;
   nieuweDatum: string | null;
   nieuweTijd: string | null;
+  /** Alleen bij verplaats van een werkmoment: 2-3 momenten waar meteen 1 van gekozen kan worden. */
+  opties: VoorstelOptie[] | null;
+  /** Alleen bij verplaats: gecorrigeerde tijdsinschatting - past de taak zelf ook aan, niet alleen dit moment. */
+  nieuweGeschatteMinuten: number | null;
   type: PlanningType | null;
   titel: string | null;
   vakId: string | null;
@@ -165,7 +174,7 @@ export function PlanningHulpChat({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openingsbericht]);
 
-  async function bevestigVoorstel(berichtId: string, index: number, voorstel: Voorstel) {
+  async function bevestigVoorstel(berichtId: string, index: number, voorstel: Voorstel, gekozenOptie?: VoorstelOptie) {
     const sleutel = `${berichtId}-${index}`;
     setUitvoerenSleutel(sleutel);
     setError(null);
@@ -190,14 +199,21 @@ export function PlanningHulpChat({
           // net als slepen in de agenda. Bij leermoment/prive IS due_date al
           // de dag waarop het gebeurt, dus die verzetten we gewoon.
           if (item && (item.type === "huiswerk" || item.type === "toets")) {
-            const datum = voorstel.nieuweDatum ?? item.start_date ?? item.due_date;
-            await plandWerkmoment(voorstel.planningItemId, datum, voorstel.nieuweTijd ?? item.start_time);
+            const datum = gekozenOptie?.datum ?? voorstel.nieuweDatum ?? item.start_date ?? item.due_date;
+            const tijd = gekozenOptie ? gekozenOptie.tijd : (voorstel.nieuweTijd ?? item.start_time);
+            await plandWerkmoment(voorstel.planningItemId, datum, tijd);
+            // De leerling gaf aan dat de inschatting niet klopte - past de
+            // taak zelf aan, niet alleen dit ene moment.
+            if (voorstel.nieuweGeschatteMinuten) {
+              await updatePlanningDuur(voorstel.planningItemId, voorstel.nieuweGeschatteMinuten);
+            }
             break;
           }
-          const datum = voorstel.nieuweDatum ?? item?.due_date;
+          const datum = gekozenOptie?.datum ?? voorstel.nieuweDatum ?? item?.due_date;
           if (!datum) return;
-          if (voorstel.nieuweTijd) {
-            await verplaatsPlanningItemNaarTijd(voorstel.planningItemId, datum, voorstel.nieuweTijd);
+          const tijd = gekozenOptie ? gekozenOptie.tijd : voorstel.nieuweTijd;
+          if (tijd) {
+            await verplaatsPlanningItemNaarTijd(voorstel.planningItemId, datum, tijd);
           } else {
             await verplaatsPlanningItem(voorstel.planningItemId, datum);
           }
@@ -282,6 +298,52 @@ export function PlanningHulpChat({
 
               {m.voorstellen?.map(({ voorstel, status }, index) => {
                 const item = itemVoor(voorstel.planningItemId);
+                const isWerkmoment = item && (item.type === "huiswerk" || item.type === "toets");
+
+                // Meerdere momenten om uit te kiezen: meteen 1 klik i.p.v.
+                // eerst 1 voorstel afwijzen en om een alternatief vragen.
+                if (voorstel.actie === "verplaats" && isWerkmoment && voorstel.opties && voorstel.opties.length > 0) {
+                  return (
+                    <div
+                      key={index}
+                      className="mt-2 flex max-w-[85%] flex-col gap-2 rounded-xl border border-accent-200 bg-accent-50/60 p-3"
+                    >
+                      <p className="text-xs font-medium text-accent-800">
+                        Werkmoment voor &quot;{item.title}&quot; (moet af op {formatDatum(item.due_date)}) - kies een moment:
+                      </p>
+                      {voorstel.toelichting && <p className="text-xs text-slate-500">{voorstel.toelichting}</p>}
+                      {status === "bevestigd" ? (
+                        <p className="flex items-center gap-1.5 text-xs font-medium text-emerald-700">
+                          <Icon name="check" size={14} /> Gedaan!
+                        </p>
+                      ) : status === "afgewezen" ? (
+                        <p className="text-xs text-slate-500">Oke, laten staan zoals het was.</p>
+                      ) : (
+                        <div className="flex flex-col gap-1.5">
+                          {voorstel.opties.map((optie, oi) => (
+                            <button
+                              key={oi}
+                              disabled={uitvoerenSleutel === `${m.id}-${index}`}
+                              onClick={() => bevestigVoorstel(m.id, index, voorstel, optie)}
+                              className="rounded-lg border border-accent-300 bg-white px-3 py-2 text-left text-xs font-semibold text-accent-800 hover:bg-accent-100 disabled:opacity-50"
+                            >
+                              {formatDatum(optie.datum)}
+                              {optie.tijd ? ` om ${optie.tijd}` : ""}
+                            </button>
+                          ))}
+                          <button
+                            disabled={uitvoerenSleutel === `${m.id}-${index}`}
+                            onClick={() => wijsAf(m.id, index)}
+                            className="self-start text-[11px] font-medium text-slate-400 underline underline-offset-2 hover:text-slate-600 disabled:opacity-50"
+                          >
+                            Geen van deze, laat maar
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+
                 const omschrijving = voorstelOmschrijving(voorstel, item, subjects);
                 if (!omschrijving) return null;
                 return (
