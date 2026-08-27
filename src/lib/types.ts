@@ -263,6 +263,13 @@ export interface KennisWoordenlijst {
 
 export type Leerfase = "eerste" | "tussentijds" | "laatste";
 
+export interface OverhoorTranscriptRegel {
+  vraag: string;
+  antwoord: string;
+  feedback: string;
+  beoordeling: "goed" | "deels" | "fout" | "geen";
+}
+
 export interface OverhoorSessie {
   id: string;
   family_id: string;
@@ -274,6 +281,8 @@ export interface OverhoorSessie {
   aantal_fout: number;
   /** Het gekozen hoofdstuk bij het starten (via de wizard); null bij "alle lesstof". */
   hoofdstuk: string | null;
+  /** De losse vragen/antwoorden/feedback van deze sessie - kan leeg zijn als de inhoud is opgeschoond (zie wisOudeChatgeschiedenis), de score hierboven blijft dan wel staan. */
+  transcript: OverhoorTranscriptRegel[];
   created_at: string;
 }
 

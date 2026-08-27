@@ -2,14 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import type { Leerfase } from "@/lib/types";
+import type { Leerfase, OverhoorTranscriptRegel } from "@/lib/types";
 
-export interface OverhoorTranscriptRegel {
-  vraag: string;
-  antwoord: string;
-  feedback: string;
-  beoordeling: "goed" | "deels" | "fout" | "geen";
-}
+export type { OverhoorTranscriptRegel };
 
 /**
  * Slaat het resultaat van 1 afgeronde overhoor-/oefensessie op: de score
@@ -54,4 +49,31 @@ export async function slaOverhoorResultaatOp(
 
   revalidatePath(`/kind/vakken/${subjectId}`);
   revalidatePath(`/ouder/vakken/${subjectId}`);
+}
+
+/**
+ * Wist de oefen-/overhoorvoortgang (score EN transcript, niet alleen de
+ * inhoud zoals wisOudeChatgeschiedenis) voor 1 vak - handig na testen, of om
+ * gewoon opnieuw te beginnen. RLS bepaalt de scope: een leerling wist alleen
+ * eigen sessies, een ouder wist die van het hele gezin voor dit vak.
+ */
+export async function verwijderOverhoorGeschiedenis(
+  subjectId: string
+): Promise<{ error: string } | { verwijderd: number }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Niet ingelogd." };
+
+  const { data: verwijderd, error } = await supabase
+    .from("overhoor_sessies")
+    .delete()
+    .eq("subject_id", subjectId)
+    .select("id");
+  if (error) return { error: error.message };
+
+  revalidatePath(`/kind/vakken/${subjectId}`);
+  revalidatePath(`/ouder/vakken/${subjectId}`);
+  return { verwijderd: verwijderd?.length ?? 0 };
 }

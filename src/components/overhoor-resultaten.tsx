@@ -1,6 +1,17 @@
+"use client";
+
+import { useState } from "react";
 import clsx from "clsx";
 import { Icon } from "@/components/icon";
+import { MarkdownTekst } from "@/components/markdown-tekst";
 import type { OverhoorSessie } from "@/lib/types";
+
+const BEOORDELING_KLEUR: Record<string, string> = {
+  goed: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  deels: "border-amber-200 bg-amber-50 text-amber-700",
+  fout: "border-rose-200 bg-rose-50 text-rose-700",
+  geen: "border-slate-200 bg-slate-50 text-slate-500",
+};
 
 const LEERFASE_LABEL: Record<string, string> = {
   eerste: "eerste keer",
@@ -27,6 +38,8 @@ function relatieveDatum(iso: string) {
  * bedoeld als groei-inzicht, niet als beoordeling.
  */
 export function OverhoorResultaten({ sessies }: { sessies: OverhoorSessie[] }) {
+  const [opengeklapt, setOpengeklapt] = useState<string | null>(null);
+
   if (sessies.length === 0) {
     return (
       <p className="text-sm text-slate-500">
@@ -50,26 +63,62 @@ export function OverhoorResultaten({ sessies }: { sessies: OverhoorSessie[] }) {
         </span>
       </div>
 
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-1.5">
         {sessies.map((s) => {
           const t = s.aantal_goed + s.aantal_deels + s.aantal_fout;
+          const heeftTranscript = s.transcript && s.transcript.length > 0;
+          const open = opengeklapt === s.id;
           return (
-            <div key={s.id} className="flex items-center gap-2.5">
-              <span className="w-14 shrink-0 text-[11px] text-slate-400">{relatieveDatum(s.created_at)}</span>
-              <div className="flex h-2.5 flex-1 overflow-hidden rounded-full bg-slate-100">
-                {s.aantal_goed > 0 && (
-                  <div className="bg-emerald-400" style={{ width: `${(s.aantal_goed / t) * 100}%` }} />
+            <div key={s.id} className="rounded-lg">
+              <button
+                type="button"
+                onClick={() => heeftTranscript && setOpengeklapt(open ? null : s.id)}
+                className={clsx(
+                  "flex w-full items-center gap-2.5 rounded-lg py-0.5 text-left",
+                  heeftTranscript && "cursor-pointer hover:bg-slate-50"
                 )}
-                {s.aantal_deels > 0 && (
-                  <div className="bg-amber-400" style={{ width: `${(s.aantal_deels / t) * 100}%` }} />
+              >
+                <span className="w-14 shrink-0 text-[11px] text-slate-400">{relatieveDatum(s.created_at)}</span>
+                <div className="flex h-2.5 flex-1 overflow-hidden rounded-full bg-slate-100">
+                  {s.aantal_goed > 0 && (
+                    <div className="bg-emerald-400" style={{ width: `${(s.aantal_goed / t) * 100}%` }} />
+                  )}
+                  {s.aantal_deels > 0 && (
+                    <div className="bg-amber-400" style={{ width: `${(s.aantal_deels / t) * 100}%` }} />
+                  )}
+                  {s.aantal_fout > 0 && (
+                    <div className="bg-rose-400" style={{ width: `${(s.aantal_fout / t) * 100}%` }} />
+                  )}
+                </div>
+                <span className="w-28 shrink-0 truncate text-[11px] text-slate-500" title={s.hoofdstuk ?? undefined}>
+                  {s.hoofdstuk ?? (LEERFASE_LABEL[s.leerfase] ?? s.leerfase)}
+                </span>
+                {heeftTranscript && (
+                  <Icon
+                    name="chevron-right"
+                    size={13}
+                    className={clsx("shrink-0 text-slate-300 transition-transform", open && "rotate-90")}
+                  />
                 )}
-                {s.aantal_fout > 0 && (
-                  <div className="bg-rose-400" style={{ width: `${(s.aantal_fout / t) * 100}%` }} />
-                )}
-              </div>
-              <span className="w-24 shrink-0 truncate text-[11px] text-slate-400">
-                {LEERFASE_LABEL[s.leerfase] ?? s.leerfase}
-              </span>
+              </button>
+              {open && heeftTranscript && (
+                <div className="ml-14 mt-1.5 flex flex-col gap-2 border-l-2 border-slate-100 py-1 pl-3">
+                  {s.transcript.map((r, i) => (
+                    <div key={i} className={clsx("rounded-lg border p-2 text-xs", BEOORDELING_KLEUR[r.beoordeling])}>
+                      <p className="font-medium text-slate-700">{r.vraag}</p>
+                      <p className="mt-0.5 text-slate-600">
+                        <span className="font-medium">Antwoord: </span>
+                        {r.antwoord}
+                      </p>
+                      {r.feedback && (
+                        <div className="mt-1">
+                          <MarkdownTekst>{r.feedback}</MarkdownTekst>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           );
         })}

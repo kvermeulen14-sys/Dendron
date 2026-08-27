@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card";
 import { ChatPanel } from "@/components/chat-panel";
 import { OverhoorPanel } from "@/components/overhoor-panel";
 import { OverhoorResultaten } from "@/components/overhoor-resultaten";
+import { OverhoorGeschiedenisOpschonenKnop } from "@/components/overhoor-geschiedenis-opschonen-knop";
 import type { ChatMessage, OverhoorSessie } from "@/lib/types";
 
 const TABS = [
@@ -75,7 +76,10 @@ export function VakWerkruimte({
           />
           {!oefenSessieActief && overhoorSessies.length > 0 && (
             <Card>
-              <h2 className="mb-3 text-base font-semibold text-slate-900">Mijn voortgang</h2>
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <h2 className="text-base font-semibold text-slate-900">Mijn voortgang</h2>
+                <OverhoorGeschiedenisOpschonenKnop subjectId={subjectId} />
+              </div>
               <OverhoorResultaten sessies={overhoorSessies} />
             </Card>
           )}

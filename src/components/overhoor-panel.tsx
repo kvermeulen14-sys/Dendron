@@ -111,6 +111,8 @@ export function OverhoorPanel({
   const [beoordeling, setBeoordeling] = useState<Beoordeling | null>(null);
   const [lesstofFragment, setLesstofFragment] = useState<LesstofFragment>(null);
   const [juisteAntwoord, setJuisteAntwoord] = useState<string | null>(null);
+  const [uitleg, setUitleg] = useState<string | null>(null);
+  const [uitlegBezig, setUitlegBezig] = useState(false);
   const [zelfCheck, setZelfCheck] = useState(false);
   const [zelfCheckAntwoord, setZelfCheckAntwoord] = useState<string | null>(null);
   const [zelfCheckOnthuld, setZelfCheckOnthuld] = useState(false);
@@ -134,6 +136,7 @@ export function OverhoorPanel({
     setBeoordeling(null);
     setLesstofFragment(null);
     setJuisteAntwoord(null);
+    setUitleg(null);
     setZelfCheck(false);
     setZelfCheckAntwoord(null);
     setZelfCheckOnthuld(false);
@@ -266,11 +269,38 @@ export function OverhoorPanel({
         zelfCheckAntwoord: typeof data.zelfCheckAntwoord === "string" ? data.zelfCheckAntwoord : null,
       });
       setAntwoord("");
+      setUitleg(null);
       setFase("feedback");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Er ging iets mis.");
     } finally {
       setBezig(false);
+    }
+  }
+
+  async function vraagUitleg() {
+    if (!vraag) return;
+    setUitlegBezig(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/overhoor", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          subjectId,
+          modus: "uitleg",
+          vorigeVraag: vraag,
+          vorigAntwoord: laatsteAntwoord,
+          eerdereUitleg: uitleg,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Kon geen uitleg ophalen.");
+      setUitleg(data.uitleg);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Er ging iets mis.");
+    } finally {
+      setUitlegBezig(false);
     }
   }
 
@@ -296,6 +326,7 @@ export function OverhoorPanel({
     setBeoordeling(null);
     setLesstofFragment(null);
     setJuisteAntwoord(null);
+    setUitleg(null);
     setVraagIndex((n) => n + 1);
     setFase("vraag");
   }
@@ -684,9 +715,25 @@ export function OverhoorPanel({
                         <p className="whitespace-pre-wrap">{normaliseerWiskundeNotatie(lesstofFragment.tekst)}</p>
                       </div>
                     )}
-                    <Button loading={bezig} onClick={volgendeVraag} icon={<Icon name="chevron-right" size={16} />}>
-                      {maxVragen !== null && vraagIndex >= maxVragen ? "Afronden" : "Volgende vraag"}
-                    </Button>
+                    {uitleg && (
+                      <div className="rounded-xl border border-accent-200 bg-accent-50/60 p-3 text-sm text-slate-700">
+                        <p className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-accent-700">
+                          <Icon name="brain" size={13} />
+                          Extra uitleg
+                        </p>
+                        <MarkdownTekst>{uitleg}</MarkdownTekst>
+                      </div>
+                    )}
+                    <div className="flex flex-wrap gap-2">
+                      <Button loading={bezig} onClick={volgendeVraag} icon={<Icon name="chevron-right" size={16} />}>
+                        {maxVragen !== null && vraagIndex >= maxVragen ? "Afronden" : "Volgende vraag"}
+                      </Button>
+                      {(beoordeling === "deels" || beoordeling === "fout") && (
+                        <Button variant="secondary" loading={uitlegBezig} onClick={vraagUitleg} icon={<Icon name="brain" size={16} />}>
+                          Ik snap het nog niet
+                        </Button>
+                      )}
+                    </div>
                   </>
                 ) : opties ? (
                   <div className="flex flex-col gap-2">

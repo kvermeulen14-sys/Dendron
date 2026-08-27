@@ -10,6 +10,7 @@ import { MateriaalBewerkForm } from "@/components/materiaal-bewerk-form";
 import { KennisbankUploader } from "@/components/kennisbank-uploader";
 import { KennisbankWizard } from "@/components/kennisbank-wizard";
 import { OverhoorResultaten } from "@/components/overhoor-resultaten";
+import { OverhoorGeschiedenisOpschonenKnop } from "@/components/overhoor-geschiedenis-opschonen-knop";
 import { KennisOnderdelenBeheer } from "@/components/kennis-onderdelen-beheer";
 import { VakBewerkForm } from "./vak-bewerk-form";
 import { VerwijderVakKnop } from "./verwijder-vak-knop";
@@ -96,7 +97,10 @@ export default async function VakDetailPage({
       )}
 
       <Card>
-        <h2 className="mb-3 text-base font-semibold text-slate-900">Overhoor-resultaten</h2>
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <h2 className="text-base font-semibold text-slate-900">Overhoor-resultaten</h2>
+          {(overhoorSessies?.length ?? 0) > 0 && <OverhoorGeschiedenisOpschonenKnop subjectId={id} />}
+        </div>
         <OverhoorResultaten sessies={(overhoorSessies ?? []) as OverhoorSessie[]} />
       </Card>
 
