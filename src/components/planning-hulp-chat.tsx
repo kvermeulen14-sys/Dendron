@@ -16,10 +16,18 @@ import {
   verplaatsPlanningItemNaarTijd,
   verwijderPlanningItem,
 } from "@/lib/actions/planning";
+import { maakRoosterUitzonderingSimpel } from "@/lib/actions/rooster";
 import { PLANNING_TYPE_META } from "@/lib/planning";
 import type { PlanningItem, PlanningType, Subject } from "@/lib/types";
 
-type Actie = "aanmaken" | "verplaats" | "deadline_verzetten" | "klaar_melden" | "heropenen" | "verwijderen";
+type Actie =
+  | "aanmaken"
+  | "verplaats"
+  | "deadline_verzetten"
+  | "les_laten_vervallen"
+  | "klaar_melden"
+  | "heropenen"
+  | "verwijderen";
 interface VoorstelOptie {
   datum: string;
   tijd: string | null;
@@ -27,6 +35,10 @@ interface VoorstelOptie {
 interface Voorstel {
   actie: Actie;
   planningItemId: string | null;
+  /** Alleen bij les_laten_vervallen: het rooster-lesuur dat op nieuweDatum vervalt. */
+  roosterItemId: string | null;
+  /** Door de server toegevoegd bij les_laten_vervallen - nooit AI-tekst vertrouwen voor wat er precies vervalt. */
+  lesDetails?: { vak: string; tijd: string } | null;
   nieuweDatum: string | null;
   nieuweTijd: string | null;
   /** Alleen bij verplaats van een werkmoment: 2-3 momenten waar meteen 1 van gekozen kan worden. */
@@ -77,6 +89,10 @@ function voorstelOmschrijving(voorstel: Voorstel, item: PlanningItem | null, sub
     case "deadline_verzetten": {
       if (!item || !voorstel.nieuweDatum) return null;
       return `Deadline van "${item.title}" verzetten naar ${formatDatum(voorstel.nieuweDatum)}`;
+    }
+    case "les_laten_vervallen": {
+      if (!voorstel.lesDetails || !voorstel.nieuweDatum) return null;
+      return `${voorstel.lesDetails.vak} (${voorstel.lesDetails.tijd}) laten vervallen op ${formatDatum(voorstel.nieuweDatum)}`;
     }
     case "klaar_melden":
       return item ? `"${item.title}" als klaar markeren` : null;
@@ -222,6 +238,12 @@ export function PlanningHulpChat({
         case "deadline_verzetten": {
           if (!voorstel.planningItemId || !voorstel.nieuweDatum) return;
           await verplaatsPlanningItem(voorstel.planningItemId, voorstel.nieuweDatum);
+          break;
+        }
+        case "les_laten_vervallen": {
+          if (!voorstel.roosterItemId || !voorstel.nieuweDatum) return;
+          const res = await maakRoosterUitzonderingSimpel(voorstel.roosterItemId, voorstel.nieuweDatum);
+          if (res?.error) throw new Error(res.error);
           break;
         }
         case "klaar_melden":

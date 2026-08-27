@@ -16,18 +16,32 @@ const VoorstelOptieSchema = z.object({
 });
 
 const VoorstelSchema = z.object({
-  actie: z.enum(["aanmaken", "verplaats", "deadline_verzetten", "klaar_melden", "heropenen", "verwijderen"]),
+  actie: z.enum([
+    "aanmaken",
+    "verplaats",
+    "deadline_verzetten",
+    "les_laten_vervallen",
+    "klaar_melden",
+    "heropenen",
+    "verwijderen",
+  ]),
   planningItemId: z
     .string()
     .nullable()
     .describe(
-      "Verplicht: het EXACTE id (tussen [ ]) uit TAKEN hieronder bij verplaats/deadline_verzetten/klaar_melden/heropenen/verwijderen. Verzin nooit een id. Altijd null bij aanmaken."
+      "Verplicht: het EXACTE id (tussen [ ]) uit TAKEN hieronder bij verplaats/deadline_verzetten/klaar_melden/heropenen/verwijderen. Verzin nooit een id. Altijd null bij aanmaken en les_laten_vervallen."
+    ),
+  roosterItemId: z
+    .string()
+    .nullable()
+    .describe(
+      "ALLEEN bij les_laten_vervallen: het EXACTE id (tussen [ ]) van het lesuur uit LESROOSTER hieronder. Verzin nooit een id. Anders altijd null."
     ),
   nieuweDatum: z
     .string()
     .nullable()
     .describe(
-      "YYYY-MM-DD. Verplicht bij aanmaken (de datum van het nieuwe item) en bij deadline_verzetten. Bij verplaats: gebruik bij voorkeur 'opties' hieronder (2-3 mogelijke momenten) - nieuweDatum/nieuweTijd zijn de fallback als er maar 1 duidelijke optie is. Nooit een datum in het verleden."
+      "YYYY-MM-DD. Verplicht bij aanmaken (de datum van het nieuwe item), bij deadline_verzetten, en bij les_laten_vervallen (de specifieke dag waarop de les vervalt - moet op dezelfde weekdag vallen als het lesuur in LESROOSTER). Bij verplaats: gebruik bij voorkeur 'opties' hieronder (2-3 mogelijke momenten) - nieuweDatum/nieuweTijd zijn de fallback als er maar 1 duidelijke optie is. Nooit een datum in het verleden."
     ),
   nieuweTijd: z
     .string()
@@ -128,7 +142,7 @@ export async function POST(request: Request) {
   const { data: roosterItems } = huidigePeriode
     ? await supabase
         .from("rooster_items")
-        .select("subject_id, titel, dag_van_week, start_tijd, eind_tijd")
+        .select("id, subject_id, titel, dag_van_week, start_tijd, eind_tijd")
         .eq("periode_id", huidigePeriode.id)
         .order("start_tijd", { ascending: true })
     : { data: null };
@@ -149,7 +163,7 @@ export async function POST(request: Request) {
             const lessenTekst = lessen
               .map((r) => {
                 const vak = r.subject_id ? subjectNaam.get(r.subject_id) : null;
-                return `${r.start_tijd.slice(0, 5)}-${r.eind_tijd.slice(0, 5)} ${vak || r.titel}`;
+                return `[${r.id}] ${r.start_tijd.slice(0, 5)}-${r.eind_tijd.slice(0, 5)} ${vak || r.titel}`;
               })
               .join(", ");
             return `${DAGNAMEN[dag]}: ${lessenTekst}`;
@@ -201,6 +215,7 @@ Wat je kunt voorstellen (via "voorstellen" hieronder - elk voorstel krijgt de le
   - Geeft de leerling aan dat de eerder geschatte tijd niet klopt (bv "dat duurt geen 2 uur maar 1 uur")? Zet dat in "nieuweGeschatteMinuten" op hetzelfde verplaats-voorstel - dat corrigeert dan meteen de taak zelf, niet alleen dit ene moment.
   - Past een goed moment niet omdat de dag al vol staat met iets flexibels (een klusje als "kamer opruimen", of een leermoment)? Dan mag je in DEZELFDE beurt een tweede "verplaats"-voorstel doen om dat te verschuiven, zodat er ruimte komt - leg in je antwoord kort uit dat je dat voorstelt. Twijfel je of iets een vaste afspraak is (sport, iemand ontmoeten, een verjaardag) in plaats van iets flexibels? Vraag dat dan eerst, stel nooit zomaar voor om een echte afspraak te verzetten.
 - "deadline_verzetten": ALLEEN voor huiswerk/toets, en ALLEEN als de deadline zelf écht verandert (bv. een les valt uit/wordt verzet, de docent verzet de inleverdatum/toetsdatum). Gebruik dit NOOIT om te plannen wanneer de leerling eraan werkt - dat is altijd "verplaats".
+- "les_laten_vervallen": als de leerling vraagt om een LES ZELF uit het rooster/agenda te halen voor 1 specifieke dag (bv. "gym valt morgen uit", "kun je mijn wiskundeles van morgen uit het rooster halen"). Gebruik het EXACTE id (tussen [ ]) uit LESROOSTER hieronder als "roosterItemId", en de concrete datum (die op dezelfde weekdag moet vallen als het lesuur) als "nieuweDatum". Dit haalt de les alleen op DIE dag weg, niet het hele rooster - zeg dat ook zo in je antwoord. Staat er voor die dag huiswerk of een toets voor dat vak? Doe er dan METEEN ook een "deadline_verzetten"-voorstel bij (huiswerk: naar de eerstvolgende les van dat vak) - de leerling ziet en bevestigt beide voorstellen apart.
 - "klaar_melden" / "heropenen": een bestaand item als klaar markeren, of terugzetten naar open.
 - "verwijderen": een bestaand item weghalen - ook een toets kan hiermee weg (de eraan gekoppelde leermomenten verdwijnen dan automatisch mee, dat regelt de app zelf, daar hoef je geen apart voorstel voor te doen).
 
@@ -252,12 +267,26 @@ Nieuw bericht van de leerling: ${message}`;
     // vak, of een datum in het verleden.
     const geldigeIds = new Set((items ?? []).map((i) => i.id));
     const geldigeVakIds = new Set((subjects ?? []).map((s) => s.id));
+    const roosterItemPerId = new Map((roosterItems ?? []).map((r) => [r.id, r]));
+    // Zelfde telling als de agenda zelf (agenda-board.tsx naarIsoWeekdag):
+    // 1 = maandag ... 7 = zondag.
+    const isoWeekdag = (datumIso: string) => {
+      const jsDag = new Date(datumIso + "T00:00:00").getDay();
+      return jsDag === 0 ? 7 : jsDag;
+    };
     const geldigeVoorstellen = geparsed.voorstellen.filter((v) => {
       if (v.actie === "aanmaken") {
         if (!v.type || !PLANNING_TYPES.includes(v.type)) return false;
         if (!v.titel?.trim()) return false;
         if (!v.nieuweDatum || v.nieuweDatum < vandaagIso) return false;
         if (v.vakId && !geldigeVakIds.has(v.vakId)) v.vakId = null;
+        return true;
+      }
+      if (v.actie === "les_laten_vervallen") {
+        if (!v.roosterItemId || !v.nieuweDatum || v.nieuweDatum < vandaagIso) return false;
+        const roosterItem = roosterItemPerId.get(v.roosterItemId);
+        if (!roosterItem) return false;
+        if (isoWeekdag(v.nieuweDatum) !== roosterItem.dag_van_week) return false;
         return true;
       }
       if (!v.planningItemId || !geldigeIds.has(v.planningItemId)) return false;
@@ -270,7 +299,25 @@ Nieuw bericht van de leerling: ${message}`;
       return true;
     });
 
-    const respons = { antwoord: geparsed.antwoord, voorstellen: geldigeVoorstellen };
+    // Voor "les_laten_vervallen" mag de client niet blindelings op AI-tekst
+    // vertrouwen om te tonen wat er precies vervalt (dat is nou juist waar
+    // de leerling op moet kunnen controleren) - reken het vak/tijdstip hier
+    // zelf uit op basis van het echte rooster-item.
+    const voorstellenMetDetails = geldigeVoorstellen.map((v) => {
+      if (v.actie !== "les_laten_vervallen" || !v.roosterItemId) return v;
+      const roosterItem = roosterItemPerId.get(v.roosterItemId);
+      if (!roosterItem) return v;
+      const vak = roosterItem.subject_id ? subjectNaam.get(roosterItem.subject_id) : null;
+      return {
+        ...v,
+        lesDetails: {
+          vak: vak || roosterItem.titel,
+          tijd: `${roosterItem.start_tijd.slice(0, 5)}-${roosterItem.eind_tijd.slice(0, 5)}`,
+        },
+      };
+    });
+
+    const respons = { antwoord: geparsed.antwoord, voorstellen: voorstellenMetDetails };
 
     await supabase.from("planningshulp_berichten").insert([
       { family_id: profile.family_id, user_id: user.id, role: "user", content: message },

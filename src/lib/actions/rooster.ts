@@ -328,6 +328,56 @@ export async function verwijderRoosterUitzondering(id: string) {
   revalidateRooster();
 }
 
+/**
+ * Laat 1 specifiek lesuur op 1 specifieke dag vervallen (bv. "gym valt
+ * morgen uit") - een smalle, kind-toegankelijke variant van
+ * maakRoosterUitzondering. Bewust geen ouder-check (vereistOuder): een
+ * leerling weet vaak het eerst dat een les uitvalt, en dit kan alleen een
+ * bestaand lesuur van het EIGEN gezin voor 1 dag laten vervallen - niet het
+ * rooster zelf aanpassen of andere soorten uitzonderingen aanmaken.
+ */
+export async function maakRoosterUitzonderingSimpel(origineelItemId: string, datum: string) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Niet ingelogd." };
+
+  const { data: profile } = await supabase.from("profiles").select("family_id").eq("id", user.id).single();
+  if (!profile) return { error: "Profiel niet gevonden." };
+
+  if (!datum) return { error: "Datum is verplicht." };
+
+  const { data: roosterItem } = await supabase
+    .from("rooster_items")
+    .select("id, family_id")
+    .eq("id", origineelItemId)
+    .single();
+  if (!roosterItem || roosterItem.family_id !== profile.family_id) {
+    return { error: "Dit lesuur is niet gevonden." };
+  }
+
+  // Al een uitzondering voor dit lesuur op deze dag? Die vervangen i.p.v.
+  // dubbel toevoegen (bv. nogmaals aanklikken, of eerst via de coach en
+  // daarna nog een keer via het rooster-blokje).
+  await supabase.from("rooster_uitzonderingen").delete().eq("origineel_item_id", origineelItemId).eq("datum", datum);
+
+  const { error } = await supabase.from("rooster_uitzonderingen").insert({
+    family_id: profile.family_id,
+    datum,
+    origineel_item_id: origineelItemId,
+    type: "vervallen" as const,
+    titel: null,
+    start_tijd: null,
+    eind_tijd: null,
+    created_by: user.id,
+  });
+  if (error) return { error: error.message };
+
+  revalidateRooster();
+  return { success: true };
+}
+
 // -- Reistijd (fietstijd) --------------------------------------------------
 
 export async function updateReistijd(formData: FormData) {
