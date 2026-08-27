@@ -901,12 +901,17 @@ export async function bevestigKennisbankBestand(
 
 // ---------------------------------------------------------------------------
 // Structuur-overzicht bijsturen via chat: nadat alle bestanden een eigen
-// voorstel hebben (fase 1 hierboven), kan de ouder in 1 keer de HELE indeling
-// (welk bestand bij welk hoofdstuk/paragraaf/titel) bijsturen met een losse
-// instructie ("zet dit bij Unit 2 i.p.v. Unit 1"), i.p.v. elk bestand apart
-// met de hand te moeten verplaatsen. Schrijft niets weg - past alleen het
-// voorstel aan, bevestigen (per bestand) gebeurt nog steeds via
-// bevestigKennisbankBestand hierboven.
+// voorstel hebben (fase 1 hierboven), praat de ouder met een chatbot die
+// ECHT iets mag doen met de wachtrij - niet alleen tekst suggereren. Naast
+// het hoofdstuk/paragraaf/titel per bestand herschikken, kan de ouder de bot
+// ook opdracht geven een bestand meteen te importeren (zelfde bevestig-
+// actie als de knop "Bevestigen en verwerken") of uit de wachtrij te halen.
+// Bewust begrensde "rechten": de bot verwerkt bestanden altijd als concept
+// (nooit publiceren) en raakt nooit al bevestigde/gepubliceerde inhoud aan -
+// dat blijft bij de bestaande review-UI (KennisOnderdelenBeheer). Alle
+// server-acties hier lopen sowieso achter ouderProfiel(), dus de "rechten"
+// van de bot zijn hoe dan ook nooit ruimer dan die van de ingelogde ouder
+// die het gesprek voert.
 // ---------------------------------------------------------------------------
 
 const StructuurAanpassingSchema = z.object({
@@ -920,7 +925,19 @@ const StructuurAanpassingSchema = z.object({
       })
     )
     .describe("VOLLEDIGE bijgewerkte lijst - elk bestand uit de huidige indeling, ook de ongewijzigde."),
-  antwoord: z.string().describe("Kort, vriendelijk antwoord aan de ouder over wat je hebt aangepast (of een vraag als de instructie onduidelijk is). Max 2 zinnen."),
+  acties: z
+    .array(
+      z.object({
+        bestandsnaam: z.string(),
+        actie: z
+          .enum(["importeren", "verwijderen"])
+          .describe(
+            "'importeren' = dit bestand nu definitief verwerken/opslaan (als concept, met de bijgewerkte indeling hierboven). 'verwijderen' = dit bestand uit de wachtrij halen zonder te verwerken."
+          ),
+      })
+    )
+    .describe("ALLEEN acties die de ouder expliciet vraagt (bv 'importeer deze', 'sla dit op', 'haal dit bestand weg') - leeg bij een gewone structuurwijziging."),
+  antwoord: z.string().describe("Kort, vriendelijk antwoord aan de ouder over wat je hebt aangepast/gedaan (of een vraag als de instructie onduidelijk is). Max 2 zinnen."),
 });
 
 function bouwStructuurAanpassingPrompt(
@@ -929,7 +946,8 @@ function bouwStructuurAanpassingPrompt(
   instructie: string
 ): string {
   return [
-    "Dit is de huidige voorgestelde indeling van geüploade kennisbank-bestanden voor een schoolvak (2 havo, methode met units/hoofdstukken). Elk bestand krijgt een hoofdstuk/unit, een paragraaf-/lesnummer en een titel.",
+    "Dit is de huidige voorgestelde indeling van geüploade kennisbank-bestanden voor een schoolvak (2 havo, methode met units/hoofdstukken), nog niet opgeslagen. Elk bestand krijgt een hoofdstuk/unit, een paragraaf-/lesnummer en een titel.",
+    "Jij bent de assistent van deze wizard en mag zelf bestanden importeren of uit de wachtrij halen als de ouder dat vraagt - niet alleen de indeling voorstellen.",
     "",
     "Huidige indeling:",
     items.map((it) => `- "${it.bestandsnaam}": hoofdstuk "${it.hoofdstuk}", paragraaf/les "${it.paragraafId}", titel "${it.titel}"`).join("\n"),
@@ -938,15 +956,19 @@ function bouwStructuurAanpassingPrompt(
     "",
     `Nieuwe instructie van de ouder: "${instructie}"`,
     "",
-    "Pas de indeling aan volgens deze instructie. Geef de VOLLEDIGE bijgewerkte lijst terug, met exact dezelfde bestandsnamen als hierboven (niets weglaten, ook bestanden die niet veranderen horen erbij) - alleen hoofdstuk/paragraafId/titel mogen wijzigen.",
+    "Instructies:",
+    "- Pas de indeling aan volgens de instructie. Geef de VOLLEDIGE bijgewerkte lijst terug, met exact dezelfde bestandsnamen als hierboven (niets weglaten, ook bestanden die niet veranderen horen erbij) - alleen hoofdstuk/paragraafId/titel mogen wijzigen.",
+    "- Vraagt de ouder expliciet om een bestand te importeren/opslaan/verwerken, of te verwijderen/weghalen? Zet dat in 'acties'. Anders 'acties' leeg laten - een indeling aanpassen is geen actie.",
+    "- Twijfel je welk bestand bedoeld wordt (bv. bij 'importeer ze allemaal' terwijl dat niet duidelijk alle bestanden hoeft te zijn)? Vraag in 'antwoord' om verduidelijking en laat 'acties' dan leeg.",
   ].join("\n");
 }
 
 /**
  * Past het voorgestelde hoofdstuk/paragraaf/titel van meerdere nog-niet-
  * bevestigde bestanden in 1 keer aan op basis van een vrije instructie van de
- * ouder - voor de losse "1 bestand per keer"-velden in de wizard, maar dan
- * voor de hele batch tegelijk ("dit hoort allemaal bij Unit 2").
+ * ouder, en/of voert direct een importeer-/verwijderactie uit die de ouder
+ * expliciet vraagt - voor de losse "1 bestand per keer"-bediening in de
+ * wizard, maar dan conversationeel voor de hele batch tegelijk.
  */
 export async function pasKennisbankStructuurAan(
   items: { bestandsnaam: string; hoofdstuk: string; paragraafId: string; titel: string }[],

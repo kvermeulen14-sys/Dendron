@@ -142,9 +142,23 @@ export function VakInhoudWizard({ subjectId }: { subjectId: string }) {
     }
     if (!("items" in res)) return;
     setChatBerichten((huidig) => [...huidig, { rol: "ai", tekst: res.antwoord }]);
-    for (const upd of res.items) {
-      const match = teIndelenItems.find((it) => it.bestandsnaam === upd.bestandsnaam);
-      if (match) patchItem(match.id, { hoofdstuk: upd.hoofdstuk, paragraafId: upd.paragraafId, titel: upd.titel });
+
+    // Bijgewerkte velden meteen ook lokaal samenvoegen (niet wachten op de
+    // volgende render) - een importeer-actie hieronder moet de NIEUWE
+    // hoofdstuk/paragraafId gebruiken, niet de state van vóór dit bericht.
+    const bijgewerkt = teIndelenItems.map((it) => {
+      const upd = res.items.find((u) => u.bestandsnaam === it.bestandsnaam);
+      return upd ? { ...it, hoofdstuk: upd.hoofdstuk, paragraafId: upd.paragraafId, titel: upd.titel } : it;
+    });
+    for (const it of bijgewerkt) {
+      patchItem(it.id, { hoofdstuk: it.hoofdstuk, paragraafId: it.paragraafId, titel: it.titel });
+    }
+
+    for (const actie of res.acties) {
+      const item = bijgewerkt.find((it) => it.bestandsnaam === actie.bestandsnaam);
+      if (!item) continue;
+      if (actie.actie === "importeren") void bevestig(item);
+      else if (actie.actie === "verwijderen") verwijderItem(item.id);
     }
   }
 
@@ -330,9 +344,10 @@ export function VakInhoudWizard({ subjectId }: { subjectId: string }) {
             <p className="text-sm font-semibold text-slate-900">Overzicht & bijsturen</p>
           </div>
           <p className="text-xs text-slate-500">
-            Dit is de indeling van alle bestanden hierboven samen. Klopt er iets niet? Typ het hieronder (bv. &quot;zet
-            U1_L3_A.md bij Unit 2&quot;) - de indeling boven wordt dan bijgewerkt. De velden per bestand blijven ook
-            gewoon met de hand aan te passen.
+            Dit is de indeling van alle bestanden hierboven samen. Typ hieronder een aanpassing (bv. &quot;zet
+            U1_L3_A.md bij Unit 2&quot;) of een opdracht (bv. &quot;importeer deze 3&quot; of &quot;haal dit bestand
+            weg&quot;) - de bot mag de indeling aanpassen én bestanden direct importeren (als concept) of uit de
+            wachtrij halen. De velden per bestand blijven ook gewoon met de hand aan te passen.
           </p>
 
           <div className="flex flex-col gap-2 rounded-lg bg-white p-2.5 text-xs">
