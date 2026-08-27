@@ -1655,7 +1655,7 @@ export function AgendaBoard({
         )}
       </Modal>
 
-      <Modal open={detailItem !== null} onClose={sluitDetail} title="Details">
+      <Modal open={detailItem !== null} onClose={sluitDetail} title={detailItem ? PLANNING_TYPE_META[detailItem.type].label : ""}>
         {detailItem &&
           (() => {
             const meta = PLANNING_TYPE_META[detailItem.type];
@@ -1718,6 +1718,36 @@ export function AgendaBoard({
                     </span>
                   )}
                 </div>
+
+                {/* Huiswerk: simpele deadline-aftelling, zodat meteen duidelijk
+                    is hoeveel tijd er nog is - net als bij een toets, maar
+                    zonder de leermoment-voortgang die daar niet van toepassing is. */}
+                {detailItem.type === "huiswerk" && (
+                  <p className="flex items-center gap-1.5 rounded-xl border border-huiswerk-200 bg-huiswerk-50 p-3 text-sm font-semibold text-huiswerk-700">
+                    <Icon name="calendar" size={14} />
+                    Inleveren {toetsAftelling(detailItem.due_date)}
+                  </p>
+                )}
+
+                {/* Leermoment: welke toets dit voorbereidt en waar die in
+                    totaal over gaat - een los "Leermoment 2/3" zegt op
+                    zichzelf niks over de daadwerkelijke stof. */}
+                {detailItem.type === "leermoment" &&
+                  detailItem.parent_item_id &&
+                  (() => {
+                    const toets = items.find((it) => it.id === detailItem.parent_item_id);
+                    if (!toets) return null;
+                    return (
+                      <div className="flex flex-col gap-1 rounded-xl border border-toets-200 bg-toets-50 p-3">
+                        <p className="flex items-center gap-1.5 text-sm font-semibold text-toets-700">
+                          <Icon name="target" size={14} />
+                          Voor: {toets.title}
+                        </p>
+                        {toets.description && <p className="text-xs text-slate-600">{toets.description}</p>}
+                        <p className="text-xs text-slate-500">Toets {toetsAftelling(toets.due_date)}</p>
+                      </div>
+                    );
+                  })()}
 
                 {/* Aftellen naar de toets, en hoeveel van het gespreide leren
                     al gedaan is - leren in delen werkt alleen als je die
@@ -2886,6 +2916,7 @@ export function AgendaBoard({
           )}
           items={items}
           subjects={subjects}
+          testTypes={testTypes}
         />
       )}
 

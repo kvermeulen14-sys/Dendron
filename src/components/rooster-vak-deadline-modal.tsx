@@ -16,7 +16,7 @@ import {
   updateRoosterNotitieStatus,
   verwijderRoosterNotitie,
 } from "@/lib/actions/rooster";
-import type { PlanningItem, RoosterNotitie, Subject } from "@/lib/types";
+import type { PlanningItem, RoosterNotitie, Subject, TestType } from "@/lib/types";
 
 function datumLabel(iso: string) {
   return new Date(iso + "T00:00:00").toLocaleDateString("nl-NL", { weekday: "long", day: "numeric", month: "long" });
@@ -41,6 +41,7 @@ export function RoosterVakDeadlineModal({
   bestaandeNotities,
   items,
   subjects,
+  testTypes,
 }: {
   open: boolean;
   onClose: () => void;
@@ -55,6 +56,7 @@ export function RoosterVakDeadlineModal({
   bestaandeNotities: RoosterNotitie[];
   items: PlanningItem[];
   subjects: Subject[];
+  testTypes: TestType[];
 }) {
   const router = useRouter();
   const [type, setType] = useState<"huiswerk" | "toets" | "herinnering">("huiswerk");
@@ -373,6 +375,23 @@ export function RoosterVakDeadlineModal({
                   className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
                 />
               </div>
+
+              {type === "toets" && testTypes.length > 0 && (
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-slate-700">Soort toets (voor leertips)</label>
+                  <select
+                    name="testTypeId"
+                    className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
+                  >
+                    <option value="">Standaard</option>
+                    {testTypes.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name} ({t.dagen_van_tevoren} dagen vooraf, {t.aantal_leermomenten}x leren)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-slate-700">Hoeveel tijd denk je nodig te hebben?</label>

@@ -8,7 +8,9 @@ const MAX_GESCHIEDENIS = 16;
 const VENSTER_DAGEN = 21;
 const DAGNAMEN = ["", "Maandag", "Dinsdag", "Woensdag", "Donderdag", "Vrijdag", "Zaterdag", "Zondag"];
 const PLANNING_TYPES = ["huiswerk", "toets", "leermoment", "prive"] as const;
-const MAX_VOORSTELLEN = 4;
+// Ruimte voor 1 toets + een paar losse leermoment-voorstellen in dezelfde
+// beurt (zie de instructie hieronder over gespreid leren voorstellen).
+const MAX_VOORSTELLEN = 6;
 
 const VoorstelOptieSchema = z.object({
   datum: z.string().describe("YYYY-MM-DD. Nooit een datum in het verleden."),
@@ -123,10 +125,12 @@ export async function POST(request: Request) {
   const huidigeTijd = `${String(nu.getHours()).padStart(2, "0")}:${String(nu.getMinutes()).padStart(2, "0")}`;
   const eindeVenster = addDagen(vandaagIso, VENSTER_DAGEN);
 
-  const [{ data: items }, { data: subjects }, { data: periodes }] = await Promise.all([
+  const [{ data: items }, { data: subjects }, { data: periodes }, { data: testTypes }, { data: family }] = await Promise.all([
     supabase
       .from("planning_items")
-      .select("id, subject_id, type, title, due_date, start_date, start_time, status, estimated_minutes, parent_item_id")
+      .select(
+        "id, subject_id, type, title, due_date, start_date, start_time, status, estimated_minutes, parent_item_id, test_type_id"
+      )
       .eq("family_id", profile.family_id)
       .neq("status", "klaar")
       .gte("due_date", vandaagIso)
@@ -134,7 +138,10 @@ export async function POST(request: Request) {
       .order("due_date", { ascending: true }),
     supabase.from("subjects").select("id, name").eq("family_id", profile.family_id),
     supabase.from("rooster_periodes").select("id, naam, start_datum, eind_datum").eq("family_id", profile.family_id),
+    supabase.from("test_types").select("id, name, dagen_van_tevoren, aantal_leermomenten").eq("family_id", profile.family_id),
+    supabase.from("families").select("reistijd_minuten").eq("id", profile.family_id).single(),
   ]);
+  const reistijdMinuten = family?.reistijd_minuten ?? 15;
 
   // Zelfde manier om de "huidige" periode te bepalen als de agenda zelf
   // (agenda-board.tsx) - de periode waarvan vandaag binnen start/eind valt.
@@ -152,6 +159,21 @@ export async function POST(request: Request) {
 
   const vakkenTekst = (subjects ?? []).map((s) => `[${s.id}] ${s.name}`).join("\n") || "(nog geen vakken ingesteld)";
 
+  // Fietstijd voor/na school staat niet in rooster_items (dat is puur de
+  // lesuren) maar wordt, net als in de agenda zelf (agenda-board.tsx), aan
+  // weerskanten van de vroegste/laatste les van de dag bijgeteld - een
+  // werkmoment mag daar net zo min doorheen gepland worden als door een les.
+  function tijdMinuten(t: string) {
+    const [u, m] = t.split(":").map(Number);
+    return u * 60 + m;
+  }
+  function minutenNaarTijd(m: number) {
+    const genormaliseerd = ((m % 1440) + 1440) % 1440;
+    const u = Math.floor(genormaliseerd / 60);
+    const rest = genormaliseerd % 60;
+    return `${String(u).padStart(2, "0")}:${String(rest).padStart(2, "0")}`;
+  }
+
   const roosterTekst = !huidigePeriode
     ? "(geen actieve roosterperiode ingesteld)"
     : !roosterItems || roosterItems.length === 0
@@ -166,7 +188,13 @@ export async function POST(request: Request) {
                 return `[${r.id}] ${r.start_tijd.slice(0, 5)}-${r.eind_tijd.slice(0, 5)} ${vak || r.titel}`;
               })
               .join(", ");
-            return `${DAGNAMEN[dag]}: ${lessenTekst}`;
+            let fietsTekst = "";
+            if (reistijdMinuten > 0) {
+              const vroegsteStart = Math.min(...lessen.map((r) => tijdMinuten(r.start_tijd)));
+              const laatsteEind = Math.max(...lessen.map((r) => tijdMinuten(r.eind_tijd)));
+              fietsTekst = `, fietsen ${minutenNaarTijd(vroegsteStart - reistijdMinuten)}-${minutenNaarTijd(vroegsteStart)} (naar school), fietsen ${minutenNaarTijd(laatsteEind)}-${minutenNaarTijd(laatsteEind + reistijdMinuten)} (naar huis)`;
+            }
+            return `${DAGNAMEN[dag]}: ${lessenTekst}${fietsTekst}`;
           })
           .filter(Boolean)
           .join("\n");
@@ -174,6 +202,16 @@ export async function POST(request: Request) {
   // "verplaats") en start_date (indien gezet) het echte werkmoment ervoor -
   // dat toont dit apart, zodat de AI nooit de deadline aanziet voor het
   // werkmoment of andersom.
+  const testTypePerId = new Map((testTypes ?? []).map((t) => [t.id, t]));
+  // Hoeveel leermomenten (los, of via hoort-bij gekoppeld) al voor deze
+  // toets staan - zodat de AI ziet of er al gespreid geleerd wordt of dat
+  // dit nog voorgesteld moet worden.
+  const leermomentenPerToets = new Map<string, number>();
+  for (const i of items ?? []) {
+    if (i.type !== "leermoment") continue;
+    const key = i.parent_item_id ?? `${i.subject_id ?? ""}`;
+    leermomentenPerToets.set(key, (leermomentenPerToets.get(key) ?? 0) + 1);
+  }
   const takenTekst = (items ?? [])
     .map((i) => {
       const vak = i.subject_id ? subjectNaam.get(i.subject_id) : null;
@@ -184,7 +222,13 @@ export async function POST(request: Request) {
         : i.start_time
           ? ` ${i.start_time.slice(0, 5)}`
           : "";
-      return `- [${i.id}] ${i.type} "${i.title}"${vak ? ` (${vak})` : ""} - ${isWerkmomentType ? "deadline" : "datum"} ${i.due_date}${werkmoment} - status: ${i.status}${i.estimated_minutes ? ` - ~${i.estimated_minutes} min` : ""}${ouderTitel ? ` - hoort bij: ${ouderTitel}` : ""}`;
+      const toetsvorm = i.type === "toets" && i.test_type_id ? testTypePerId.get(i.test_type_id) : null;
+      const toetsvormTekst = toetsvorm
+        ? ` - toetsvorm: ${toetsvorm.name} (${toetsvorm.dagen_van_tevoren} dagen van tevoren beginnen, ${toetsvorm.aantal_leermomenten} leermomenten)`
+        : "";
+      const leermomentenAantal = i.type === "toets" ? leermomentenPerToets.get(i.id) ?? 0 : null;
+      const leermomentenTekst = i.type === "toets" ? ` - al ${leermomentenAantal} leermoment(en) gepland` : "";
+      return `- [${i.id}] ${i.type} "${i.title}"${vak ? ` (${vak})` : ""} - ${isWerkmomentType ? "deadline" : "datum"} ${i.due_date}${werkmoment} - status: ${i.status}${i.estimated_minutes ? ` - ~${i.estimated_minutes} min` : ""}${ouderTitel ? ` - hoort bij: ${ouderTitel}` : ""}${toetsvormTekst}${leermomentenTekst}`;
     })
     .join("\n");
 
@@ -215,11 +259,22 @@ Wat je kunt voorstellen (via "voorstellen" hieronder - elk voorstel krijgt de le
   - Geeft de leerling aan dat de eerder geschatte tijd niet klopt (bv "dat duurt geen 2 uur maar 1 uur")? Zet dat in "nieuweGeschatteMinuten" op hetzelfde verplaats-voorstel - dat corrigeert dan meteen de taak zelf, niet alleen dit ene moment.
   - Past een goed moment niet omdat de dag al vol staat met iets flexibels (een klusje als "kamer opruimen", of een leermoment)? Dan mag je in DEZELFDE beurt een tweede "verplaats"-voorstel doen om dat te verschuiven, zodat er ruimte komt - leg in je antwoord kort uit dat je dat voorstelt. Twijfel je of iets een vaste afspraak is (sport, iemand ontmoeten, een verjaardag) in plaats van iets flexibels? Vraag dat dan eerst, stel nooit zomaar voor om een echte afspraak te verzetten.
   - Venster voor een werkmoment (huiswerk/toets): kies een datum die NA de vorige les van dat vak valt (kijk in LESROOSTER wanneer dat vak normaal is - vóór die les heeft de leerling de stof er nog niet voor gehad) en NIET NA de deadline zelf (dan is het te laat). Is de vorige les van dat vak niet duidelijk uit het rooster te halen, kies dan gewoon een moment de dag(en) vóór de deadline.
-  - Een werkmoment mag NOOIT overlappen met een les uit LESROOSTER die dag - dat is geen vrije tijd. Een gat tussen twee lessen (een tussenuur) mag wel, net als tijd na school.
+  - Een werkmoment mag NOOIT overlappen met een les OF een fietsblok uit LESROOSTER die dag (fietsen naar school/huis staat er ook bij) - dat is allebei geen vrije tijd. Een gat tussen twee lessen (een tussenuur) mag wel, net als tijd na school/na het fietsen.
 - "deadline_verzetten": ALLEEN voor huiswerk/toets, en ALLEEN als de deadline zelf écht verandert (bv. een les valt uit/wordt verzet, de docent verzet de inleverdatum/toetsdatum). Gebruik dit NOOIT om te plannen wanneer de leerling eraan werkt - dat is altijd "verplaats".
 - "les_laten_vervallen": als de leerling vraagt om een LES ZELF uit het rooster/agenda te halen voor 1 specifieke dag (bv. "gym valt morgen uit", "kun je mijn wiskundeles van morgen uit het rooster halen"). Gebruik het EXACTE id (tussen [ ]) uit LESROOSTER hieronder als "roosterItemId", en de concrete datum (die op dezelfde weekdag moet vallen als het lesuur) als "nieuweDatum". Dit haalt de les alleen op DIE dag weg, niet het hele rooster - zeg dat ook zo in je antwoord. Staat er voor die dag huiswerk of een toets voor dat vak? Doe er dan METEEN ook een "deadline_verzetten"-voorstel bij (huiswerk: naar de eerstvolgende les van dat vak) - de leerling ziet en bevestigt beide voorstellen apart.
 - "klaar_melden" / "heropenen": een bestaand item als klaar markeren, of terugzetten naar open.
 - "verwijderen": een bestaand item weghalen - ook een toets kan hiermee weg (de eraan gekoppelde leermomenten verdwijnen dan automatisch mee, dat regelt de app zelf, daar hoef je geen apart voorstel voor te doen).
+
+Gespreid leren voor een toets (BELANGRIJK - dit is de ENIGE plek waar leermomenten voor een toets vandaan komen, de app maakt ze zelf nergens meer automatisch aan):
+- Maak je een NIEUWE toets aan ("aanmaken", type toets), of gaat het gesprek over een BESTAANDE toets waar bij "al 0 leermoment(en) gepland" staat? Doe dan in DEZELFDE beurt meteen een paar losse "aanmaken"-voorstellen (type leermoment, zelfde vakId) voor gespreide leermomenten vóór de deadline - naast het toets-voorstel zelf (of los, als de toets al bestaat).
+  - Staat er bij die toets een toetsvorm (dagen_van_tevoren + aantal_leermomenten)? Volg dat aantal en spreid ze over die periode. Staat er geen toetsvorm bij? Gebruik je eigen inschatting: bij 14+ dagen tot de toets 3-4 momenten, bij 7-13 dagen 2-3, bij 4-6 dagen 2, minder dan 4 dagen 1 - altijd verspreid, nooit allemaal vlak voor elkaar of allemaal op de avond voor de toets.
+  - Geef elk leermoment een korte, herkenbare titel (bv. "Leermoment 1/3 - Franse woordjes hoofdstuk 4") en een datum vóór de deadline - een concreet tijdstip mag, hoeft niet (de leerling kan dat later nog verplaatsen).
+  - Zeg in je antwoord kort dat je een paar leermomenten voorstelt om het geleidelijk te doen, niet dat "de app dit automatisch doet".
+- Bestaat de toets al MET voldoende leermomenten (aantal ≥ het toetsvorm-advies, of ≥ 2 als er geen toetsvorm bekend is)? Dan hoef je niks extra voor te stellen, tenzij de leerling er zelf om vraagt.
+
+Tijdsduur (geldt voor elk voorstel met een tijdscomponent):
+- Vul "geschatteMinuten" (bij aanmaken) en "nieuweGeschatteMinuten" (bij verplaats, als die tijd nog niet bekend was) ALTIJD in - nooit leeg laten "omdat de leerling niks zei". Noemt de leerling zelf geen tijdsduur? Ga dan uit van 60 minuten per leer-/werkmoment als redelijke vuistregel.
+- Noemt de leerling een tijdsduur voor de HELE taak in totaal (bv "ik denk dat ik er in totaal 2 uur aan kwijt ben"), gebruik die dan als geschatteMinuten/nieuweGeschatteMinuten voor de taak - dat is niet alleen een correctie achteraf, dat mag ook meteen bij het eerste keer plannen.
 
 Werkwijze:
 - Luister en erken het gevoel of de situatie eerst in 1 korte zin (bv. "Dat klinkt inderdaad vol", "Fijn dat je dat oppakt") voordat je meedenkt - geen preek, geen lange lijst met tips.
@@ -235,7 +290,6 @@ Werkwijze:
   - Timing/energie: iets actiefs of leuks past vaak beter na school dan vlak voor het slapengaan.
   Nooit een voorstel zonder toelichting, en nooit een preek - hooguit 1-2 zinnen.
 - Kies bij "verplaats" en "aanmaken" bij voorkeur een dag die volgens de werkdruk hieronder rustiger is, en nooit een datum in het verleden.
-- Stel je een toets voor ("aanmaken", type toets): zeg er in je antwoord bij dat er meteen een paar gespreide leermomenten bij komen zodra de leerling dit bevestigt (dat regelt de app zelf).
 - Gebruik voor "vakId" en "planningItemId" ALTIJD het exacte id tussen [ ] uit VAKKEN/TAKEN hieronder - verzin nooit een id.
 - Wees kort. Dit is een chatgesprek met een tiener, geen collegetekst.
 - Noem bij ELKE datum die je noemt ook de dag van de week (bv. "vrijdag 28 augustus", niet alleen "28 augustus").

@@ -2,7 +2,6 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { stelLeermomentenVoor } from "@/lib/planning";
 import type { PlanningType } from "@/lib/types";
 
 function revalidateAgendas() {
@@ -76,25 +75,21 @@ export async function maakPlanningItem(formData: FormData) {
   // in 1 keer aangepast kan worden i.p.v. elk los item apart te moeten bewerken.
   const herhalingGroepId = herhaling !== "geen" ? crypto.randomUUID() : null;
 
-  const { data: nieuwItem, error } = await supabase
-    .from("planning_items")
-    .insert({
-      family_id: profile.family_id,
-      subject_id: subjectId,
-      test_type_id: type === "toets" ? testTypeId : null,
-      type,
-      title,
-      description,
-      due_date: dueDate,
-      start_time: startTime,
-      rooster_start_tijd: roosterStartTijd,
-      status: "open",
-      estimated_minutes: estimatedMinutes,
-      herhaling_groep_id: herhalingGroepId,
-      created_by: user.id,
-    })
-    .select("id")
-    .single();
+  const { error } = await supabase.from("planning_items").insert({
+    family_id: profile.family_id,
+    subject_id: subjectId,
+    test_type_id: type === "toets" ? testTypeId : null,
+    type,
+    title,
+    description,
+    due_date: dueDate,
+    start_time: startTime,
+    rooster_start_tijd: roosterStartTijd,
+    status: "open",
+    estimated_minutes: estimatedMinutes,
+    herhaling_groep_id: herhalingGroepId,
+    created_by: user.id,
+  });
 
   if (error) return { error: error.message };
 
@@ -128,42 +123,12 @@ export async function maakPlanningItem(formData: FormData) {
     }
   }
 
-  // Bij een toets: meteen gespreide leermomenten voorstellen, zodat leren
-  // in delen gebeurt in plaats van pas op het laatste moment. Met een
-  // gekozen toetsvorm volgen we het leeradvies daarvan.
-  if (type === "toets" && nieuwItem) {
-    let toetsvormOpties: { dagenVanTevoren?: number; aantalMomenten?: number } | undefined;
-    if (testTypeId) {
-      const { data: toetsvorm } = await supabase
-        .from("test_types")
-        .select("dagen_van_tevoren, aantal_leermomenten")
-        .eq("id", testTypeId)
-        .single();
-      if (toetsvorm) {
-        toetsvormOpties = {
-          dagenVanTevoren: toetsvorm.dagen_van_tevoren,
-          aantalMomenten: toetsvorm.aantal_leermomenten,
-        };
-      }
-    }
-
-    const voorstellen = stelLeermomentenVoor(new Date(), new Date(dueDate), toetsvormOpties);
-    if (voorstellen.length > 0) {
-      await supabase.from("planning_items").insert(
-        voorstellen.map((v) => ({
-          family_id: profile.family_id,
-          subject_id: subjectId,
-          parent_item_id: nieuwItem.id,
-          type: "leermoment" as PlanningType,
-          title: `Leermoment ${v.volgnummer}/${v.totaal} - ${title}`,
-          description: "Voorstel: pas dit samen aan naar wat past naast je andere huiswerk.",
-          due_date: v.due_date,
-          status: "voorstel",
-          created_by: user.id,
-        }))
-      );
-    }
-  }
+  // Geen automatisch aangemaakte leermoment-"voorstellen" meer bij een
+  // nieuwe toets - die verschenen los bovenin de agenda zonder dat de
+  // leerling ze ooit had besproken. Het plannen van leermomenten (met
+  // toetsvorm-advies, tijdsduur, en rekening houdend met de rest van de
+  // week) gebeurt nu altijd via de planningscoach-chat, die daarna meteen
+  // opent - zie handleSubmit (agenda-board.tsx) en RoosterVakDeadlineModal.
 
   revalidateAgendas();
   return { success: true };
@@ -198,42 +163,22 @@ export async function maakPlanningItemSimpel(input: {
   const title = input.title.trim();
   if (!title || !input.dueDate) return { error: "Titel en datum zijn verplicht." };
 
-  const { data: nieuwItem, error } = await supabase
-    .from("planning_items")
-    .insert({
-      family_id: profile.family_id,
-      subject_id: input.subjectId ?? null,
-      type: input.type,
-      title,
-      description: input.description?.trim() || "",
-      due_date: input.dueDate,
-      start_time: input.startTime ?? null,
-      status: "open",
-      estimated_minutes: input.estimatedMinutes ?? null,
-      created_by: user.id,
-    })
-    .select("id")
-    .single();
+  const { error } = await supabase.from("planning_items").insert({
+    family_id: profile.family_id,
+    subject_id: input.subjectId ?? null,
+    type: input.type,
+    title,
+    description: input.description?.trim() || "",
+    due_date: input.dueDate,
+    start_time: input.startTime ?? null,
+    status: "open",
+    estimated_minutes: input.estimatedMinutes ?? null,
+    created_by: user.id,
+  });
   if (error) return { error: error.message };
 
-  if (input.type === "toets" && nieuwItem) {
-    const voorstellen = stelLeermomentenVoor(new Date(), new Date(input.dueDate));
-    if (voorstellen.length > 0) {
-      await supabase.from("planning_items").insert(
-        voorstellen.map((v) => ({
-          family_id: profile.family_id,
-          subject_id: input.subjectId ?? null,
-          parent_item_id: nieuwItem.id,
-          type: "leermoment" as PlanningType,
-          title: `Leermoment ${v.volgnummer}/${v.totaal} - ${title}`,
-          description: "Voorstel: pas dit samen aan naar wat past naast je andere huiswerk.",
-          due_date: v.due_date,
-          status: "voorstel",
-          created_by: user.id,
-        }))
-      );
-    }
-  }
+  // Zelfde als bij maakPlanningItem hierboven: geen automatisch aangemaakte
+  // leermoment-voorstellen meer, dat gaat nu via de planningscoach-chat.
 
   revalidateAgendas();
   return { success: true };
@@ -256,6 +201,22 @@ export async function bewerkPlanningItem(id: string, formData: FormData) {
 
   if (!title || !dueDate) return { error: "Vul een titel en datum in." };
 
+  // Bij huiswerk/toets is start_date het losse werkmoment vóór de deadline
+  // (via de coach ingepland, zie plandWerkmoment) - schuift de deadline nu
+  // naar vóór dat werkmoment, dan klopt dat moment niet meer (werken NA de
+  // deadline heeft geen zin) en moet het opnieuw ingepland worden i.p.v. dat
+  // er stilzwijgend een ongeldig werkmoment blijft staan.
+  const { data: huidigItem } = await supabase
+    .from("planning_items")
+    .select("type, start_date")
+    .eq("id", id)
+    .single();
+  const werkmomentOngeldig =
+    huidigItem &&
+    (huidigItem.type === "huiswerk" || huidigItem.type === "toets") &&
+    huidigItem.start_date &&
+    huidigItem.start_date >= dueDate;
+
   const { error } = await supabase
     .from("planning_items")
     .update({
@@ -265,6 +226,7 @@ export async function bewerkPlanningItem(id: string, formData: FormData) {
       start_time: startTime,
       description,
       estimated_minutes: estimatedMinutes,
+      ...(werkmomentOngeldig ? { start_date: null, start_time: null, rooster_start_tijd: null } : {}),
     })
     .eq("id", id);
 
