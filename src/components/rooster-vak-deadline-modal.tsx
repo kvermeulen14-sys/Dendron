@@ -9,7 +9,13 @@ import { Modal } from "@/components/ui/modal";
 import { Icon } from "@/components/icon";
 import { PlanningHulpChat } from "@/components/planning-hulp-chat";
 import { bewerkPlanningItem, maakPlanningItem, updatePlanningStatus, verwijderPlanningItem } from "@/lib/actions/planning";
-import type { PlanningItem, Subject } from "@/lib/types";
+import {
+  maakRoosterNotitie,
+  maakRoosterUitzonderingSimpel,
+  updateRoosterNotitieStatus,
+  verwijderRoosterNotitie,
+} from "@/lib/actions/rooster";
+import type { PlanningItem, RoosterNotitie, Subject } from "@/lib/types";
 
 function datumLabel(iso: string) {
   return new Date(iso + "T00:00:00").toLocaleDateString("nl-NL", { weekday: "long", day: "numeric", month: "long" });
@@ -29,7 +35,9 @@ export function RoosterVakDeadlineModal({
   subjectId,
   datum,
   lesuurTijd,
+  lesuurId,
   bestaandeDeadlines,
+  bestaandeNotities,
   items,
   subjects,
 }: {
@@ -40,13 +48,17 @@ export function RoosterVakDeadlineModal({
   datum: string;
   /** Starttijd van het aangeklikte lesuur - puur om deze deadline aan dat specifieke lesuur te koppelen. */
   lesuurTijd: string;
+  /** Het onderliggende rooster_items.id - null bij fietsen/extra-blokken (geen echt lesuur, dus geen "valt uit" mogelijk). */
+  lesuurId: string | null;
   bestaandeDeadlines: PlanningItem[];
+  bestaandeNotities: RoosterNotitie[];
   items: PlanningItem[];
   subjects: Subject[];
 }) {
   const router = useRouter();
-  const [type, setType] = useState<"huiswerk" | "toets">("huiswerk");
+  const [type, setType] = useState<"huiswerk" | "toets" | "herinnering">("huiswerk");
   const [toevoegenOpen, setToevoegenOpen] = useState(false);
+  const [notitieTekst, setNotitieTekst] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [bezig, setBezig] = useState(false);
   const [planningshulp, setPlanningshulp] = useState<{ type: "huiswerk" | "toets" } | null>(null);
@@ -57,11 +69,56 @@ export function RoosterVakDeadlineModal({
     setError(null);
     setBewerkId(null);
     setToevoegenOpen(false);
+    setNotitieTekst("");
   }
 
-  function openToevoegen(t: "huiswerk" | "toets") {
+  function openToevoegen(t: "huiswerk" | "toets" | "herinnering") {
     setType(t);
     setToevoegenOpen(true);
+  }
+
+  async function voegNotitieToe() {
+    const tekstSchoon = notitieTekst.trim();
+    if (!tekstSchoon) return;
+    setError(null);
+    setBezig(true);
+    const res = await maakRoosterNotitie(datum, tekstSchoon, subjectId, lesuurId);
+    setBezig(false);
+    if (res?.error) {
+      setError(res.error);
+      return;
+    }
+    setNotitieTekst("");
+    setToevoegenOpen(false);
+    router.refresh();
+  }
+
+  async function zetNotitieKlaar(id: string, klaar: boolean) {
+    setBezig(true);
+    await updateRoosterNotitieStatus(id, klaar ? "klaar" : "open");
+    router.refresh();
+    setBezig(false);
+  }
+
+  async function verwijderNotitie(id: string) {
+    setBezig(true);
+    await verwijderRoosterNotitie(id);
+    router.refresh();
+    setBezig(false);
+  }
+
+  async function laatVervallen() {
+    if (!lesuurId) return;
+    if (!confirm(`Weet je zeker dat ${titel} op ${datumLabel(datum)} vervalt?`)) return;
+    setBezig(true);
+    const res = await maakRoosterUitzonderingSimpel(lesuurId, datum);
+    setBezig(false);
+    if (res?.error) {
+      setError(res.error);
+      return;
+    }
+    sluit();
+    router.refresh();
   }
 
   async function zetKlaar(id: string, klaar: boolean) {
@@ -85,8 +142,48 @@ export function RoosterVakDeadlineModal({
         <div className="flex flex-col gap-4">
           <p className="text-xs font-medium uppercase tracking-wide text-slate-400">{datumLabel(datum)}</p>
 
-          {bestaandeDeadlines.length === 0 && !toevoegenOpen && (
+          {bestaandeDeadlines.length === 0 && bestaandeNotities.length === 0 && !toevoegenOpen && (
             <p className="text-sm text-slate-400">Nog niks gepland voor dit vak op deze dag.</p>
+          )}
+
+          {bestaandeNotities.length > 0 && (
+            <div className="flex flex-col gap-1.5">
+              {bestaandeNotities.map((n) => {
+                const isKlaar = n.status === "klaar";
+                return (
+                  <div
+                    key={n.id}
+                    className={clsx(
+                      "flex items-center gap-2.5 rounded-xl border px-3 py-2",
+                      isKlaar ? "border-emerald-200 bg-emerald-50/60" : "border-accent-200 bg-accent-50/60"
+                    )}
+                  >
+                    <button
+                      disabled={bezig}
+                      onClick={() => zetNotitieKlaar(n.id, !isKlaar)}
+                      aria-label={isKlaar ? "Weer openzetten" : "Afgevinkt"}
+                      className={clsx(
+                        "flex h-6 w-6 shrink-0 items-center justify-center rounded-md border disabled:opacity-50",
+                        isKlaar ? "border-emerald-400 bg-emerald-500 text-white" : "border-accent-300 text-accent-600 hover:bg-white"
+                      )}
+                    >
+                      <Icon name="check" size={13} />
+                    </button>
+                    <span className={clsx("min-w-0 flex-1 text-sm", isKlaar ? "text-slate-400 line-through" : "text-slate-800")}>
+                      {n.tekst}
+                    </span>
+                    <button
+                      disabled={bezig}
+                      onClick={() => verwijderNotitie(n.id)}
+                      aria-label="Verwijderen"
+                      className="shrink-0 rounded-md p-1 text-slate-400 hover:bg-white hover:text-rose-600 disabled:opacity-50"
+                    >
+                      <Icon name="trash" size={13} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
           )}
 
           {bestaandeDeadlines.length > 0 && (
@@ -214,7 +311,42 @@ export function RoosterVakDeadlineModal({
             </div>
           )}
 
-          {toevoegenOpen ? (
+          {toevoegenOpen && type === "herinnering" ? (
+            <div
+              className={clsx(
+                "flex flex-col gap-3",
+                (bestaandeDeadlines.length > 0 || bestaandeNotities.length > 0) && "border-t border-slate-100 pt-4"
+              )}
+            >
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">Wat moet je niet vergeten?</label>
+                <input
+                  value={notitieTekst}
+                  onChange={(e) => setNotitieTekst(e.target.value)}
+                  autoFocus
+                  placeholder="bijv. gymkleren meenemen"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      voegNotitieToe();
+                    }
+                  }}
+                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:border-accent-500 focus:outline-none focus:ring-2 focus:ring-accent-100"
+                />
+              </div>
+
+              {error && <p className="text-sm text-rose-600">{error}</p>}
+
+              <div className="flex gap-2">
+                <Button type="button" loading={bezig} disabled={!notitieTekst.trim()} onClick={voegNotitieToe}>
+                  Toevoegen
+                </Button>
+                <Button type="button" variant="secondary" onClick={() => setToevoegenOpen(false)}>
+                  Annuleren
+                </Button>
+              </div>
+            </div>
+          ) : toevoegenOpen ? (
             <form
               action={async (formData) => {
                 setError(null);
@@ -225,9 +357,12 @@ export function RoosterVakDeadlineModal({
                 }
                 sluit();
                 router.refresh();
-                setPlanningshulp({ type });
+                setPlanningshulp({ type: type === "herinnering" ? "huiswerk" : type });
               }}
-              className={clsx("flex flex-col gap-3", bestaandeDeadlines.length > 0 && "border-t border-slate-100 pt-4")}
+              className={clsx(
+                "flex flex-col gap-3",
+                (bestaandeDeadlines.length > 0 || bestaandeNotities.length > 0) && "border-t border-slate-100 pt-4"
+              )}
             >
               <input type="hidden" name="subjectId" value={subjectId} />
               <input type="hidden" name="dueDate" value={datum} />
@@ -296,23 +431,48 @@ export function RoosterVakDeadlineModal({
               </div>
             </form>
           ) : (
-            <div className={clsx("flex justify-center gap-3", bestaandeDeadlines.length > 0 && "border-t border-slate-100 pt-2.5")}>
-              <button
-                type="button"
-                onClick={() => openToevoegen("huiswerk")}
-                className="flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium text-slate-400 transition-colors hover:bg-slate-50 hover:text-slate-600"
-              >
-                <Icon name="plus" size={11} />
-                Huiswerk
-              </button>
-              <button
-                type="button"
-                onClick={() => openToevoegen("toets")}
-                className="flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium text-slate-400 transition-colors hover:bg-slate-50 hover:text-slate-600"
-              >
-                <Icon name="plus" size={11} />
-                Toets
-              </button>
+            <div
+              className={clsx(
+                "flex flex-col gap-2",
+                (bestaandeDeadlines.length > 0 || bestaandeNotities.length > 0) && "border-t border-slate-100 pt-2.5"
+              )}
+            >
+              <div className="flex justify-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => openToevoegen("huiswerk")}
+                  className="flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium text-slate-400 transition-colors hover:bg-slate-50 hover:text-slate-600"
+                >
+                  <Icon name="plus" size={11} />
+                  Huiswerk
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openToevoegen("toets")}
+                  className="flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium text-slate-400 transition-colors hover:bg-slate-50 hover:text-slate-600"
+                >
+                  <Icon name="plus" size={11} />
+                  Toets
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openToevoegen("herinnering")}
+                  className="flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium text-slate-400 transition-colors hover:bg-slate-50 hover:text-slate-600"
+                >
+                  <Icon name="plus" size={11} />
+                  Herinnering
+                </button>
+              </div>
+              {lesuurId && (
+                <button
+                  type="button"
+                  disabled={bezig}
+                  onClick={laatVervallen}
+                  className="self-center text-[11px] font-medium text-slate-400 underline underline-offset-2 hover:text-rose-600 disabled:opacity-50"
+                >
+                  Deze les valt uit
+                </button>
+              )}
             </div>
           )}
         </div>

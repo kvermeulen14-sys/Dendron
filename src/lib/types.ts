@@ -100,6 +100,18 @@ export interface RoosterUitzondering {
   created_at: string;
 }
 
+export interface RoosterNotitie {
+  id: string;
+  family_id: string;
+  subject_id: string | null;
+  rooster_item_id: string | null;
+  datum: string;
+  tekst: string;
+  status: "open" | "klaar";
+  created_by: string;
+  created_at: string;
+}
+
 export interface DagInstelling {
   id: string;
   family_id: string;

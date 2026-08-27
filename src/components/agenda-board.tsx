@@ -46,6 +46,7 @@ import {
   verplaatsPlanningItemNaarTijd,
   verwijderPlanningItem,
 } from "@/lib/actions/planning";
+import { updateRoosterNotitieStatus, verwijderRoosterNotitie } from "@/lib/actions/rooster";
 import {
   CAPACITEIT_META,
   berekenDagCapaciteit,
@@ -61,6 +62,7 @@ import type {
   PlanningItem,
   PlanningType,
   RoosterItem,
+  RoosterNotitie,
   RoosterPeriode,
   RoosterUitzondering,
   Subject,
@@ -235,6 +237,8 @@ interface RoosterBlok {
   startMinuten: number;
   bron: "rooster" | "gewijzigd" | "extra";
   subjectId: string | null;
+  /** Het onderliggende rooster_items.id - null voor fietsen/extra-blokken (die staan niet in rooster_items). */
+  roosterItemId: string | null;
 }
 
 function vindPeriode(periodes: RoosterPeriode[], iso: string) {
@@ -272,6 +276,7 @@ function roosterBlokkenVoorDag(
     eind_tijd: string;
     bron: "rooster" | "gewijzigd" | "extra";
     subjectId: string | null;
+    roosterItemId: string | null;
   }[] =
     periode && !heleDagVervallen
       ? roosterItems
@@ -285,6 +290,7 @@ function roosterBlokkenVoorDag(
                   eind_tijd: wijziging.eind_tijd ?? i.eind_tijd,
                   bron: "gewijzigd" as const,
                   subjectId: i.subject_id,
+                  roosterItemId: i.id,
                 }
               : {
                   titel: i.titel,
@@ -292,13 +298,21 @@ function roosterBlokkenVoorDag(
                   eind_tijd: i.eind_tijd,
                   bron: "rooster" as const,
                   subjectId: i.subject_id,
+                  roosterItemId: i.id,
                 };
           })
       : [];
 
   for (const extra of dagUitzonderingen.filter((u) => u.type === "extra")) {
     if (extra.titel && extra.start_tijd && extra.eind_tijd) {
-      lessen.push({ titel: extra.titel, start_tijd: extra.start_tijd, eind_tijd: extra.eind_tijd, bron: "extra", subjectId: null });
+      lessen.push({
+        titel: extra.titel,
+        start_tijd: extra.start_tijd,
+        eind_tijd: extra.eind_tijd,
+        bron: "extra",
+        subjectId: null,
+        roosterItemId: null,
+      });
     }
   }
 
@@ -319,6 +333,7 @@ function roosterBlokkenVoorDag(
       startMinuten: tijdNaarMinuten(start),
       bron: "rooster",
       subjectId: null,
+      roosterItemId: null,
     });
   }
   for (const les of lessen) {
@@ -330,6 +345,7 @@ function roosterBlokkenVoorDag(
       startMinuten: tijdNaarMinuten(les.start_tijd),
       bron: les.bron,
       subjectId: les.subjectId,
+      roosterItemId: les.roosterItemId,
     });
   }
   if (reistijdMinuten > 0) {
@@ -341,6 +357,7 @@ function roosterBlokkenVoorDag(
       startMinuten: tijdNaarMinuten(laatste.eind_tijd),
       bron: "rooster",
       subjectId: null,
+      roosterItemId: null,
     });
   }
   return blokken;
@@ -353,6 +370,7 @@ export function AgendaBoard({
   periodes,
   roosterItems,
   uitzonderingen,
+  roosterNotities,
   reistijdMinuten,
   dagInstellingen,
   jaarEvents,
@@ -364,6 +382,7 @@ export function AgendaBoard({
   periodes: RoosterPeriode[];
   roosterItems: RoosterItem[];
   uitzonderingen: RoosterUitzondering[];
+  roosterNotities: RoosterNotitie[];
   reistijdMinuten: number;
   /** Ochtend/avond/eten-ritme per weekdag, zie /ouder/rooster. */
   dagInstellingen: DagInstelling[];
@@ -422,7 +441,13 @@ export function AgendaBoard({
   // Klik-op-vak-in-het-rooster -> deadline (huiswerk/toets) bekijken/toevoegen
   // voor dat vak op die dag (ouder en kind, zie RoosterVakDeadlineModal). Dit
   // lesuur zelf is de deadline - geen losse datum/tijd-keuze.
-  const [deadlineVak, setDeadlineVak] = useState<{ subjectId: string; titel: string; datum: string; lesuurTijd: string } | null>(
+  const [deadlineVak, setDeadlineVak] = useState<{
+    subjectId: string;
+    titel: string;
+    datum: string;
+    lesuurTijd: string;
+    lesuurId: string | null;
+  } | null>(
     null
   );
   // Gedeelde coach-popup voor alle plekken waar net huiswerk/toets is
@@ -583,6 +608,16 @@ export function AgendaBoard({
     [items, testTypes, vandaagIso]
   );
   const aandachtItemIds = useMemo(() => new Set(aandachtSignalen.map((s) => s.item.id)), [aandachtSignalen]);
+
+  // Herinneringen ("neem gymkleren mee") horen bij vandaag/morgen te tonen,
+  // niet bij de dag zelf begraven in een rooster-blokje - dan mis je 'm
+  // precies op het moment dat je moet inpakken.
+  const naderendeNotities = useMemo(() => {
+    const morgenIso = naarIsoDatum(voegDagenToe(new Date(vandaagIso + "T00:00:00"), 1));
+    return roosterNotities
+      .filter((n) => n.status === "open" && (n.datum === vandaagIso || n.datum === morgenIso))
+      .sort((a, b) => a.datum.localeCompare(b.datum));
+  }, [roosterNotities, vandaagIso]);
 
   const roosterPerDag = useMemo(() => {
     const map = new Map<string, RoosterBlok[]>();
@@ -968,6 +1003,51 @@ export function AgendaBoard({
           <Button size="sm" onClick={() => setPlanningshulp({ openingsbericht: bouwAandachtBericht(aandachtSignalen) })}>
             Bespreek met de coach
           </Button>
+        </Card>
+      )}
+
+      {naderendeNotities.length > 0 && (
+        <Card className="flex flex-col gap-2 border-accent-200 bg-accent-50/60 py-3">
+          <p className="text-sm font-semibold text-slate-900">Niet vergeten mee te nemen</p>
+          <div className="flex flex-col gap-1.5">
+            {naderendeNotities.map((n) => (
+              <div key={n.id} className="flex items-center gap-2.5">
+                <button
+                  disabled={pending}
+                  onClick={() =>
+                    startTransition(async () => {
+                      await updateRoosterNotitieStatus(n.id, "klaar");
+                      router.refresh();
+                    })
+                  }
+                  aria-label="Afgevinkt"
+                  className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-accent-300 text-accent-600 hover:bg-white disabled:opacity-50"
+                >
+                  <Icon name="check" size={12} />
+                </button>
+                <span className="min-w-0 flex-1 text-sm text-slate-700">
+                  <span className="font-medium text-accent-700">
+                    {n.datum === vandaagIso ? "Vandaag" : "Morgen"}
+                  </span>{" "}
+                  - {n.tekst}
+                  {subjectNaam(n.subject_id) && <span className="text-slate-400"> ({subjectNaam(n.subject_id)})</span>}
+                </span>
+                <button
+                  disabled={pending}
+                  onClick={() =>
+                    startTransition(async () => {
+                      await verwijderRoosterNotitie(n.id);
+                      router.refresh();
+                    })
+                  }
+                  aria-label="Verwijderen"
+                  className="shrink-0 rounded-md p-1 text-slate-400 hover:bg-white hover:text-rose-600 disabled:opacity-50"
+                >
+                  <Icon name="trash" size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
         </Card>
       )}
 
@@ -2212,7 +2292,14 @@ export function AgendaBoard({
                       }
                       onClick={
                         klikbaar
-                          ? () => setDeadlineVak({ subjectId: b.subjectId!, titel: b.titel, datum: iso, lesuurTijd: blokTijd })
+                          ? () =>
+                              setDeadlineVak({
+                                subjectId: b.subjectId!,
+                                titel: b.titel,
+                                datum: iso,
+                                lesuurTijd: blokTijd,
+                                lesuurId: b.roosterItemId,
+                              })
                           : undefined
                       }
                       style={{ top: topVoorMinuut(b.startMinuten), height: hoogteVoorDuur(b.duurMinuten) }}
@@ -2493,7 +2580,14 @@ export function AgendaBoard({
                           key={i}
                           onClick={
                             klikbaar
-                              ? () => setDeadlineVak({ subjectId: b.subjectId!, titel: b.titel, datum: iso, lesuurTijd: blokTijd })
+                              ? () =>
+                              setDeadlineVak({
+                                subjectId: b.subjectId!,
+                                titel: b.titel,
+                                datum: iso,
+                                lesuurTijd: blokTijd,
+                                lesuurId: b.roosterItemId,
+                              })
                               : undefined
                           }
                           className={clsx(
@@ -2743,11 +2837,15 @@ export function AgendaBoard({
           subjectId={deadlineVak.subjectId}
           datum={deadlineVak.datum}
           lesuurTijd={deadlineVak.lesuurTijd}
+          lesuurId={deadlineVak.lesuurId}
           bestaandeDeadlines={items.filter(
             (it) =>
               it.subject_id === deadlineVak.subjectId &&
               it.due_date === deadlineVak.datum &&
               (it.type === "huiswerk" || it.type === "toets")
+          )}
+          bestaandeNotities={roosterNotities.filter(
+            (n) => n.subject_id === deadlineVak.subjectId && n.datum === deadlineVak.datum
           )}
           items={items}
           subjects={subjects}

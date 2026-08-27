@@ -378,6 +378,58 @@ export async function maakRoosterUitzonderingSimpel(origineelItemId: string, dat
   return { success: true };
 }
 
+// -- Herinneringen (losse notities bij het rooster) ------------------------
+
+/**
+ * Korte herinnering bij een lesuur/dag (bv. "neem gymkleren mee") - geen
+ * planning_item, hoeft niet ingepland te worden. Kind-toegankelijk, net als
+ * maakRoosterUitzonderingSimpel.
+ */
+export async function maakRoosterNotitie(
+  datum: string,
+  tekst: string,
+  subjectId: string | null,
+  roosterItemId: string | null
+) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Niet ingelogd." };
+
+  const { data: profile } = await supabase.from("profiles").select("family_id").eq("id", user.id).single();
+  if (!profile) return { error: "Profiel niet gevonden." };
+
+  const tekstSchoon = tekst.trim();
+  if (!datum || !tekstSchoon) return { error: "Vul een datum en tekst in." };
+
+  const { error } = await supabase.from("rooster_notities").insert({
+    family_id: profile.family_id,
+    subject_id: subjectId,
+    rooster_item_id: roosterItemId,
+    datum,
+    tekst: tekstSchoon,
+    status: "open" as const,
+    created_by: user.id,
+  });
+  if (error) return { error: error.message };
+
+  revalidateRooster();
+  return { success: true };
+}
+
+export async function updateRoosterNotitieStatus(id: string, status: "open" | "klaar") {
+  const supabase = await createClient();
+  await supabase.from("rooster_notities").update({ status }).eq("id", id);
+  revalidateRooster();
+}
+
+export async function verwijderRoosterNotitie(id: string) {
+  const supabase = await createClient();
+  await supabase.from("rooster_notities").delete().eq("id", id);
+  revalidateRooster();
+}
+
 // -- Reistijd (fietstijd) --------------------------------------------------
 
 export async function updateReistijd(formData: FormData) {

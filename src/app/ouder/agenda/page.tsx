@@ -20,6 +20,7 @@ export default async function OuderAgendaPage() {
     { data: periodes },
     { data: roosterItems },
     { data: uitzonderingen },
+    { data: roosterNotities },
     { data: family },
     { data: jaarEvents },
     { data: dagInstellingen },
@@ -34,6 +35,7 @@ export default async function OuderAgendaPage() {
     supabase.from("rooster_periodes").select("*").eq("family_id", profile!.family_id),
     supabase.from("rooster_items").select("*").eq("family_id", profile!.family_id),
     supabase.from("rooster_uitzonderingen").select("*").eq("family_id", profile!.family_id),
+    supabase.from("rooster_notities").select("*").eq("family_id", profile!.family_id),
     supabase.from("families").select("*").eq("id", profile!.family_id).single(),
     supabase.from("jaar_events").select("*").eq("family_id", profile!.family_id),
     supabase.from("dag_instellingen").select("*").eq("family_id", profile!.family_id),
@@ -47,6 +49,7 @@ export default async function OuderAgendaPage() {
       periodes={periodes ?? []}
       roosterItems={roosterItems ?? []}
       uitzonderingen={uitzonderingen ?? []}
+      roosterNotities={roosterNotities ?? []}
       reistijdMinuten={family?.reistijd_minuten ?? 15}
       dagInstellingen={(dagInstellingen ?? []) as DagInstelling[]}
       jaarEvents={jaarEvents ?? []}
