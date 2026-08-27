@@ -8,7 +8,8 @@ import { MateriaalForm } from "@/components/materiaal-form";
 import { LesstofOpschonenKnop } from "@/components/lesstof-opschonen-knop";
 import { MateriaalBewerkForm } from "@/components/materiaal-bewerk-form";
 import { KennisbankUploader } from "@/components/kennisbank-uploader";
-import { KennisbankWizard } from "@/components/kennisbank-wizard";
+import { VakInhoudWizard } from "@/components/vak-inhoud-wizard";
+import { VakLeegmakenKnop } from "@/components/vak-leegmaken-knop";
 import { OverhoorResultaten } from "@/components/overhoor-resultaten";
 import { OverhoorGeschiedenisOpschonenKnop } from "@/components/overhoor-geschiedenis-opschonen-knop";
 import { KennisOnderdelenBeheer } from "@/components/kennis-onderdelen-beheer";
@@ -104,10 +105,13 @@ export default async function VakDetailPage({
         <OverhoorResultaten sessies={(overhoorSessies ?? []) as OverhoorSessie[]} />
       </Card>
 
-      <KennisbankWizard subjectId={id} />
+      <VakInhoudWizard subjectId={id} />
 
       <div>
-        <h2 className="mb-3 text-base font-semibold text-slate-900">Kennisonderdelen (regel-niveau)</h2>
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <h2 className="text-base font-semibold text-slate-900">Kennisonderdelen (regel-niveau)</h2>
+          {heeftKennisbank && <VakLeegmakenKnop subjectId={id} />}
+        </div>
         <KennisOnderdelenBeheer
           subjectId={id}
           onderdelen={(kennisOnderdelen ?? []) as KennisOnderdeel[]}

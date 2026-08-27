@@ -215,7 +215,8 @@ export async function verwerkTaalvakBrontekst(
   subjectId: string,
   brontekst: string,
   bestandsnaam: string,
-  verwachteParagraafId?: string
+  verwachteParagraafId?: string,
+  overrideHoofdstuk?: string
 ) {
   const ouder = await ouderProfiel();
   if ("error" in ouder) return { error: ouder.error };
@@ -237,7 +238,7 @@ export async function verwerkTaalvakBrontekst(
       error: `Kon geen unit-/paragraafnummer herkennen in "${bestandsnaam}". Hernoem het bestand zodat het begint met een nummer (bv "1_..." of "1.2_...") of upload het via de knop bij de juiste paragraaf.`,
     };
   }
-  const hoofdstuk = `Hoofdstuk ${paragraafId.split(".")[0]}`;
+  const hoofdstuk = overrideHoofdstuk?.trim() || `Hoofdstuk ${paragraafId.split(".")[0]}`;
 
   const blokken = splitsInBlokken(tekst);
   const woordenlijstIndices = new Set<number>();
@@ -297,8 +298,11 @@ export async function verwerkTaalvakBrontekst(
   revalidateVak(subjectId);
 
   // Grammatica-uitleg en oefenbank: hergebruik de bestaande, beproefde
-  // pipeline op de kleinere, van woordenlijsten ontdane tekst.
-  const restResultaat = await verwerkKennisBrontekst(subjectId, strippedTekst, bestandsnaam, paragraafId);
+  // pipeline op de kleinere, van woordenlijsten ontdane tekst. Zelfde
+  // hoofdstuk-override meegeven als hierboven, anders kan de rest van de
+  // paragraaf onder een ander hoofdstuk-label terechtkomen dan de
+  // woordenlijsten net hierboven.
+  const restResultaat = await verwerkKennisBrontekst(subjectId, strippedTekst, bestandsnaam, paragraafId, hoofdstuk);
 
   return { ...restResultaat, paragraafId, aantalWoordenlijsten, aantalWoorden };
 }
@@ -380,7 +384,8 @@ export async function verwerkKennisBrontekst(
   subjectId: string,
   brontekst: string,
   bestandsnaam: string,
-  verwachteParagraafId?: string
+  verwachteParagraafId?: string,
+  overrideHoofdstuk?: string
 ) {
   const ouder = await ouderProfiel();
   if ("error" in ouder) return { error: ouder.error };
@@ -424,7 +429,10 @@ export async function verwerkKennisBrontekst(
 
   const ingebouwd = GETAL_EN_RUIMTE_2HV13.find((p) => p.id === paragraafId);
   const titel = meta.paragraafTitel || ingebouwd?.titel || afgeleideTitelVanBestandsnaam(bestandsnaam);
-  const hoofdstuk = meta.hoofdstukLabel || (ingebouwd ? hoofdstukLabel(ingebouwd) : `Hoofdstuk ${paragraafId.split(".")[0]}`);
+  const hoofdstuk =
+    overrideHoofdstuk?.trim() ||
+    meta.hoofdstukLabel ||
+    (ingebouwd ? hoofdstukLabel(ingebouwd) : `Hoofdstuk ${paragraafId.split(".")[0]}`);
 
   const onderdelenRes = await slaGegenereerdeOnderdelenOp(
     supabase,
@@ -740,24 +748,101 @@ function bouwHerformatteerPrompt(bestandsnaam: string, ruweTekst: string): strin
   ].join("\n");
 }
 
+/** Haalt de ruwe tekst uit een geüpload bestand (tekst/markdown direct, foto/PDF via letterlijke AI-transcriptie) of geplakte tekst - gedeeld door alle onderstaande wizard-invoerpunten. */
+async function haalRuweTekstOp(
+  client: ReturnType<typeof createGeminiClient>,
+  file: File | null,
+  tekstInvoer: string
+): Promise<{ tekst: string } | { error: string }> {
+  let ruweTekst: string;
+  if (file) {
+    const isTekstBestand = file.type.startsWith("text/") || /\.(md|markdown|txt)$/i.test(file.name);
+    if (isTekstBestand) {
+      ruweTekst = Buffer.from(await file.arrayBuffer()).toString("utf-8");
+    } else if (file.type === "application/pdf" || file.type.startsWith("image/")) {
+      const base64 = Buffer.from(await file.arrayBuffer()).toString("base64");
+      const transcriptie = await genereerGestructureerd(
+        client,
+        TranscriptieSchema,
+        [
+          {
+            role: "user",
+            parts: [
+              { inlineData: { mimeType: file.type, data: base64 } },
+              {
+                text: "Typ de volledige inhoud van dit lesmateriaal (voor een leerling van 2 havo) zo LETTERLIJK mogelijk over, inclusief eventuele tabellen (als tekst-tabel met | tussen de kolommen). Verzin niets, laat niets weg, parafraseer niet.",
+              },
+            ],
+          },
+        ],
+        8192
+      );
+      ruweTekst = transcriptie.tekst;
+    } else {
+      return { error: "Alleen tekst/markdown-bestanden, PDF's en foto's worden ondersteund." };
+    }
+  } else {
+    ruweTekst = tekstInvoer;
+  }
+
+  ruweTekst = ruweTekst.trim();
+  if (!ruweTekst) return { error: "Geen inhoud gevonden om te verwerken." };
+  if (ruweTekst.length > MAX_BRONTEKST_LENGTE) ruweTekst = ruweTekst.slice(0, MAX_BRONTEKST_LENGTE);
+  return { tekst: ruweTekst };
+}
+
+// ---------------------------------------------------------------------------
+// Vakcoach-wizard: multi-bestand upload waarbij de AI eerst per
+// bestand een indeling VOORSTELT (hoofdstuk/paragraafnummer/titel) - de
+// ouder houdt zo de regie en kan dat voorstel aanpassen voor er iets wordt
+// opgeslagen, i.p.v. blind te moeten vertrouwen op wat de AI raadt (of
+// vooraf zelf een paragraafnummer te moeten invullen zonder dat de tool al
+// heeft laten zien wat hij herkent). Fase 1 (analyseerKennisbankBestand)
+// doet alleen transcriptie + een klein/goedkoop voorstel, schrijft niks weg.
+// Fase 2 (bevestigKennisbankBestand) herformatteert en verwerkt daadwerkelijk,
+// met het (evt. aangepaste) voorstel als sturing - hergebruikt verder
+// dezelfde beproefde pipeline als hierboven.
+// ---------------------------------------------------------------------------
+
+const VoorstelSchema = z.object({
+  hoofdstuk: z.string().describe("Leesbaar hoofdstuk-/unitlabel, bv 'Unit 1 - California' of 'Hoofdstuk 3'."),
+  paragraafId: z
+    .string()
+    .describe("Paragraaf- of lesnummer binnen dat hoofdstuk, bv '1.3' of gewoon '3' bij units. Verzin een nummer als de tekst er geen geeft."),
+  titel: z.string().describe("Korte titel van deze paragraaf/les, bv 'Speaking' of 'Breuken vereenvoudigen'."),
+  isWoordenlijst: z
+    .boolean()
+    .describe("True als dit bestand HOOFDZAKELIJK uit letterlijke woorden-/uitdrukkingenlijsten bestaat, false bij grammatica/rekenstof/gemengd."),
+});
+export type KennisbankVoorstel = z.infer<typeof VoorstelSchema>;
+
+function bouwVoorstelPrompt(bestandsnaam: string, tekst: string): string {
+  return [
+    "Dit is 1 kennisbank-bronbestand voor een leerling van 2 havo (mogelijk al voorzien van metadata/frontmatter zoals unit-/paragraafnummers - gebruik die als aanwezig).",
+    "Stel een korte indeling voor: bij welk hoofdstuk/unit en paragraaf/les hoort dit, en wat is de titel.",
+    "",
+    `Bestandsnaam: ${bestandsnaam}`,
+    "",
+    "Inhoud (eventueel ingekort):",
+    tekst.slice(0, 6000),
+  ].join("\n");
+}
+
 /**
- * 1 invoerpunt voor de kennisbank-wizard: accepteert een los bestand (foto,
- * PDF, tekst/markdown) OF geplakte tekst, plus een verplichte paragraaf-hint
- * (de wizard vraagt daar apart naar - zie kennisbank-wizard.tsx) omdat een
- * foto/PDF-bestandsnaam zelden een bruikbaar paragraafnummer bevat.
+ * Fase 1: leest 1 bestand (of geplakte tekst) uit en stelt een indeling voor
+ * - schrijft nog niets naar de database. Geeft ook de (ruwe, niet
+ * herformatteerde) tekst terug zodat fase 2 het bestand niet opnieuw hoeft
+ * te transcriberen.
  */
-export async function verwerkKennisbankBestand(formData: FormData) {
+export async function analyseerKennisbankBestand(formData: FormData) {
   const ouder = await ouderProfiel();
   if ("error" in ouder) return { error: ouder.error };
   const { supabase, familyId } = ouder;
 
   const subjectId = String(formData.get("subjectId") || "");
-  const paragraafHint = String(formData.get("paragraafHint") || "").trim();
   const file = formData.get("file");
   const tekstInvoer = String(formData.get("tekst") || "").trim();
-
   if (!subjectId) return { error: "Kies eerst een vak." };
-  if (!paragraafHint) return { error: "Vul in voor welke paragraaf/unit dit is (bv '1.2' of '3')." };
   if (!(file instanceof File) && !tekstInvoer) return { error: "Upload een bestand of plak tekst." };
 
   const { data: subject } = await supabase.from("subjects").select("id, family_id").eq("id", subjectId).single();
@@ -767,50 +852,39 @@ export async function verwerkKennisbankBestand(formData: FormData) {
 
   try {
     const client = createGeminiClient();
+    const ruw = await haalRuweTekstOp(client, file instanceof File ? file : null, tekstInvoer);
+    if ("error" in ruw) return ruw;
 
-    let ruweTekst: string;
-    if (file instanceof File) {
-      const isTekstBestand = file.type.startsWith("text/") || /\.(md|markdown|txt)$/i.test(file.name);
-      if (isTekstBestand) {
-        ruweTekst = Buffer.from(await file.arrayBuffer()).toString("utf-8");
-      } else if (file.type === "application/pdf" || file.type.startsWith("image/")) {
-        const base64 = Buffer.from(await file.arrayBuffer()).toString("base64");
-        const transcriptie = await genereerGestructureerd(
-          client,
-          TranscriptieSchema,
-          [
-            {
-              role: "user",
-              parts: [
-                { inlineData: { mimeType: file.type, data: base64 } },
-                {
-                  text: "Typ de volledige inhoud van dit lesmateriaal (voor een leerling van 2 havo) zo LETTERLIJK mogelijk over, inclusief eventuele tabellen (als tekst-tabel met | tussen de kolommen). Verzin niets, laat niets weg, parafraseer niet.",
-                },
-              ],
-            },
-          ],
-          8192
-        );
-        ruweTekst = transcriptie.tekst;
-      } else {
-        return { error: "Alleen tekst/markdown-bestanden, PDF's en foto's worden ondersteund." };
-      }
-    } else {
-      ruweTekst = tekstInvoer;
-    }
+    const voorstel = await genereerGestructureerd(client, VoorstelSchema, bouwVoorstelPrompt(bestandsnaam, ruw.tekst), 1024);
+    return { bestandsnaam, ruweTekst: ruw.tekst, voorstel };
+  } catch (e) {
+    return { error: e instanceof Error ? `AI-verwerking mislukt: ${e.message}` : "AI-verwerking mislukt." };
+  }
+}
 
-    ruweTekst = ruweTekst.trim();
-    if (!ruweTekst) return { error: "Geen inhoud gevonden om te verwerken." };
-    if (ruweTekst.length > MAX_BRONTEKST_LENGTE) ruweTekst = ruweTekst.slice(0, MAX_BRONTEKST_LENGTE);
-
+/**
+ * Fase 2: herformatteert de (in fase 1 opgehaalde) ruwe tekst naar het
+ * verwachte format en verwerkt 'm daadwerkelijk, met het door de ouder
+ * bevestigde/aangepaste hoofdstuk+paragraafId als sturing i.p.v. wat de AI
+ * daarin zelf zou raden.
+ */
+export async function bevestigKennisbankBestand(
+  subjectId: string,
+  ruweTekst: string,
+  bestandsnaam: string,
+  hoofdstuk: string,
+  paragraafId: string
+) {
+  if (!paragraafId.trim()) return { error: "Vul een paragraaf-/lesnummer in." };
+  try {
+    const client = createGeminiClient();
     const herformatteerd = await genereerGestructureerd(
       client,
       HerformatteerSchema,
       bouwHerformatteerPrompt(bestandsnaam, ruweTekst),
       8192
     );
-
-    return await verwerkTaalvakBrontekst(subjectId, herformatteerd.markdown, bestandsnaam, paragraafHint);
+    return await verwerkTaalvakBrontekst(subjectId, herformatteerd.markdown, bestandsnaam, paragraafId.trim(), hoofdstuk.trim());
   } catch (e) {
     return { error: e instanceof Error ? `AI-verwerking mislukt: ${e.message}` : "AI-verwerking mislukt." };
   }
