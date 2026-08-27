@@ -14,12 +14,6 @@ import {
 } from "@/lib/jaarkalender";
 import type { JaarEvent } from "@/lib/types";
 
-// Vaste breedte per dag-vakje (i.p.v. elke maandrij uitrekken tot dezelfde
-// totale breedte) - zo blijven vakjes overal even groot en stopt een kortere
-// maand (bv. 30 dagen) gewoon 1 vakje eerder dan een maand met 31 dagen,
-// in plaats van dat de vakjes van een kortere maand breder worden getrokken.
-const DAG_KOLOM_BREEDTE = "18px";
-
 export function JaarOverzicht({ events }: { events: JaarEvent[] }) {
   const nu = useMemo(() => new Date(), []);
   const defaultStartJaar = nu.getMonth() >= 7 ? nu.getFullYear() : nu.getFullYear() - 1;
@@ -82,9 +76,14 @@ export function JaarOverzicht({ events }: { events: JaarEvent[] }) {
                 <p className="text-xs font-semibold text-slate-500">
                   {maandNaam(maandIndex).slice(0, 3)} &apos;{String(jaar).slice(-2)}
                 </p>
+                {/* Altijd 31 kolommen reserveren (het maximum), ook als de
+                    maand er minder heeft - zo vullen de dag-vakjes altijd de
+                    volle breedte EN blijven ze exact even breed tussen
+                    maanden onderling (een kortere maand rendert gewoon
+                    minder cellen, i.p.v. dat die breder worden getrokken). */}
                 <div
-                  className="grid h-9 w-fit justify-self-start overflow-hidden rounded-lg border border-slate-100"
-                  style={{ gridTemplateColumns: `repeat(${aantalDagen}, ${DAG_KOLOM_BREEDTE})` }}
+                  className="grid h-9 w-full overflow-hidden rounded-lg border border-slate-100"
+                  style={{ gridTemplateColumns: "repeat(31, minmax(0, 1fr))" }}
                 >
                   {Array.from({ length: aantalDagen }, (_, i) => {
                     const dagNr = i + 1;

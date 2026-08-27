@@ -157,37 +157,61 @@ export function JaarkalenderLijst({ events }: { events: JaarEvent[] }) {
 
   if (events.length === 0) return null;
 
+  // Per maand groeperen en in kolommen naast elkaar tonen (i.p.v. 1 lange
+  // verticale lijst) - houdt het scherm compact ook als er veel periodes
+  // over het hele jaar staan.
+  const perMaand = new Map<string, JaarEvent[]>();
+  for (const e of events) {
+    const key = e.start_datum.slice(0, 7); // YYYY-MM
+    const lijst = perMaand.get(key) ?? [];
+    lijst.push(e);
+    perMaand.set(key, lijst);
+  }
+  const maandGroepen = Array.from(perMaand.entries()).sort(([a], [b]) => a.localeCompare(b));
+
   return (
     <div>
       <h2 className="mb-3 text-base font-semibold text-slate-900">Alles beheren</h2>
-      <div className="flex flex-col gap-2">
-        {events.map((e) => (
-          <Card key={e.id} className="flex items-center gap-3 py-3">
-            <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${JAAR_EVENT_META[e.type].dotClass}`} />
-            <div className="flex-1">
-              <p className="text-sm font-medium text-slate-800">{e.titel}</p>
-              <p className="text-xs text-slate-500">
-                {JAAR_EVENT_META[e.type].label} -{" "}
-                {new Date(e.start_datum + "T00:00:00").toLocaleDateString("nl-NL", { day: "numeric", month: "short", year: "numeric" })}
-                {e.eind_datum !== e.start_datum &&
-                  ` t/m ${new Date(e.eind_datum + "T00:00:00").toLocaleDateString("nl-NL", { day: "numeric", month: "short", year: "numeric" })}`}
-              </p>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {maandGroepen.map(([maandKey, maandEvents]) => (
+          <Card key={maandKey} className="py-3">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
+              {new Date(maandKey + "-01T00:00:00").toLocaleDateString("nl-NL", { month: "long", year: "numeric" })}
+            </p>
+            <div className="flex flex-col gap-1.5">
+              {maandEvents.map((e) => (
+                <div key={e.id} className="group flex items-center gap-2 rounded-lg px-1.5 py-1 hover:bg-slate-50">
+                  <span className={`h-2 w-2 shrink-0 rounded-full ${JAAR_EVENT_META[e.type].dotClass}`} />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-slate-800">{e.titel}</p>
+                    <p className="text-[11px] text-slate-500">
+                      {new Date(e.start_datum + "T00:00:00").toLocaleDateString("nl-NL", { day: "numeric", month: "short" })}
+                      {e.eind_datum !== e.start_datum &&
+                        ` - ${new Date(e.eind_datum + "T00:00:00").toLocaleDateString("nl-NL", { day: "numeric", month: "short" })}`}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setBewerkEvent(e)}
+                    className="shrink-0 rounded-lg p-1.5 text-slate-300 opacity-0 hover:bg-slate-100 hover:text-slate-700 group-hover:opacity-100"
+                    aria-label="Bewerken"
+                  >
+                    <Icon name="pencil-line" size={13} />
+                  </button>
+                  <button
+                    disabled={verwijderPending}
+                    onClick={() => verwijder(e.id)}
+                    className="shrink-0 rounded-lg p-1.5 text-slate-300 opacity-0 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50 group-hover:opacity-100"
+                    aria-label="Verwijderen"
+                  >
+                    <Icon
+                      name={verwijderPending ? "loader" : "trash"}
+                      size={13}
+                      className={verwijderPending ? "animate-spin" : undefined}
+                    />
+                  </button>
+                </div>
+              ))}
             </div>
-            <button
-              onClick={() => setBewerkEvent(e)}
-              className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-              aria-label="Bewerken"
-            >
-              <Icon name="pencil-line" size={16} />
-            </button>
-            <button
-              disabled={verwijderPending}
-              onClick={() => verwijder(e.id)}
-              className="rounded-xl p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"
-              aria-label="Verwijderen"
-            >
-              <Icon name={verwijderPending ? "loader" : "trash"} size={16} className={verwijderPending ? "animate-spin" : undefined} />
-            </button>
           </Card>
         ))}
       </div>
