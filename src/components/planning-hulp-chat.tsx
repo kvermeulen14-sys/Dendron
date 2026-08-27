@@ -9,6 +9,7 @@ import { ChatInvoer } from "@/components/ui/chat-invoer";
 import { MarkdownTekst } from "@/components/markdown-tekst";
 import {
   maakPlanningItemSimpel,
+  plandWerkmoment,
   updatePlanningStatus,
   verplaatsPlanningItem,
   verplaatsPlanningItemNaarTijd,
@@ -17,7 +18,7 @@ import {
 import { PLANNING_TYPE_META } from "@/lib/planning";
 import type { PlanningItem, PlanningType, Subject } from "@/lib/types";
 
-type Actie = "aanmaken" | "verplaats" | "klaar_melden" | "heropenen" | "verwijderen";
+type Actie = "aanmaken" | "verplaats" | "deadline_verzetten" | "klaar_melden" | "heropenen" | "verwijderen";
 interface Voorstel {
   actie: Actie;
   planningItemId: string | null;
@@ -54,12 +55,19 @@ function voorstelOmschrijving(voorstel: Voorstel, item: PlanningItem | null, sub
     }
     case "verplaats": {
       if (!item) return null;
-      const datum = voorstel.nieuweDatum ?? item.due_date;
+      const isWerkmoment = item.type === "huiswerk" || item.type === "toets";
+      const datum = voorstel.nieuweDatum ?? (isWerkmoment ? item.start_date ?? item.due_date : item.due_date);
       // Bij alleen een nieuwe datum blijft een al bestaand tijdstip gewoon
       // staan (verplaatsPlanningItem raakt start_time niet aan) - dat tonen
       // we dus ook zo.
       const tijd = voorstel.nieuweTijd ?? item.start_time;
-      return `"${item.title}" verplaatsen naar ${formatDatum(datum)}${tijd ? ` om ${tijd.slice(0, 5)}` : ""}`;
+      return isWerkmoment
+        ? `Werkmoment voor "${item.title}" (moet af op ${formatDatum(item.due_date)}) plannen op ${formatDatum(datum)}${tijd ? ` om ${tijd.slice(0, 5)}` : ""}`
+        : `"${item.title}" verplaatsen naar ${formatDatum(datum)}${tijd ? ` om ${tijd.slice(0, 5)}` : ""}`;
+    }
+    case "deadline_verzetten": {
+      if (!item || !voorstel.nieuweDatum) return null;
+      return `Deadline van "${item.title}" verzetten naar ${formatDatum(voorstel.nieuweDatum)}`;
     }
     case "klaar_melden":
       return item ? `"${item.title}" als klaar markeren` : null;
@@ -177,6 +185,15 @@ export function PlanningHulpChat({
         case "verplaats": {
           if (!voorstel.planningItemId) return;
           const item = itemVoor(voorstel.planningItemId);
+          // Huiswerk/toets: due_date is de deadline en blijft altijd staan -
+          // dit plant alleen een werkmoment (start_date/start_time) ervoor,
+          // net als slepen in de agenda. Bij leermoment/prive IS due_date al
+          // de dag waarop het gebeurt, dus die verzetten we gewoon.
+          if (item && (item.type === "huiswerk" || item.type === "toets")) {
+            const datum = voorstel.nieuweDatum ?? item.start_date ?? item.due_date;
+            await plandWerkmoment(voorstel.planningItemId, datum, voorstel.nieuweTijd ?? item.start_time);
+            break;
+          }
           const datum = voorstel.nieuweDatum ?? item?.due_date;
           if (!datum) return;
           if (voorstel.nieuweTijd) {
@@ -184,6 +201,11 @@ export function PlanningHulpChat({
           } else {
             await verplaatsPlanningItem(voorstel.planningItemId, datum);
           }
+          break;
+        }
+        case "deadline_verzetten": {
+          if (!voorstel.planningItemId || !voorstel.nieuweDatum) return;
+          await verplaatsPlanningItem(voorstel.planningItemId, voorstel.nieuweDatum);
           break;
         }
         case "klaar_melden":

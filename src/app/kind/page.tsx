@@ -43,11 +43,15 @@ export default async function KindOverzicht() {
     { data: openItemsData },
     { data: overhoorSessiesData },
   ] = await Promise.all([
+    // Due_date = deadline (blijft altijd staan), start_date = het echte
+    // werkmoment als de coach dat vóór de deadline heeft ingepland - dan wil
+    // je het item hier zien op de dag waarop je eraan werkt, niet (nog eens)
+    // op de deadline-dag zelf. Zonder eigen werkmoment is dat gewoon due_date.
     supabase
       .from("planning_items")
       .select("*")
       .eq("family_id", profile!.family_id)
-      .eq("due_date", vandaag)
+      .or(`and(due_date.eq.${vandaag},start_date.is.null),start_date.eq.${vandaag}`)
       .neq("status", "voorstel"),
     supabase
       .from("planning_items")

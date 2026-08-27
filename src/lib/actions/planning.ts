@@ -365,6 +365,18 @@ export async function verplaatsPlanningItemNaarTijd(
   revalidateAgendas();
 }
 
+// Een werkmoment voor huiswerk/een toets inplannen (wanneer ga je eraan
+// werken) - bewust los van verplaatsPlanningItemNaarTijd, want dat verzet
+// ook due_date (de deadline zelf). Hier blijft due_date altijd staan: alleen
+// start_date/start_time (wanneer je er daadwerkelijk aan werkt) veranderen.
+// Zonder dit onderscheid verdween de koppeling met het rooster-lesuur van de
+// deadline zodra er een werkmoment werd ingepland.
+export async function plandWerkmoment(id: string, datum: string, tijd: string | null) {
+  const supabase = await createClient();
+  await supabase.from("planning_items").update({ start_date: datum, start_time: tijd }).eq("id", id);
+  revalidateAgendas();
+}
+
 // De onderrand van een kaartje slepen past de tijdsinschatting aan. Die voedt
 // meteen de capaciteitsmeter, dus langer maken laat direct zien of het nog past.
 export async function updatePlanningDuur(id: string, minuten: number) {

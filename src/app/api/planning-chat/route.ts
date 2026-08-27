@@ -11,18 +11,18 @@ const PLANNING_TYPES = ["huiswerk", "toets", "leermoment", "prive"] as const;
 const MAX_VOORSTELLEN = 4;
 
 const VoorstelSchema = z.object({
-  actie: z.enum(["aanmaken", "verplaats", "klaar_melden", "heropenen", "verwijderen"]),
+  actie: z.enum(["aanmaken", "verplaats", "deadline_verzetten", "klaar_melden", "heropenen", "verwijderen"]),
   planningItemId: z
     .string()
     .nullable()
     .describe(
-      "Verplicht: het EXACTE id (tussen [ ]) uit TAKEN hieronder bij verplaats/klaar_melden/heropenen/verwijderen. Verzin nooit een id. Altijd null bij aanmaken."
+      "Verplicht: het EXACTE id (tussen [ ]) uit TAKEN hieronder bij verplaats/deadline_verzetten/klaar_melden/heropenen/verwijderen. Verzin nooit een id. Altijd null bij aanmaken."
     ),
   nieuweDatum: z
     .string()
     .nullable()
     .describe(
-      "YYYY-MM-DD. Verplicht bij aanmaken (de datum van het nieuwe item). Bij verplaats: de nieuwe datum, of null om de datum te laten staan en alleen de tijd te wijzigen. Nooit een datum in het verleden."
+      "YYYY-MM-DD. Verplicht bij aanmaken (de datum van het nieuwe item) en bij deadline_verzetten. Bij verplaats: de nieuwe datum, of null om de datum te laten staan en alleen de tijd te wijzigen. Nooit een datum in het verleden."
     ),
   nieuweTijd: z
     .string()
@@ -94,7 +94,7 @@ export async function POST(request: Request) {
   const [{ data: items }, { data: subjects }, { data: periodes }] = await Promise.all([
     supabase
       .from("planning_items")
-      .select("id, subject_id, type, title, due_date, start_time, status, estimated_minutes, parent_item_id")
+      .select("id, subject_id, type, title, due_date, start_date, start_time, status, estimated_minutes, parent_item_id")
       .eq("family_id", profile.family_id)
       .neq("status", "klaar")
       .gte("due_date", vandaagIso)
@@ -138,18 +138,29 @@ export async function POST(request: Request) {
           })
           .filter(Boolean)
           .join("\n");
+  // Voor huiswerk/toets is due_date de deadline (verandert nooit via
+  // "verplaats") en start_date (indien gezet) het echte werkmoment ervoor -
+  // dat toont dit apart, zodat de AI nooit de deadline aanziet voor het
+  // werkmoment of andersom.
   const takenTekst = (items ?? [])
     .map((i) => {
       const vak = i.subject_id ? subjectNaam.get(i.subject_id) : null;
       const ouderTitel = i.parent_item_id ? titelPerId.get(i.parent_item_id) : null;
-      return `- [${i.id}] ${i.type} "${i.title}"${vak ? ` (${vak})` : ""} - ${i.due_date}${i.start_time ? ` ${i.start_time.slice(0, 5)}` : ""} - status: ${i.status}${i.estimated_minutes ? ` - ~${i.estimated_minutes} min` : ""}${ouderTitel ? ` - hoort bij: ${ouderTitel}` : ""}`;
+      const isWerkmomentType = i.type === "huiswerk" || i.type === "toets";
+      const werkmoment = isWerkmomentType && i.start_date && i.start_date !== i.due_date
+        ? ` - werkmoment gepland op ${i.start_date}${i.start_time ? ` ${i.start_time.slice(0, 5)}` : ""}`
+        : i.start_time
+          ? ` ${i.start_time.slice(0, 5)}`
+          : "";
+      return `- [${i.id}] ${i.type} "${i.title}"${vak ? ` (${vak})` : ""} - ${isWerkmomentType ? "deadline" : "datum"} ${i.due_date}${werkmoment} - status: ${i.status}${i.estimated_minutes ? ` - ~${i.estimated_minutes} min` : ""}${ouderTitel ? ` - hoort bij: ${ouderTitel}` : ""}`;
     })
     .join("\n");
 
   const werkdrukPerDag = new Map<string, number>();
   for (const i of items ?? []) {
     if (i.status !== "open" || !i.estimated_minutes) continue;
-    werkdrukPerDag.set(i.due_date, (werkdrukPerDag.get(i.due_date) ?? 0) + i.estimated_minutes);
+    const dag = i.start_date ?? i.due_date;
+    werkdrukPerDag.set(dag, (werkdrukPerDag.get(dag) ?? 0) + i.estimated_minutes);
   }
   const werkdrukTekst = Array.from({ length: 7 }, (_, idx) => addDagen(vandaagIso, idx))
     .map((iso) => {
@@ -167,7 +178,8 @@ export async function POST(request: Request) {
 
 Wat je kunt voorstellen (via "voorstellen" hieronder - elk voorstel krijgt de leerling apart te zien met een eigen "Ja doe dit"/"Nee laat maar"-knop, dus je voert NOOIT zelf iets uit, je stelt het alleen voor):
 - "aanmaken": een nieuw item toevoegen - huiswerk, een toets, een leermoment, of iets privés (bv. "kamer opruimen", "voetbaltraining", "afspreken met een vriend(in)").
-- "verplaats": een bestaand item (huiswerk, toets, leermoment of prive) naar een andere datum en/of tijd verzetten.
+- "verplaats": een werkmoment/moment plannen of verzetten. BELANGRIJK: bij huiswerk en een toets is de deadline (due_date, hierboven getoond) HEILIG - die verandert een "verplaats"-voorstel NOOIT, ook al kies je een "nieuweDatum" die eerder valt. Je plant dan alleen WANNEER de leerling eraan gaat werken, vóór die deadline - de deadline zelf blijft gewoon staan en het item blijft daar ook gewoon zichtbaar. Noem in je antwoord dus nooit dat je "de deadline verzet", maar dat je een werkmoment inplant. Bij leermoment/prive IS de datum al het moment zelf, dus daar verplaats je gewoon normaal.
+- "deadline_verzetten": ALLEEN voor huiswerk/toets, en ALLEEN als de deadline zelf écht verandert (bv. een les valt uit/wordt verzet, de docent verzet de inleverdatum/toetsdatum). Gebruik dit NOOIT om te plannen wanneer de leerling eraan werkt - dat is altijd "verplaats".
 - "klaar_melden" / "heropenen": een bestaand item als klaar markeren, of terugzetten naar open.
 - "verwijderen": een bestaand item weghalen - ook een toets kan hiermee weg (de eraan gekoppelde leermomenten verdwijnen dan automatisch mee, dat regelt de app zelf, daar hoef je geen apart voorstel voor te doen).
 
@@ -175,7 +187,7 @@ Werkwijze:
 - Luister en erken het gevoel of de situatie eerst in 1 korte zin (bv. "Dat klinkt inderdaad vol", "Fijn dat je dat oppakt") voordat je meedenkt - geen preek, geen lange lijst met tips.
 - Denk hardop mee op basis van de ECHTE taken, werkdruk en het lesrooster hieronder - verzin nooit taken, vakken of tijden die er niet staan.
 - Stel als het niet meteen duidelijk is eerst een korte, gerichte vraag in plaats van meteen iets voor te stellen. De leerling houdt de regie - dat blijft ook zo zodra je wel een voorstel doet, want elk voorstel moet nog apart bevestigd worden.
-- Gebruik het lesrooster om de eerstvolgende les van een vak te bepalen. Bij "mijn wiskundeles van morgen valt uit" (of een toets die uitvalt/verzet wordt): kijk welk huiswerk of welke toets voor dat vak op die datum staat, en stel voor dat te verplaatsen (huiswerk: naar de eerstvolgende les van dat vak; een toets: naar de datum die de leerling noemt, of vraag ernaar als die nog niet genoemd is).
+- Gebruik het lesrooster om de eerstvolgende les van een vak te bepalen. Bij "mijn wiskundeles van morgen valt uit" (of een toets die uitvalt/verzet wordt): kijk welk huiswerk of welke toets voor dat vak op die datum staat, en stel voor de DEADLINE te verzetten met "deadline_verzetten" (huiswerk: naar de eerstvolgende les van dat vak; een toets: naar de datum die de leerling noemt, of vraag ernaar als die nog niet genoemd is).
 - Bij "ik wil dit vanmiddag/vanavond doen" (prive of huiswerk zonder tijdstip): kijk naar de HUIDIGE TIJD, het lesrooster en wat er die dag al gepland staat, en kies een tijdstip dat daar niet mee botst. Nooit een tijdstip vóór de HUIDIGE TIJD, en niet later dan ongeveer 20:30 's avonds.
 - Wees terughoudend met meerdere voorstellen tegelijk - alleen als de leerling daar zelf om vraagt (bv. "verplaats alles van morgen naar overmorgen, ik ben ziek") mag je er meer dan 1 doen, maximaal ${MAX_VOORSTELLEN}.
 - Vul bij ELK voorstel "toelichting" in: kort, op het niveau van een 13-jarige, WAAROM dit een goed idee is. Baseer dit op wat echt helpt bij plannen en leren, bijvoorbeeld:
@@ -228,7 +240,8 @@ Nieuw bericht van de leerling: ${message}`;
         return true;
       }
       if (!v.planningItemId || !geldigeIds.has(v.planningItemId)) return false;
-      if (v.actie === "verplaats" && v.nieuweDatum && v.nieuweDatum < vandaagIso) return false;
+      if ((v.actie === "verplaats" || v.actie === "deadline_verzetten") && v.nieuweDatum && v.nieuweDatum < vandaagIso) return false;
+      if (v.actie === "deadline_verzetten" && !v.nieuweDatum) return false;
       return true;
     });
 

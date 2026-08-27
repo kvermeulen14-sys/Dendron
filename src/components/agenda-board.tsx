@@ -38,6 +38,7 @@ import {
   bewerkPlanningItem,
   bewerkPlanningReeks,
   maakPlanningItem,
+  plandWerkmoment,
   updatePlanningDuur,
   updatePlanningStatus,
   updatePlanningWerkelijkeDuur,
@@ -187,6 +188,15 @@ function naarIsoWeekdag(datum: Date) {
 
 function tijdKort(tijd: string) {
   return tijd.slice(0, 5);
+}
+
+/**
+ * De dag waarop een item ZICHTBAAR/gepland staat - los van due_date (de
+ * deadline zelf, die voor huiswerk/toets nooit verandert). Zonder eigen
+ * werkmoment (start_date) is dat gewoon de deadline-dag zelf, zoals altijd.
+ */
+function werkDatum(item: PlanningItem) {
+  return item.start_date ?? item.due_date;
 }
 
 function tijdPlusMinuten(tijd: string, minuten: number) {
@@ -461,6 +471,10 @@ export function AgendaBoard({
     [weekMaandag]
   );
 
+  // Due_date-gebaseerd: wat is er deze dag daadwerkelijk verschuldigd - blijft
+  // dus op de dag van de deadline zelf, ook als het werkmoment (zie hieronder)
+  // ergens anders staat. Gebruikt voor de deadline-badges op rooster-blokjes
+  // en "gemist"-detectie - overal waar het echt om de deadline zelf gaat.
   const itemsPerDag = useMemo(() => {
     const map = new Map<string, PlanningItem[]>();
     for (const dag of lijstDagen) map.set(naarIsoDatum(dag), []);
@@ -471,8 +485,23 @@ export function AgendaBoard({
     return map;
   }, [items, lijstDagen]);
 
+  // Werkdatum-gebaseerd: op welke dag dit item ZICHTBAAR/gepland staat (zie
+  // werkDatum hierboven). Voor de meeste items hetzelfde als itemsPerDag
+  // (geen apart werkmoment), maar voor huiswerk/toets waar de coach een
+  // werkmoment vóór de deadline heeft ingepland juist niet - dat moet je dan
+  // op DIE dag zien staan, niet (nog eens) op de deadline-dag zelf.
+  const itemsPerWerkDag = useMemo(() => {
+    const map = new Map<string, PlanningItem[]>();
+    for (const dag of lijstDagen) map.set(naarIsoDatum(dag), []);
+    for (const item of items) {
+      const lijst = map.get(werkDatum(item));
+      if (lijst) lijst.push(item);
+    }
+    return map;
+  }, [items, lijstDagen]);
+
   const vandaagItems = useMemo(
-    () => items.filter((i) => i.due_date === vandaagIso && i.status !== "voorstel"),
+    () => items.filter((i) => werkDatum(i) === vandaagIso && i.status !== "voorstel"),
     [items, vandaagIso]
   );
   // Prive bezet wel tijd (zie capaciteit.ts) maar is geen afvinkbare taak -
@@ -498,7 +527,7 @@ export function AgendaBoard({
     () =>
       berekenDagCapaciteit({
         roosterBlokken: vandaagRoosterBlokken,
-        items: items.filter((i) => i.due_date === vandaagIso),
+        items: items.filter((i) => werkDatum(i) === vandaagIso),
         ritme: ritmesPerWeek.get(naarIsoWeekdag(new Date(vandaagIso + "T00:00:00")))!,
       }),
     [items, vandaagIso, vandaagRoosterBlokken, ritmesPerWeek]
@@ -576,13 +605,13 @@ export function AgendaBoard({
         iso,
         berekenDagCapaciteit({
           roosterBlokken: roosterPerDag.get(iso) ?? [],
-          items: itemsPerDag.get(iso) ?? [],
+          items: itemsPerWerkDag.get(iso) ?? [],
           ritme: ritmesPerWeek.get(naarIsoWeekdag(dag))!,
         })
       );
     }
     return map;
-  }, [lijstDagen, roosterPerDag, itemsPerDag, ritmesPerWeek]);
+  }, [lijstDagen, roosterPerDag, itemsPerWerkDag, ritmesPerWeek]);
 
   // Het weekend klapt vanzelf in zolang er niets staat, en gaat open zodra er
   // wel iets is (ook bij een vakantie of toetsweek uit de jaarkalender) - tenzij
@@ -592,12 +621,12 @@ export function AgendaBoard({
       weekDagen.slice(5).some((dag) => {
         const iso = naarIsoDatum(dag);
         return (
-          (itemsPerDag.get(iso) ?? []).length > 0 ||
+          (itemsPerWerkDag.get(iso) ?? []).length > 0 ||
           (roosterPerDag.get(iso) ?? []).length > 0 ||
           eventsOpDatum(jaarEvents, dag).length > 0
         );
       }),
-    [weekDagen, itemsPerDag, roosterPerDag, jaarEvents]
+    [weekDagen, itemsPerWerkDag, roosterPerDag, jaarEvents]
   );
   const weekendIngeklapt =
     weekendVoorkeur === "dicht" ? true : weekendVoorkeur === "open" ? false : !weekendHeeftInhoud;
@@ -612,7 +641,7 @@ export function AgendaBoard({
       }
     }
     for (const dag of weekDagen) {
-      for (const item of itemsPerDag.get(naarIsoDatum(dag)) ?? []) {
+      for (const item of itemsPerWerkDag.get(naarIsoDatum(dag)) ?? []) {
         if (item.start_time) {
           const start = tijdNaarMinuten(item.start_time);
           minMin = Math.min(minMin, start);
@@ -621,7 +650,7 @@ export function AgendaBoard({
       }
     }
     return { vanUur: Math.floor(minMin / 60), totUur: Math.ceil(maxMin / 60) };
-  }, [roosterPerDag, weekDagen, itemsPerDag]);
+  }, [roosterPerDag, weekDagen, itemsPerWerkDag]);
 
   const totaalHoogte = (totUur - vanUur) * UUR_HOOGTE;
 
@@ -702,7 +731,7 @@ export function AgendaBoard({
           startMinuten: b.startMinuten,
           duurMinuten: b.duurMinuten,
         })),
-        ...(itemsPerDag.get(item.due_date) ?? [])
+        ...(itemsPerWerkDag.get(item.due_date) ?? [])
           .filter((i) => i.id !== item.id && i.status !== "voorstel" && i.start_time)
           .map((i) => ({
             startMinuten: tijdNaarMinuten(i.start_time!),
@@ -760,9 +789,17 @@ export function AgendaBoard({
   }
 
   function verplaats(item: PlanningItem, nieuweDatum: string) {
-    if (nieuweDatum === item.due_date) return;
+    if (nieuweDatum === werkDatum(item)) return;
     startTransition(async () => {
-      await verplaatsPlanningItem(item.id, nieuweDatum);
+      // Huiswerk/toets: due_date is de deadline en blijft altijd staan -
+      // slepen verzet alleen het werkmoment (start_date). Bij leermoment/
+      // prive IS due_date al de dag waarop het gebeurt, dus die verzetten
+      // gewoon zoals voorheen.
+      if (item.type === "huiswerk" || item.type === "toets") {
+        await plandWerkmoment(item.id, nieuweDatum, item.start_time);
+      } else {
+        await verplaatsPlanningItem(item.id, nieuweDatum);
+      }
       router.refresh();
     });
   }
@@ -804,9 +841,13 @@ export function AgendaBoard({
     const item = items.find((i) => i.id === id);
     if (!item) return;
     const nieuweTijd = minutenNaarTijd(minuut);
-    if (item.due_date === iso && item.start_time?.slice(0, 5) === nieuweTijd) return;
+    if (werkDatum(item) === iso && item.start_time?.slice(0, 5) === nieuweTijd) return;
     startTransition(async () => {
-      await verplaatsPlanningItemNaarTijd(item.id, iso, nieuweTijd);
+      if (item.type === "huiswerk" || item.type === "toets") {
+        await plandWerkmoment(item.id, iso, nieuweTijd);
+      } else {
+        await verplaatsPlanningItemNaarTijd(item.id, iso, nieuweTijd);
+      }
       router.refresh();
     });
   }
@@ -1781,8 +1822,14 @@ export function AgendaBoard({
           {weekDagen.map((dag, i) => {
             const iso = naarIsoDatum(dag);
             const isVandaag = iso === vandaagIso;
-            const dagItems = itemsPerDag.get(iso) ?? [];
-            const ongeplandeItems = dagItems.filter((it) => it.status === "voorstel" || !it.start_time);
+            const dagItems = itemsPerWerkDag.get(iso) ?? [];
+            // Een toets krijgt zelf nooit een start_time (de leermomenten
+            // ervoor zijn het werk, niet de toets zelf) - anders bleef die
+            // hier voor altijd als "nog niet gepland" staan, ook als de
+            // leermomenten er allang staan.
+            const ongeplandeItems = dagItems.filter(
+              (it) => it.status === "voorstel" || (!it.start_time && it.type !== "toets")
+            );
             const jaarEvent = eventsOpDatum(jaarEvents, dag)[0] ?? null;
             const eventMeta = jaarEvent ? JAAR_EVENT_META[jaarEvent.type] : null;
             const cap = capaciteitPerDag.get(iso);
@@ -2021,7 +2068,13 @@ export function AgendaBoard({
             const isVandaag = iso === vandaagIso;
             const weekdagNr = dag.getDay();
             const isWeekendDag = weekdagNr === 0 || weekdagNr === 6;
-            const dagItems = itemsPerDag.get(iso) ?? [];
+            // Werkdatum-gebaseerd: wat je die dag daadwerkelijk ziet/doet
+            // (tijdlijnkaartjes, stipjes). De deadline-badges op de
+            // rooster-blokjes verderop gebruiken bewust de due_date-versie
+            // (dagDeadlineItems) - dat mag nooit meeverhuizen met een
+            // ingepland werkmoment.
+            const dagItems = itemsPerWerkDag.get(iso) ?? [];
+            const dagDeadlineItems = itemsPerDag.get(iso) ?? [];
             const tijdItems = dagItems.filter((it) => it.status !== "voorstel" && it.start_time);
             const roosterBlokken = roosterPerDag.get(iso) ?? [];
             const jaarEvent = eventsOpDatum(jaarEvents, dag)[0] ?? null;
@@ -2106,7 +2159,7 @@ export function AgendaBoard({
                   const blokTijd = b.tijd.split("-")[0];
                   let deadlines: PlanningItem[] = [];
                   if (klikbaar) {
-                    const vakItems = dagItems.filter(
+                    const vakItems = dagDeadlineItems.filter(
                       (it) => it.subject_id === b.subjectId && (it.type === "huiswerk" || it.type === "toets")
                     );
                     const exact = vakItems.filter((it) => it.rooster_start_tijd?.slice(0, 5) === blokTijd);
@@ -2321,7 +2374,13 @@ export function AgendaBoard({
       <div className={clsx("flex flex-col gap-4", weergave === "rooster" && "md:hidden")}>
         {lijstDagen.map((dag) => {
           const iso = naarIsoDatum(dag);
-          const dagItems = [...(itemsPerDag.get(iso) ?? [])].sort((a, b) => {
+          // Due_date-gebaseerd, puur voor de deadline-badges op de
+          // rooster-blokjes hieronder - mag nooit meeverhuizen met een
+          // ingepland werkmoment. Wat je die dag daadwerkelijk ziet/doet
+          // (de losse takenlijst verderop) gebruikt bewust dagItems, op
+          // werkdatum.
+          const dagDeadlineItems = itemsPerDag.get(iso) ?? [];
+          const dagItems = [...(itemsPerWerkDag.get(iso) ?? [])].sort((a, b) => {
             if (a.start_time && b.start_time) return a.start_time.localeCompare(b.start_time);
             if (a.start_time) return -1;
             if (b.start_time) return 1;
@@ -2352,7 +2411,7 @@ export function AgendaBoard({
             const blokTijd = b.tijd.split("-")[0];
             let deadlines: PlanningItem[] = [];
             if (klikbaar) {
-              const vakItems = dagItems.filter(
+              const vakItems = dagDeadlineItems.filter(
                 (it) => it.subject_id === b.subjectId && (it.type === "huiswerk" || it.type === "toets")
               );
               const exact = vakItems.filter((it) => it.rooster_start_tijd?.slice(0, 5) === blokTijd);
