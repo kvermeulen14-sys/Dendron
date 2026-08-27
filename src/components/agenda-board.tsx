@@ -1758,23 +1758,6 @@ export function AgendaBoard({
                     </div>
                   ) : (
                     <>
-                      {!isPrive && (
-                        <Button
-                          variant={isKlaar ? "secondary" : "primary"}
-                          loading={pending}
-                          onClick={() => {
-                            if (isKlaar) {
-                              toggleStatus(detailItem);
-                              sluitDetail();
-                            } else {
-                              klaarBevestiging.vraagBevestiging();
-                            }
-                          }}
-                          icon={<Icon name="check" size={16} />}
-                        >
-                          {isKlaar ? "Weer openzetten" : kiesKlaarLabel(detailItem.id)}
-                        </Button>
-                      )}
                       {voorKind && !isPrive && (
                         <LinkButton
                           href={`/kind/focus/${detailItem.id}`}
@@ -1784,20 +1767,49 @@ export function AgendaBoard({
                           Focus starten
                         </LinkButton>
                       )}
-                      <Button variant="secondary" onClick={() => openBewerken(detailItem)} icon={<Icon name="pencil-line" size={16} />}>
-                        Bewerken
-                      </Button>
-                      <Button
-                        variant="danger"
-                        disabled={pending}
-                        onClick={() => {
-                          verwijder(detailItem);
-                          sluitDetail();
-                        }}
-                        icon={<Icon name="trash" size={16} />}
-                      >
-                        Verwijderen
-                      </Button>
+                      <div className="ml-auto flex items-center gap-1">
+                        {!isPrive && (
+                          <button
+                            disabled={pending}
+                            onClick={() => {
+                              if (isKlaar) {
+                                toggleStatus(detailItem);
+                                sluitDetail();
+                              } else {
+                                klaarBevestiging.vraagBevestiging();
+                              }
+                            }}
+                            aria-label={isKlaar ? "Weer openzetten" : kiesKlaarLabel(detailItem.id)}
+                            title={isKlaar ? "Weer openzetten" : kiesKlaarLabel(detailItem.id)}
+                            className={clsx(
+                              "rounded-lg p-2 disabled:opacity-50",
+                              isKlaar ? "bg-emerald-100 text-emerald-700" : "text-slate-400 hover:bg-emerald-50 hover:text-emerald-600"
+                            )}
+                          >
+                            <Icon name="check" size={17} />
+                          </button>
+                        )}
+                        <button
+                          onClick={() => openBewerken(detailItem)}
+                          aria-label="Bewerken"
+                          title="Bewerken"
+                          className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                        >
+                          <Icon name="pencil-line" size={17} />
+                        </button>
+                        <button
+                          disabled={pending}
+                          onClick={() => {
+                            verwijder(detailItem);
+                            sluitDetail();
+                          }}
+                          aria-label="Verwijderen"
+                          title="Verwijderen"
+                          className="rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"
+                        >
+                          <Icon name="trash" size={17} />
+                        </button>
+                      </div>
                     </>
                   )}
                 </div>
