@@ -630,6 +630,35 @@ export function AgendaBoard({
     return map;
   }, [lijstDagen, periodes, roosterItems, uitzonderingen, reistijdMinuten, jaarEvents]);
 
+  // Als de les waar een deadline aan hing vervalt (rooster_start_tijd matcht
+  // dan geen enkel blokje meer die dag), claimt geen enkel blokje 'm meer -
+  // de leerling zou 'm dan alleen nog in de losse takenlijst zien, los van
+  // waar het vak weer terugkomt. Verhuis 'm daarom naar het eerstvolgende
+  // lesuur van datzelfde vak, met een "overgenomen van..."-label erbij.
+  const overgenomenPerItem = useMemo(() => {
+    const map = new Map<string, { vanIso: string; targetIso: string; targetBlokTijd: string }>();
+    const kandidaten = items.filter(
+      (it) => (it.type === "huiswerk" || it.type === "toets") && it.status !== "klaar" && it.rooster_start_tijd
+    );
+    for (const it of kandidaten) {
+      const eigenBlokTijd = it.rooster_start_tijd!.slice(0, 5);
+      const eigenBlokken = roosterPerDag.get(it.due_date) ?? [];
+      const bestaatNogWel = eigenBlokken.some((b) => b.subjectId === it.subject_id && b.tijd.split("-")[0] === eigenBlokTijd);
+      if (bestaatNogWel) continue;
+
+      for (const dag of lijstDagen) {
+        const iso = naarIsoDatum(dag);
+        if (iso <= it.due_date) continue;
+        const gevonden = (roosterPerDag.get(iso) ?? []).find((b) => !b.isFietsen && b.subjectId === it.subject_id);
+        if (gevonden) {
+          map.set(it.id, { vanIso: it.due_date, targetIso: iso, targetBlokTijd: gevonden.tijd.split("-")[0] });
+          break;
+        }
+      }
+    }
+    return map;
+  }, [items, roosterPerDag, lijstDagen]);
+
   // Per dag: hoeveel tijd is er echt, en hoeveel staat er gepland. Zo wordt een
   // te volle dag zichtbaar op het moment dat er nog iets aan te doen is.
   const capaciteitPerDag = useMemo(() => {
@@ -1926,9 +1955,10 @@ export function AgendaBoard({
             // start_time het geval zou zijn.
             const ongeplandeItems = dagItems.filter(
               (it) =>
-                it.status === "voorstel" ||
-                (it.type !== "toets" && !it.start_time) ||
-                (it.type === "toets" && aandachtItemIds.has(it.id))
+                !overgenomenPerItem.has(it.id) &&
+                (it.status === "voorstel" ||
+                  (it.type !== "toets" && !it.start_time) ||
+                  (it.type === "toets" && aandachtItemIds.has(it.id)))
             );
             const jaarEvent = eventsOpDatum(jaarEvents, dag)[0] ?? null;
             const eventMeta = jaarEvent ? JAAR_EVENT_META[jaarEvent.type] : null;
@@ -2274,21 +2304,34 @@ export function AgendaBoard({
                       deadlines = !algeclaimd ? zonderLesuur : [];
                       if (deadlines.length > 0 && b.subjectId) geclaimdeVakIdsGrid.add(b.subjectId);
                     }
+                    // Vervallen les elders: het huiswerk/de toets die daaraan
+                    // hing komt hier terecht i.p.v. bij het eigen (vervallen)
+                    // lesuur te blijven hangen.
+                    for (const [itemId, overname] of overgenomenPerItem) {
+                      if (overname.targetIso !== iso || overname.targetBlokTijd !== blokTijd) continue;
+                      const item = items.find((it) => it.id === itemId);
+                      if (item && item.subject_id === b.subjectId && !deadlines.some((d) => d.id === item.id)) {
+                        deadlines = [...deadlines, item];
+                      }
+                    }
                   }
                   const heeftToets = deadlines.some((d) => d.type === "toets");
                   const heeftDeadline = deadlines.length > 0;
                   const heeftAandacht = deadlines.some((d) => aandachtItemIds.has(d.id));
+                  const overgenomenInBlok = deadlines.filter((d) => overgenomenPerItem.has(d.id));
                   return (
                     <div
                       key={`r-${bi}`}
                       title={
-                        heeftAandacht
-                          ? `${b.tijd} ${b.titel} - heeft aandacht nodig, klik om te bekijken`
-                          : heeftDeadline
-                            ? `${b.tijd} ${b.titel} - ${deadlines.length} deadline(s), klik om te bekijken`
-                            : klikbaar
-                              ? `${b.tijd} ${b.titel} - klik om huiswerk of een toets toe te voegen`
-                              : `${b.tijd} ${b.titel}`
+                        overgenomenInBlok.length > 0
+                          ? `${b.tijd} ${b.titel} - overgenomen van de les van ${formatDatumLabel(overgenomenInBlok[0]!.due_date)} die verviel`
+                          : heeftAandacht
+                            ? `${b.tijd} ${b.titel} - heeft aandacht nodig, klik om te bekijken`
+                            : heeftDeadline
+                              ? `${b.tijd} ${b.titel} - ${deadlines.length} deadline(s), klik om te bekijken`
+                              : klikbaar
+                                ? `${b.tijd} ${b.titel} - klik om huiswerk of een toets toe te voegen`
+                                : `${b.tijd} ${b.titel}`
                       }
                       onClick={
                         klikbaar
@@ -2328,10 +2371,16 @@ export function AgendaBoard({
                         ) : (
                           <span className="mr-0.5 text-[8px] font-black tracking-tighter">HUISWERK</span>
                         ))}
+                      {overgenomenInBlok.length > 0 && (
+                        <Icon name="arrow-right-circle" size={9} className="mr-0.5 mb-px inline text-amber-600" />
+                      )}
                       <span className="line-clamp-2">
                         {!b.isFietsen && `${b.tijd.split("-")[0]} `}
                         {b.titel}
                       </span>
+                      {overgenomenInBlok.length > 0 && (
+                        <span className="mt-0.5 block text-[9px] font-medium text-amber-700">overgenomen (les verviel)</span>
+                      )}
                       {klikbaar && !heeftDeadline && <Icon name="plus" size={9} className="ml-0.5 mb-px inline text-accent-500" />}
                     </div>
                   );
@@ -2533,6 +2582,15 @@ export function AgendaBoard({
                 deadlines = !algeclaimd ? zonderLesuur : [];
                 if (deadlines.length > 0 && b.subjectId) geclaimdeVakIds.add(b.subjectId);
               }
+              // Vervallen les elders: het huiswerk/de toets die daaraan hing
+              // komt hier terecht i.p.v. bij het eigen (vervallen) lesuur.
+              for (const [itemId, overname] of overgenomenPerItem) {
+                if (overname.targetIso !== iso || overname.targetBlokTijd !== blokTijd) continue;
+                const item = items.find((it) => it.id === itemId);
+                if (item && item.subject_id === b.subjectId && !deadlines.some((d) => d.id === item.id)) {
+                  deadlines = [...deadlines, item];
+                }
+              }
             }
             return { b, klikbaar, deadlines, blokTijd };
           });
@@ -2573,6 +2631,7 @@ export function AgendaBoard({
                       const heeftDeadline = deadlines.length > 0;
                       const alleKlaar = heeftDeadline && deadlines.every((d) => d.status === "klaar");
                       const heeftAandacht = deadlines.some((d) => aandachtItemIds.has(d.id));
+                      const overgenomenInBlok = deadlines.filter((d) => overgenomenPerItem.has(d.id));
                       const vakSubject = b.subjectId ? subjects.find((s) => s.id === b.subjectId) : null;
                       const kleur = vakKleur(b.subjectId);
                       return (
@@ -2639,7 +2698,15 @@ export function AgendaBoard({
                           <span className="min-w-0 flex-1 truncate">
                             <span className="font-semibold tabular-nums text-slate-400">{b.tijd}</span>{" "}
                             <span className={b.isFietsen ? "text-slate-400" : "font-medium text-slate-800"}>{b.titel}</span>
+                            {overgenomenInBlok.length > 0 && (
+                              <span className="ml-1.5 whitespace-nowrap text-[11px] font-medium text-amber-700">
+                                overgenomen (les verviel)
+                              </span>
+                            )}
                           </span>
+                          {overgenomenInBlok.length > 0 && (
+                            <Icon name="arrow-right-circle" size={13} className="shrink-0 text-amber-600" />
+                          )}
                           {b.bron === "gewijzigd" && <Icon name="pencil-line" size={13} className="shrink-0 text-amber-500" />}
                           {!heeftDeadline && klikbaar && <Icon name="plus" size={15} className="shrink-0 text-violet-400" />}
                         </div>
@@ -2649,14 +2716,14 @@ export function AgendaBoard({
                 );
               })()}
 
-              {dagItems.filter((it) => !voorRoosterGetoondeIds.has(it.id)).length === 0 ? (
+              {dagItems.filter((it) => !voorRoosterGetoondeIds.has(it.id) && !overgenomenPerItem.has(it.id)).length === 0 ? (
                 <Card className="py-3">
                   <p className="text-base text-slate-400">Niets gepland.</p>
                 </Card>
               ) : (
                 <div className="flex flex-col gap-2.5">
                   {dagItems
-                    .filter((it) => !voorRoosterGetoondeIds.has(it.id))
+                    .filter((it) => !voorRoosterGetoondeIds.has(it.id) && !overgenomenPerItem.has(it.id))
                     .map((item) => {
                     const meta = PLANNING_TYPE_META[item.type];
                     const isVoorstel = item.status === "voorstel";

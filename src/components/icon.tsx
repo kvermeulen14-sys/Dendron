@@ -43,6 +43,7 @@ import {
   Sun,
   User,
   TriangleAlert,
+  ArrowRightCircle,
   type LucideProps,
 } from "lucide-react";
 
@@ -91,6 +92,7 @@ export const ICONS = {
   menu: Menu,
   sun: Sun,
   user: User,
+  "arrow-right-circle": ArrowRightCircle,
 } as const;
 
 export type IconName = keyof typeof ICONS;
