@@ -1839,8 +1839,16 @@ export function AgendaBoard({
             // ervoor zijn het werk, niet de toets zelf) - anders bleef die
             // hier voor altijd als "nog niet gepland" staan, ook als de
             // leermomenten er allang staan.
+            // Een toets krijgt zelf nooit een start_time (de leermomenten
+            // ervoor zijn het werk) - die hoort hier dus alleen te staan
+            // zolang er nog te weinig leermomenten voor gepland zijn
+            // (aandachtItemIds), niet voor altijd zoals bij ontbrekend
+            // start_time het geval zou zijn.
             const ongeplandeItems = dagItems.filter(
-              (it) => it.status === "voorstel" || (!it.start_time && it.type !== "toets")
+              (it) =>
+                it.status === "voorstel" ||
+                (it.type !== "toets" && !it.start_time) ||
+                (it.type === "toets" && aandachtItemIds.has(it.id))
             );
             const jaarEvent = eventsOpDatum(jaarEvents, dag)[0] ?? null;
             const eventMeta = jaarEvent ? JAAR_EVENT_META[jaarEvent.type] : null;
@@ -1944,7 +1952,10 @@ export function AgendaBoard({
                   // (er is nog niks om af te vinken) en het hele kaartje
                   // (niet een los knopje) opent de coach.
                   const moetIngepland =
-                    !isVoorstel && !isKlaar && !item.start_time && (item.type === "huiswerk" || item.type === "toets");
+                    !isVoorstel &&
+                    !isKlaar &&
+                    ((item.type === "huiswerk" && !item.start_time) ||
+                      (item.type === "toets" && aandachtItemIds.has(item.id)));
                   return (
                     <div
                       key={item.id}
@@ -1961,9 +1972,11 @@ export function AgendaBoard({
                       onClick={() => {
                         if (moetIngepland) {
                           const vak = subjectNaam(item.subject_id);
-                          setPlanningshulp({
-                            openingsbericht: `Ik heb ${item.type === "toets" ? "een toets" : "huiswerk"}${vak ? ` voor ${vak}` : ""} ("${item.title}"), moet af zijn op ${formatDatumLabel(item.due_date)}. Kun je helpen bedenken wanneer ik hier het beste aan kan werken, rekening houdend met de rest van mijn week?`,
-                          });
+                          const openingsbericht =
+                            item.type === "toets"
+                              ? `Ik heb een toets${vak ? ` voor ${vak}` : ""} ("${item.title}") op ${formatDatumLabel(item.due_date)}. Kun je helpen leermomenten in te plannen om me hierop voor te bereiden, rekening houdend met de rest van mijn week?`
+                              : `Ik heb huiswerk${vak ? ` voor ${vak}` : ""} ("${item.title}"), moet af zijn op ${formatDatumLabel(item.due_date)}. Kun je helpen bedenken wanneer ik hier het beste aan kan werken, rekening houdend met de rest van mijn week?`;
+                          setPlanningshulp({ openingsbericht });
                         } else {
                           openDetail(item);
                         }
