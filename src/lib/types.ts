@@ -15,12 +15,18 @@ export interface Profile {
   created_at: string;
 }
 
+export type KleurCategorie = "accent" | "toets" | "huiswerk" | "leermoment" | "prive";
+
+export type ThemeKleuren = Partial<Record<KleurCategorie, { hue: number; sat: number }>>;
+
 export interface Family {
   id: string;
   name: string;
   reistijd_minuten: number;
   /** @deprecated Vervangen door DagInstelling (per-weekdag), zie dag_instellingen. */
   avond_grens: string;
+  /** Null = standaardkleuren uit theme.css, zie ThemeKleuren. */
+  theme_kleuren: ThemeKleuren | null;
   created_at: string;
 }
 

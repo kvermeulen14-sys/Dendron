@@ -13,26 +13,29 @@
  * - huiswerk / leermoment / prive: kleur per type item in de agenda
  */
 :root {
-  --hue-accent: 252;
-  --sat-accent: 82%;
+  /* Pastel-schema (aangeleverd door de ouder als referentie) - hue's
+     afgeleid uit die kleuren, sat/lightness-schaal per categorie
+     ongewijzigd zodat de 50-900-tinten net zo goed blijven werken. */
+  --hue-accent: 296;
+  --sat-accent: 55%;
 
   --hue-vakantie: 165;
   --sat-vakantie: 55%;
 
-  --hue-toets: 16;
-  --sat-toets: 88%;
+  --hue-toets: 13;
+  --sat-toets: 80%;
 
   --hue-anders: 285;
   --sat-anders: 45%;
 
-  --hue-huiswerk: 40;
-  --sat-huiswerk: 90%;
+  --hue-huiswerk: 35;
+  --sat-huiswerk: 85%;
 
-  --hue-leermoment: 225;
-  --sat-leermoment: 65%;
+  --hue-leermoment: 185;
+  --sat-leermoment: 45%;
 
-  --hue-prive: 335;
-  --sat-prive: 60%;
+  --hue-prive: 331;
+  --sat-prive: 55%;
 }
 
 @theme inline {

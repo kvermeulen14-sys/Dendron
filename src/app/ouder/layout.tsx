@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { href: "/ouder/jaarkalender", label: "Jaarkalender", icon: "calendar" },
   { href: "/ouder/toetsweek", label: "Toetsweek plannen", icon: "rocket" },
   { href: "/ouder/account", label: "Kind-account", icon: "users" },
+  { href: "/ouder/kleurenschema", label: "Kleurenschema", icon: "palette" },
   { href: "/ouder/kind-login", label: "Inloggen als kind", icon: "log-in" },
 ];
 

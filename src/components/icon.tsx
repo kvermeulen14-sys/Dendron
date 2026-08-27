@@ -93,6 +93,7 @@ export const ICONS = {
   sun: Sun,
   user: User,
   "arrow-right-circle": ArrowRightCircle,
+  palette: Palette,
 } as const;
 
 export type IconName = keyof typeof ICONS;

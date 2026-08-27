@@ -9,7 +9,7 @@ import { kiesKlaarLabel, kiesVierTekst } from "@/lib/motiverend";
 import { useKlaarBevestiging } from "@/lib/use-klaar-bevestiging";
 import { DuurTerugblik } from "@/components/duur-terugblik";
 import { vakAfkorting } from "@/lib/vak-afkorting";
-import type { PlanningItem, Subject } from "@/lib/types";
+import type { PlanningItem, PlanningType, Subject } from "@/lib/types";
 
 function formatMinuten(minuten: number) {
   const uren = Math.floor(minuten / 60);
@@ -18,6 +18,17 @@ function formatMinuten(minuten: number) {
   if (rest === 0) return `${uren} u`;
   return `${uren}u ${rest}m`;
 }
+
+/** Kleurblok per categorie - zelfde kleursysteem als de rest van de tool
+ * (theme.css), hier alleen prominenter ingezet: een volle kleurtint i.p.v.
+ * een dun randje, zodat "wat voor soort taak dit is" in 1 oogopslag
+ * duidelijk is (zie het blokken-ontwerp dat hieraan voorafging). */
+const BLOK_STIJL: Record<PlanningType, { bg: string; badge: string; label: string }> = {
+  huiswerk: { bg: "bg-huiswerk-100", badge: "bg-huiswerk-500", label: "text-huiswerk-700" },
+  toets: { bg: "bg-toets-100", badge: "bg-toets-500", label: "text-toets-700" },
+  leermoment: { bg: "bg-leermoment-100", badge: "bg-leermoment-500", label: "text-leermoment-700" },
+  prive: { bg: "bg-prive-100", badge: "bg-prive-500", label: "text-prive-700" },
+};
 
 /**
  * Directe check-lijst voor het kind-startscherm: afvinken kan hier meteen,
@@ -46,7 +57,7 @@ export function KindVandaagLijst({
   }
 
   return (
-    <ul className="flex flex-col gap-2">
+    <ul className="flex flex-col gap-3">
       {items.map((item) => (
         <KindVandaagItem
           key={item.id}
@@ -73,6 +84,7 @@ function KindVandaagItem({
 }) {
   const router = useRouter();
   const meta = PLANNING_TYPE_META[item.type];
+  const stijl = BLOK_STIJL[item.type];
   const isKlaar = item.status === "klaar";
   const { fase, bezig, vraagBevestiging, annuleer, bevestig, meldDuur } = useKlaarBevestiging();
 
@@ -102,37 +114,47 @@ function KindVandaagItem({
     <li
       onClick={() => fase === "rust" && router.push(`/kind/focus/${item.id}`)}
       className={clsx(
-        "relative flex cursor-pointer flex-col gap-2 rounded-xl border p-3 transition-colors hover:border-accent-200 hover:bg-accent-50/30",
-        fase === "duur" || item.type === "prive" ? "pb-3" : "pb-11",
+        "relative flex cursor-pointer flex-col gap-2.5 rounded-[22px] p-4 transition-colors",
+        fase === "duur" || item.type === "prive" ? "pb-4" : "pb-12",
         isKlaar
-          ? "border-emerald-200 bg-emerald-50/60"
+          ? "bg-slate-100"
           : variant === "verlopen"
-            ? "border-rose-100 bg-rose-50/40"
-            : "border-slate-100"
+            ? "bg-rose-100 ring-2 ring-inset ring-rose-300"
+            : stijl.bg
       )}
     >
-      <div className="flex items-start gap-2.5">
-        <Icon
-          name={isKlaar ? "check" : meta.icon}
-          size={16}
+      <div className="flex items-start gap-3">
+        <span
           className={clsx(
-            "mt-0.5 shrink-0",
-            isKlaar ? "text-emerald-600" : variant === "verlopen" ? "text-rose-500" : "text-slate-400"
+            "flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl text-white",
+            isKlaar ? "bg-slate-400" : variant === "verlopen" ? "bg-rose-500" : stijl.badge
           )}
-        />
-        <div className="min-w-0 flex-1">
+        >
+          <Icon name={isKlaar ? "check" : meta.icon} size={18} />
+        </span>
+        <div className="min-w-0 flex-1 pt-0.5">
           <div className="flex items-center gap-1.5">
-            <p className={clsx("truncate text-sm font-medium text-slate-800", isKlaar && "line-through")}>
+            <p
+              className={clsx(
+                "truncate text-[15px] font-semibold text-slate-900",
+                isKlaar && "text-slate-500 line-through"
+              )}
+            >
               {item.title}
             </p>
             {subjectCode && (
-              <span className="shrink-0 rounded bg-slate-100 px-1 py-0.5 text-[9px] font-bold text-slate-500">
+              <span className="shrink-0 rounded-full bg-white/70 px-1.5 py-0.5 text-[10px] font-bold text-slate-600">
                 {subjectCode}
               </span>
             )}
           </div>
           {((!subjectCode && subjectNaam) || item.estimated_minutes) && (
-            <p className="truncate text-xs text-slate-500">
+            <p
+              className={clsx(
+                "truncate text-xs font-medium",
+                isKlaar ? "text-slate-400" : variant === "verlopen" ? "text-rose-700" : stijl.label
+              )}
+            >
               {[!subjectCode ? subjectNaam : null, item.estimated_minutes ? `~${formatMinuten(item.estimated_minutes)}` : null]
                 .filter(Boolean)
                 .join(" · ")}
@@ -145,12 +167,12 @@ function KindVandaagItem({
       {item.type === "prive" ? null : fase === "bevestigen" ? (
         <div
           onClick={(e) => e.stopPropagation()}
-          className="absolute inset-x-2 bottom-2 flex items-center justify-end gap-1.5"
+          className="absolute inset-x-3 bottom-3 flex items-center justify-end gap-1.5"
         >
-          <span className="mr-auto text-xs font-medium text-slate-500">Zeker weten?</span>
+          <span className="mr-auto text-xs font-medium text-slate-600">Zeker weten?</span>
           <button
             onClick={annuleer}
-            className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-slate-500 ring-1 ring-inset ring-slate-200 hover:bg-slate-50"
+            className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-slate-500 shadow-sm hover:bg-slate-50"
           >
             Toch niet
           </button>
@@ -172,7 +194,7 @@ function KindVandaagItem({
           />
         </div>
       ) : fase === "vieren" ? (
-        <div className="absolute bottom-2 right-2 flex items-center gap-1.5 rounded-full bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white">
+        <div className="absolute bottom-3 right-3 flex items-center gap-1.5 rounded-full bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white">
           <Icon name="party" size={14} />
           {kiesVierTekst(item.id)}
         </div>
@@ -186,10 +208,10 @@ function KindVandaagItem({
           disabled={bezig}
           aria-label={isKlaar ? "Weer openzetten" : "Afvinken"}
           className={clsx(
-            "absolute bottom-2 right-2 flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold shadow-sm transition-colors disabled:opacity-50",
+            "absolute bottom-3 right-3 flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold shadow-sm transition-colors disabled:opacity-50",
             isKlaar
               ? "bg-emerald-500 text-white"
-              : "bg-white text-slate-500 ring-1 ring-inset ring-slate-200 hover:bg-emerald-50 hover:text-emerald-700 hover:ring-emerald-300 active:scale-95"
+              : "bg-white/85 text-slate-600 hover:bg-white active:scale-95"
           )}
         >
           <Icon name={bezig ? "loader" : "check"} size={14} className={bezig ? "animate-spin" : undefined} />
