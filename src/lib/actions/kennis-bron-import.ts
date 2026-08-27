@@ -943,8 +943,26 @@ const StructuurAanpassingSchema = z.object({
     .describe(
       "VOLLEDIGE nieuwe instructietekst voor de AI-vakdocent van dit vak, ALLEEN als de ouder expliciet vraagt om de tutor/vakdocent aan te passen of af te stemmen op de kennisbank. Anders null - nooit ongevraagd wijzigen."
     ),
+  paragrafen: z
+    .array(
+      z.object({
+        paragraafId: z.string(),
+        hoofdstuk: z.string(),
+        titel: z.string(),
+      })
+    )
+    .describe(
+      "ALLEEN meesturen als de ouder vraagt om de structuur van AL BESTAANDE (eerder geïmporteerde) kennisbank-inhoud van dit vak aan te passen - bv. hoofdstukken/units hernoemen, paragrafen anders groeperen of retitelen, zodat 'Oefenen' bij het kind en de vakdocent weer bij de theorie aansluiten. Bij invullen: de VOLLEDIGE lijst van ALLE bestaande paragrafen hieronder, ook de ongewijzigde, met EXACT dezelfde paragraafId's (die mogen nooit wijzigen - alleen hoofdstuk/titel). Leeg als hier niet om gevraagd is."
+    ),
   antwoord: z.string().describe("Kort, vriendelijk antwoord aan de ouder over wat je hebt aangepast/gedaan (of een vraag als de instructie onduidelijk is). Max 2 zinnen."),
 });
+
+interface VakParagraaf {
+  paragraafId: string;
+  hoofdstuk: string;
+  titel: string;
+  heeftContext: boolean;
+}
 
 interface VakContext {
   naam: string;
@@ -952,6 +970,7 @@ interface VakContext {
   gepubliceerdeHoofdstukken: string[];
   heeftWoordenschat: boolean;
   heeftZinnen: boolean;
+  paragrafen: VakParagraaf[];
 }
 
 function bouwStructuurAanpassingPrompt(
@@ -968,22 +987,28 @@ function bouwStructuurAanpassingPrompt(
         ? `, bevat ${[vak.heeftWoordenschat && "woordenschat-lijsten", vak.heeftZinnen && "zinnen/uitdrukkingen-lijsten"].filter(Boolean).join(" en ")}`
         : ""
     }.`,
+    vak.paragrafen.length > 0
+      ? `Bestaande paragrafen van dit vak (dit bepaalt zowel de indeling in "Oefenen" bij het kind als de kopjes die de vakdocent gebruikt):\n${vak.paragrafen
+          .map((p) => `- paragraafId "${p.paragraafId}": hoofdstuk "${p.hoofdstuk}", titel "${p.titel}"`)
+          .join("\n")}`
+      : "Dit vak heeft nog geen eerder geïmporteerde paragrafen.",
     "",
     "Dit is de huidige voorgestelde indeling van nu geüploade kennisbank-bestanden, nog niet opgeslagen. Elk bestand krijgt een hoofdstuk/unit, een paragraaf-/lesnummer en een titel.",
-    "Jij bent de assistent van deze wizard en mag zelf bestanden importeren of uit de wachtrij halen als de ouder dat vraagt, en de tutor-instructies van dit vak bijwerken als de ouder dat vraagt - niet alleen dingen voorstellen.",
+    "Jij bent de assistent van deze wizard en mag zelf bestanden importeren of uit de wachtrij halen als de ouder dat vraagt, de tutor-instructies van dit vak bijwerken, en de hoofdstuk/titel-indeling van AL BESTAANDE paragrafen aanpassen - niet alleen dingen voorstellen.",
     "",
-    "Huidige indeling:",
-    items.map((it) => `- "${it.bestandsnaam}": hoofdstuk "${it.hoofdstuk}", paragraaf/les "${it.paragraafId}", titel "${it.titel}"`).join("\n"),
+    "Huidige indeling van nu geüploade bestanden:",
+    items.length > 0 ? items.map((it) => `- "${it.bestandsnaam}": hoofdstuk "${it.hoofdstuk}", paragraaf/les "${it.paragraafId}", titel "${it.titel}"`).join("\n") : "(geen bestanden in de wachtrij)",
     berichten.length > 0 ? "\nEerder gesprek hierover:" : "",
     berichten.map((b) => `${b.rol === "ouder" ? "Ouder" : "Jij"}: ${b.tekst}`).join("\n"),
     "",
     `Nieuwe instructie van de ouder: "${instructie}"`,
     "",
     "Instructies:",
-    "- Pas de indeling aan volgens de instructie. Geef de VOLLEDIGE bijgewerkte lijst terug, met exact dezelfde bestandsnamen als hierboven (niets weglaten, ook bestanden die niet veranderen horen erbij) - alleen hoofdstuk/paragraafId/titel mogen wijzigen.",
+    "- Pas de indeling van de bestanden in de wachtrij aan volgens de instructie. Geef de VOLLEDIGE bijgewerkte lijst terug, met exact dezelfde bestandsnamen als hierboven (niets weglaten) - alleen hoofdstuk/paragraafId/titel mogen wijzigen. Leeg als er geen bestanden in de wachtrij staan.",
     "- Vraagt de ouder expliciet om een bestand te importeren/opslaan/verwerken, of te verwijderen/weghalen? Zet dat in 'acties'. Anders 'acties' leeg laten - een indeling aanpassen is geen actie.",
-    "- Vraagt de ouder om de AI-vakdocent/tutor aan te passen of beter te laten aansluiten bij de kennisbank van dit vak? Schrijf dan in 'tutorInstructies' een VOLLEDIGE nieuwe instructietekst (geen diff) - kort en concreet, gericht op HOE de tutor moet coachen bij dit specifieke vak (bv. bij een taalvak: woordenschat/zinnen letterlijk laten overhoren, grammatica uitleggen), passend bij de hoofdstukken/categorieën hierboven en bij wat de ouder vraagt. Bouw voort op de huidige instructietekst i.p.v. 'm te negeren, tenzij de ouder vraagt om 'm te vervangen. Anders 'tutorInstructies': null.",
-    "- Twijfel je welk bestand bedoeld wordt (bv. bij 'importeer ze allemaal' terwijl dat niet duidelijk alle bestanden hoeft te zijn)? Vraag in 'antwoord' om verduidelijking en laat 'acties' dan leeg.",
+    "- Vraagt de ouder om de AI-vakdocent/tutor aan te passen of beter te laten aansluiten bij de kennisbank van dit vak? Schrijf dan in 'tutorInstructies' een VOLLEDIGE nieuwe instructietekst (geen diff) - kort en concreet, gericht op HOE de tutor moet coachen bij dit specifieke vak (bv. bij een taalvak: woordenschat/zinnen letterlijk laten overhoren, grammatica uitleggen), passend bij de hoofdstukken/categorieën/paragrafen hierboven en bij wat de ouder vraagt. Bouw voort op de huidige instructietekst i.p.v. 'm te negeren, tenzij de ouder vraagt om 'm te vervangen. Anders 'tutorInstructies': null.",
+    "- Vraagt de ouder om de structuur/indeling van AL BESTAANDE paragrafen aan te passen (hoofdstukken hernoemen, anders groeperen, paragrafen retitelen), of om 'Oefenen'/de bestaande kennisbank beter te laten aansluiten bij de theorie? Vul dan 'paragrafen' met de VOLLEDIGE bijgewerkte lijst (alle paragrafen hierboven, ook ongewijzigde), met exact dezelfde paragraafId's - alleen hoofdstuk/titel mogen wijzigen. Anders 'paragrafen' leeg laten.",
+    "- Twijfel je welk bestand/paragraaf bedoeld wordt (bv. bij 'doe ze allemaal' terwijl dat niet duidelijk is)? Vraag in 'antwoord' om verduidelijking en laat 'acties'/'paragrafen' dan leeg.",
   ].join("\n");
 }
 
@@ -991,10 +1016,12 @@ function bouwStructuurAanpassingPrompt(
  * Past het voorgestelde hoofdstuk/paragraaf/titel van meerdere nog-niet-
  * bevestigde bestanden in 1 keer aan op basis van een vrije instructie van de
  * ouder, voert direct een importeer-/verwijderactie uit die de ouder
- * expliciet vraagt, en/of stelt nieuwe instructietekst voor de AI-vakdocent
- * van dit vak voor (afgestemd op de - deels al gepubliceerde, deels net
- * geüploade - kennisbank) - voor de losse "1 bestand per keer"-bediening in
- * de wizard, maar dan conversationeel voor de hele batch (en de tutor) ineens.
+ * expliciet vraagt, stelt nieuwe instructietekst voor de AI-vakdocent van dit
+ * vak voor, en/of herstructureert de hoofdstuk/titel-indeling van AL
+ * BESTAANDE (eerder geïmporteerde) paragrafen - zodat "Oefenen" bij het kind
+ * en de vakdocent weer bij de theorie aansluiten. paragraaf_id zelf wordt
+ * nooit gewijzigd (voorkomt botsingen met de unique-constraint) - alleen
+ * hoofdstuk/titel, wat voor beide precies is wat hun indeling bepaalt.
  */
 export async function pasKennisbankStructuurAan(
   subjectId: string,
@@ -1006,15 +1033,30 @@ export async function pasKennisbankStructuurAan(
   if ("error" in ouder) return { error: ouder.error };
   const { supabase, familyId } = ouder;
   if (!instructie.trim()) return { error: "Typ een instructie." };
-  if (items.length === 0) return { error: "Nog geen bestanden om in te delen." };
 
   const { data: subject } = await supabase.from("subjects").select("name, ai_instructions, family_id").eq("id", subjectId).single();
   if (!subject || subject.family_id !== familyId) return { error: "Vak niet gevonden." };
 
-  const [{ data: hoofdstukRijen }, { data: woordenlijstRijen }] = await Promise.all([
+  const [{ data: hoofdstukRijen }, { data: woordenlijstRijen }, { data: contextRijen }, { data: onderdelenRijen }] = await Promise.all([
     supabase.from("kennis_paragraaf_context").select("hoofdstuk").eq("subject_id", subjectId).eq("status", "gepubliceerd"),
     supabase.from("kennis_woordenlijsten").select("categorie").eq("subject_id", subjectId).eq("status", "gepubliceerd"),
+    supabase.from("kennis_paragraaf_context").select("paragraaf_id, hoofdstuk, titel").eq("subject_id", subjectId),
+    supabase.from("kennis_onderdelen").select("paragraaf_id, hoofdstuk").eq("subject_id", subjectId).not("paragraaf_id", "is", null),
   ]);
+
+  // Alle bestaande paragrafen van dit vak, met context als leidende bron
+  // (rijkst) en onderdelen als terugval voor een paragraaf die alleen
+  // losse regels heeft (nog) zonder eigen context-rij.
+  const paragraafMap = new Map<string, VakParagraaf>();
+  for (const c of contextRijen ?? []) {
+    paragraafMap.set(c.paragraaf_id, { paragraafId: c.paragraaf_id, hoofdstuk: c.hoofdstuk, titel: c.titel, heeftContext: true });
+  }
+  for (const o of onderdelenRijen ?? []) {
+    const pid = o.paragraaf_id as string;
+    if (paragraafMap.has(pid)) continue;
+    paragraafMap.set(pid, { paragraafId: pid, hoofdstuk: o.hoofdstuk, titel: `Paragraaf ${pid}`, heeftContext: false });
+  }
+
   const vak: VakContext = {
     naam: subject.name,
     huidigeTutorInstructies: subject.ai_instructions ?? "",
@@ -1023,17 +1065,53 @@ export async function pasKennisbankStructuurAan(
     ),
     heeftWoordenschat: (woordenlijstRijen ?? []).some((r) => r.categorie === "woordenschat"),
     heeftZinnen: (woordenlijstRijen ?? []).some((r) => r.categorie === "zinnen"),
+    paragrafen: Array.from(paragraafMap.values()).sort((a, b) => a.paragraafId.localeCompare(b.paragraafId, undefined, { numeric: true })),
   };
 
+  if (items.length === 0 && vak.paragrafen.length === 0) {
+    return { error: "Nog geen bestanden of eerder geïmporteerde inhoud om iets aan te passen." };
+  }
+
+  let res: z.infer<typeof StructuurAanpassingSchema>;
   try {
     const client = createGeminiClient();
-    return await genereerGestructureerd(
-      client,
-      StructuurAanpassingSchema,
-      bouwStructuurAanpassingPrompt(vak, items, berichten, instructie),
-      4096
-    );
+    res = await genereerGestructureerd(client, StructuurAanpassingSchema, bouwStructuurAanpassingPrompt(vak, items, berichten, instructie), 4096);
   } catch (e) {
     return { error: e instanceof Error ? `AI-verwerking mislukt: ${e.message}` : "AI-verwerking mislukt." };
   }
+
+  // Herstructurering van bestaande paragrafen meteen toepassen (niet aan de
+  // client overlaten) - paragraaf_id zelf blijft altijd hetzelfde, dus dit
+  // kan nooit botsen met de unique-constraint op (subject_id, paragraaf_id).
+  let paragrafenBijgewerkt = 0;
+  for (const p of res.paragrafen) {
+    const huidig = paragraafMap.get(p.paragraafId);
+    if (!huidig) continue; // AI kan geen nieuwe paragraaf verzinnen via dit pad
+    const hoofdstukGewijzigd = p.hoofdstuk.trim() && p.hoofdstuk !== huidig.hoofdstuk;
+    const titelGewijzigd = huidig.heeftContext && p.titel.trim() && p.titel !== huidig.titel;
+    if (!hoofdstukGewijzigd && !titelGewijzigd) continue;
+
+    if (hoofdstukGewijzigd) {
+      await Promise.all([
+        supabase.from("kennis_onderdelen").update({ hoofdstuk: p.hoofdstuk }).eq("subject_id", subjectId).eq("paragraaf_id", p.paragraafId),
+        supabase.from("kennis_oefenvragen").update({ hoofdstuk: p.hoofdstuk }).eq("subject_id", subjectId).eq("paragraaf_id", p.paragraafId),
+        supabase.from("kennis_woordenlijsten").update({ hoofdstuk: p.hoofdstuk }).eq("subject_id", subjectId).eq("paragraaf_id", p.paragraafId),
+      ]);
+    }
+    if (huidig.heeftContext) {
+      const patch: { hoofdstuk?: string; titel?: string } = {};
+      if (hoofdstukGewijzigd) patch.hoofdstuk = p.hoofdstuk;
+      if (titelGewijzigd) patch.titel = p.titel;
+      if (Object.keys(patch).length > 0) {
+        await supabase.from("kennis_paragraaf_context").update(patch).eq("subject_id", subjectId).eq("paragraaf_id", p.paragraafId);
+      }
+    } else if (hoofdstukGewijzigd) {
+      // Geen context-rij (paragraaf bestaat alleen uit losse onderdelen) -
+      // hoofdstuk stond dan alleen op kennis_onderdelen, hierboven al gezet.
+    }
+    paragrafenBijgewerkt++;
+  }
+  if (paragrafenBijgewerkt > 0) revalidateVak(subjectId);
+
+  return { ...res, paragrafenBijgewerkt };
 }

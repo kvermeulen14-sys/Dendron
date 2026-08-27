@@ -52,7 +52,16 @@ let volgendeId = 0;
  * opgeslagen. Elk bestand doorloopt zelfstandig analyseren -> voorstel ->
  * bevestigen, zodat een fout bij 1 bestand de rest niet blokkeert.
  */
-export function VakInhoudWizard({ subjectId, subject }: { subjectId: string; subject: Subject }) {
+export function VakInhoudWizard({
+  subjectId,
+  subject,
+  heeftKennisbank = false,
+}: {
+  subjectId: string;
+  subject: Subject;
+  /** Al eerder geïmporteerde kennisbank-inhoud voor dit vak - zonder dit (en zonder bestanden in de wachtrij) is er niets om via de chat bij te sturen. */
+  heeftKennisbank?: boolean;
+}) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [items, setItems] = useState<WizardItem[]>([]);
@@ -125,7 +134,7 @@ export function VakInhoudWizard({ subjectId, subject }: { subjectId: string; sub
   async function stuurChatInstructie() {
     const instructie = chatInvoer.trim();
     const teIndelenItems = items.filter((it) => it.status === "voorstel" || it.status === "verwerken");
-    if (!instructie || teIndelenItems.length === 0) return;
+    if (!instructie) return;
 
     setChatBezig(true);
     setChatFout(null);
@@ -355,7 +364,7 @@ export function VakInhoudWizard({ subjectId, subject }: { subjectId: string; sub
         </div>
       )}
 
-      {items.some((it) => it.status === "voorstel" || it.status === "verwerken") && (
+      {(items.some((it) => it.status === "voorstel" || it.status === "verwerken") || heeftKennisbank) && (
         <div className="flex flex-col gap-2.5 rounded-xl border border-accent-200 bg-accent-50/40 p-3">
           <div className="flex items-center gap-2">
             <Icon name="chat" size={16} className="text-accent-600" />
@@ -364,9 +373,12 @@ export function VakInhoudWizard({ subjectId, subject }: { subjectId: string; sub
           <p className="text-xs text-slate-500">
             Dit is de indeling van alle bestanden hierboven samen. Typ hieronder een aanpassing (bv. &quot;zet
             U1_L3_A.md bij Unit 2&quot;) of een opdracht (bv. &quot;importeer deze 3&quot;, &quot;haal dit bestand
-            weg&quot; of &quot;stem de vakdocent af op deze kennisbank&quot;) - de bot mag de indeling aanpassen,
-            bestanden direct importeren (als concept) of uit de wachtrij halen, én de instructies van de AI-vakdocent
-            van dit vak bijwerken. De velden per bestand blijven ook gewoon met de hand aan te passen.
+            weg&quot;, &quot;stem de vakdocent af op deze kennisbank&quot; of &quot;groepeer de bestaande paragrafen
+            opnieuw zodat Oefenen weer bij de theorie past&quot;) - de bot mag de indeling aanpassen, bestanden direct
+            importeren (als concept) of uit de wachtrij halen, de instructies van de AI-vakdocent bijwerken, én de
+            hoofdstuk/titel-indeling van AL eerder geïmporteerde paragrafen van dit vak herstructureren (dat bepaalt
+            zowel &quot;Oefenen&quot; bij het kind als de vakdocent). De velden per bestand blijven ook gewoon met de
+            hand aan te passen.
           </p>
 
           <div className="flex flex-col gap-2 rounded-lg bg-white p-2.5 text-xs">
