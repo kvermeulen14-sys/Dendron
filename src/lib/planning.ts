@@ -43,11 +43,17 @@ export const WERKDRUK_META: Record<WerkdrukNiveau, { label: string; badgeClass: 
   overvol: { label: "Overvol", badgeClass: "bg-rose-50 text-rose-700 border-rose-200", barClass: "bg-rose-500" },
 };
 
-export function classificeerWerkdruk(minuten: number): WerkdrukNiveau {
+// Op een weekenddag is er de hele dag vrij (geen school) - dezelfde
+// hoeveelheid geplande minuten voelt daar veel minder "druk" dan op een
+// schooldag met maar een paar avonduren over. Zonder dit onderscheid werd
+// een rustige zaterdagmiddag (bv. 3u) al als "druk" bestempeld, puur omdat
+// de vaste grens gelijk was aan een doordeweekse dag.
+export function classificeerWerkdruk(minuten: number, weekend = false): WerkdrukNiveau {
   if (minuten <= 0) return "vrij";
-  if (minuten <= 60) return "rustig";
-  if (minuten <= 120) return "prima";
-  if (minuten <= 180) return "druk";
+  const grenzen = weekend ? { rustig: 120, prima: 240, druk: 360 } : { rustig: 60, prima: 120, druk: 180 };
+  if (minuten <= grenzen.rustig) return "rustig";
+  if (minuten <= grenzen.prima) return "prima";
+  if (minuten <= grenzen.druk) return "druk";
   return "overvol";
 }
 

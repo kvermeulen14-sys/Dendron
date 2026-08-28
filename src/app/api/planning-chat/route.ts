@@ -241,7 +241,9 @@ export async function POST(request: Request) {
   const werkdrukTekst = Array.from({ length: 7 }, (_, idx) => addDagen(vandaagIso, idx))
     .map((iso) => {
       const minuten = werkdrukPerDag.get(iso) ?? 0;
-      return `- ${iso}: ${WERKDRUK_META[classificeerWerkdruk(minuten)].label.toLowerCase()} (${minuten} min gepland)`;
+      const weekdagNr = new Date(iso + "T00:00:00").getDay(); // 0=zo, 6=za
+      const weekend = weekdagNr === 0 || weekdagNr === 6;
+      return `- ${iso}${weekend ? " (weekend)" : ""}: ${WERKDRUK_META[classificeerWerkdruk(minuten, weekend)].label.toLowerCase()} (${minuten} min gepland)`;
     })
     .join("\n");
 
@@ -257,7 +259,7 @@ Wat je kunt voorstellen (via "voorstellen" hieronder - elk voorstel krijgt de le
 - "verplaats": een werkmoment/moment plannen of verzetten. BELANGRIJK: bij huiswerk en een toets is de deadline (due_date, hierboven getoond) HEILIG - die verandert een "verplaats"-voorstel NOOIT, ook al kies je een datum die eerder valt. Je plant dan alleen WANNEER de leerling eraan gaat werken, vóór die deadline - de deadline zelf blijft gewoon staan en het item blijft daar ook gewoon zichtbaar. Noem in je antwoord dus nooit dat je "de deadline verzet", maar dat je een werkmoment inplant. Bij leermoment/prive IS de datum al het moment zelf, dus daar verplaats je gewoon normaal.
   - Geef bij het plannen van een werkmoment (huiswerk/toets) BIJ VOORKEUR 2-3 concrete opties tegelijk via het "opties"-veld (verschillende dagen en/of tijden) in plaats van maar 1 voorstel - dan kan de leerling er meteen 1 kiezen zonder eerst "nee, iets anders graag" te moeten zeggen. Gebruik nieuweDatum/nieuweTijd alleen als er echt maar 1 zinnig moment is.
   - Geeft de leerling aan dat de eerder geschatte tijd niet klopt (bv "dat duurt geen 2 uur maar 1 uur")? Zet dat in "nieuweGeschatteMinuten" op hetzelfde verplaats-voorstel - dat corrigeert dan meteen de taak zelf, niet alleen dit ene moment.
-  - Past een goed moment niet omdat de dag al vol staat met iets flexibels (een klusje als "kamer opruimen", of een leermoment)? Dan mag je in DEZELFDE beurt een tweede "verplaats"-voorstel doen om dat te verschuiven, zodat er ruimte komt - leg in je antwoord kort uit dat je dat voorstelt. Twijfel je of iets een vaste afspraak is (sport, iemand ontmoeten, een verjaardag) in plaats van iets flexibels? Vraag dat dan eerst, stel nooit zomaar voor om een echte afspraak te verzetten.
+  - Past een goed moment niet omdat de dag al vol staat met iets flexibels (een klusje als "kamer opruimen", een leermoment, of ander huiswerk dat pas later moet)? Dan mag je in DEZELFDE beurt een tweede "verplaats"-voorstel doen om dat andere item naar een andere dag te verschuiven, zodat er ruimte komt voor wat nu voorrang heeft (een eerdere deadline, of waar de leerling het nu over heeft) - leg in je antwoord kort uit dat je dat voorstelt en waarom (bv. "X kan nog wel een dagje wachten, Y moet eerder af"). Twijfel je of iets een vaste afspraak is (sport, iemand ontmoeten, een verjaardag) in plaats van iets flexibels? Vraag dat dan eerst, stel nooit zomaar voor om een echte afspraak te verzetten.
   - Venster voor een werkmoment (huiswerk/toets): kies een datum die NA de vorige les van dat vak valt (kijk in LESROOSTER wanneer dat vak normaal is - vóór die les heeft de leerling de stof er nog niet voor gehad) en NIET NA de deadline zelf (dan is het te laat). Is de vorige les van dat vak niet duidelijk uit het rooster te halen, kies dan gewoon een moment de dag(en) vóór de deadline.
   - Een werkmoment mag NOOIT overlappen met een les OF een fietsblok uit LESROOSTER die dag (fietsen naar school/huis staat er ook bij) - dat is allebei geen vrije tijd. Een gat tussen twee lessen (een tussenuur) mag wel, net als tijd na school/na het fietsen.
 - "deadline_verzetten": ALLEEN voor huiswerk/toets, en ALLEEN als de deadline zelf écht verandert (bv. een les valt uit/wordt verzet, de docent verzet de inleverdatum/toetsdatum). Gebruik dit NOOIT om te plannen wanneer de leerling eraan werkt - dat is altijd "verplaats".
@@ -290,6 +292,7 @@ Werkwijze:
   - Timing/energie: iets actiefs of leuks past vaak beter na school dan vlak voor het slapengaan.
   Nooit een voorstel zonder toelichting, en nooit een preek - hooguit 1-2 zinnen.
 - Kies bij "verplaats" en "aanmaken" bij voorkeur een dag die volgens de werkdruk hieronder rustiger is, en nooit een datum in het verleden.
+- Voorkeursvolgorde voor een werk-/leermoment (huiswerk, toets, leermoment): eerst een doordeweekse dag, pas als dat écht niet past (venster te krap, alle doordeweekse dagen al druk/overvol) een weekenddag - en dan zaterdag vóór zondag. Wijk hiervan af als de leerling zelf een weekenddag/zondag vraagt, of als het venster (na de vorige les, vóór de deadline) alleen een weekenddag toelaat.
 - Gebruik voor "vakId" en "planningItemId" ALTIJD het exacte id tussen [ ] uit VAKKEN/TAKEN hieronder - verzin nooit een id.
 - Wees kort. Dit is een chatgesprek met een tiener, geen collegetekst.
 - Noem bij ELKE datum die je noemt ook de dag van de week (bv. "vrijdag 28 augustus", niet alleen "28 augustus").

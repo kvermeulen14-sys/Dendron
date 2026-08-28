@@ -40,7 +40,8 @@ export function WerkdrukWeek({
 }) {
   const dagen = Array.from({ length: 7 }, (_, i) => isoPlusDagen(weekMaandagIso, i));
 
-  const perDag = dagen.map((iso) => {
+  const perDag = dagen.map((iso, i) => {
+    const weekend = i === 5 || i === 6; // za/zo - zie classificeerWerkdruk
     const dagItems = items.filter((item) => item.due_date === iso && item.status !== "voorstel");
     const openItems = dagItems.filter((item) => item.status === "open");
     const minuten = openItems.reduce((som, i) => som + (i.estimated_minutes ?? 0), 0);
@@ -51,7 +52,7 @@ export function WerkdrukWeek({
       aantalOpen: openItems.length,
       aantalKlaar: dagItems.length - openItems.length,
       zonderInschatting,
-      niveau: classificeerWerkdruk(minuten),
+      niveau: classificeerWerkdruk(minuten, weekend),
     };
   });
 

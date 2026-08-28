@@ -2277,7 +2277,11 @@ export function AgendaBoard({
                       deadlines = exact;
                     } else {
                       const algeclaimd = b.subjectId ? geclaimdeVakIdsGrid.has(b.subjectId) : false;
-                      const zonderLesuur = vakItems.filter((it) => !it.rooster_start_tijd);
+                      // Een item met een eigen geplande tijd (bv. vrijdagochtend
+                      // vóór school) hoort op die eigen tijd te blijven staan in
+                      // de lijst - niet stil verhuizen naar het eerste lesuur
+                      // van dat vak, want dan verdwijnt het daar juist uit.
+                      const zonderLesuur = vakItems.filter((it) => !it.rooster_start_tijd && !it.start_time);
                       deadlines = !algeclaimd ? zonderLesuur : [];
                       if (deadlines.length > 0 && b.subjectId) geclaimdeVakIdsGrid.add(b.subjectId);
                     }
@@ -2567,7 +2571,9 @@ export function AgendaBoard({
                 deadlines = exact;
               } else {
                 const algeclaimd = b.subjectId ? geclaimdeVakIds.has(b.subjectId) : false;
-                const zonderLesuur = vakItems.filter((it) => !it.rooster_start_tijd);
+                // Een item met een eigen geplande tijd blijft op die tijd
+                // staan in de lijst - zie toelichting bij de gridweergave.
+                const zonderLesuur = vakItems.filter((it) => !it.rooster_start_tijd && !it.start_time);
                 deadlines = !algeclaimd ? zonderLesuur : [];
                 if (deadlines.length > 0 && b.subjectId) geclaimdeVakIds.add(b.subjectId);
               }
