@@ -6,7 +6,7 @@ import clsx from "clsx";
 import { Icon } from "@/components/icon";
 import { PLANNING_TYPE_META, minutenNaarTijd } from "@/lib/planning";
 import { tijdNaarMinuten } from "@/lib/capaciteit";
-import type { PlanningItem } from "@/lib/types";
+import type { PlanningItem, PlanningType, Subject } from "@/lib/types";
 
 const ONBEKENDE_DUUR_MINUTEN = 30;
 
@@ -19,6 +19,20 @@ interface Blok {
   isSchool: boolean;
   /** Een prive-afspraak bezet wel tijd, maar is geen afvinkbare taak - geen Focus-knop hiervoor. */
   isPrive: boolean;
+  type: PlanningType | null;
+  subjectId: string | null;
+}
+
+/** "Huiswerk Wiskunde" / "Leren voor Geschiedenis" i.p.v. de losse taaktitel
+ * ("Opgave 1 t/m 5") - bij "Straks" gaat het erom WAT voor soort werk het is
+ * en voor welk vak, niet om de exacte opdrachtomschrijving. */
+function straksTitel(blok: Blok, subjects: Subject[]) {
+  if (!blok.subjectId || (blok.type !== "huiswerk" && blok.type !== "toets" && blok.type !== "leermoment")) {
+    return blok.titel;
+  }
+  const vak = subjects.find((s) => s.id === blok.subjectId)?.name;
+  if (!vak) return blok.titel;
+  return blok.type === "huiswerk" ? `Huiswerk ${vak}` : `Leren voor ${vak}`;
 }
 
 /**
@@ -34,11 +48,13 @@ export function NuEnStraks({
   items,
   roosterBlokken,
   voorKind,
+  subjects,
 }: {
   /** Alleen de items van vandaag. */
   items: PlanningItem[];
   roosterBlokken: { titel: string; startMinuten: number; duurMinuten: number; isFietsen: boolean }[];
   voorKind: boolean;
+  subjects: Subject[];
 }) {
   const [nuMinuten, setNuMinuten] = useState<number | null>(null);
 
@@ -63,6 +79,8 @@ export function NuEnStraks({
       duurMinuten: b.duurMinuten,
       isSchool: true,
       isPrive: false,
+      type: null,
+      subjectId: null,
     })),
     ...items
       .filter((i) => i.status === "open" && i.start_time)
@@ -74,6 +92,8 @@ export function NuEnStraks({
         duurMinuten: i.estimated_minutes ?? ONBEKENDE_DUUR_MINUTEN,
         isSchool: false,
         isPrive: i.type === "prive",
+        type: i.type,
+        subjectId: i.subject_id,
       })),
   ].sort((a, b) => a.startMinuten - b.startMinuten);
 
@@ -139,7 +159,7 @@ export function NuEnStraks({
           <>
             <div className="flex items-center gap-2">
               <Icon name={volgend.icoon} size={16} className="shrink-0 text-slate-400" />
-              <p className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-600">{volgend.titel}</p>
+              <p className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-600">{straksTitel(volgend, subjects)}</p>
             </div>
             <span className="text-xs font-medium text-slate-400 tabular-nums">
               {minutenNaarTijd(volgend.startMinuten)}

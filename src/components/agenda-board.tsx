@@ -46,7 +46,6 @@ import {
   verplaatsPlanningItemNaarTijd,
   verwijderPlanningItem,
 } from "@/lib/actions/planning";
-import { updateRoosterNotitieStatus, verwijderRoosterNotitie } from "@/lib/actions/rooster";
 import {
   CAPACITEIT_META,
   berekenDagCapaciteit,
@@ -487,19 +486,38 @@ export function AgendaBoard({
     [vandaagDatum]
   );
 
+  // Unie van lijstDagen en de (navigeerbare, ook naar het verleden)
+  // weekDagen - het roosterraster moet altijd zijn eigen, genavigeerde
+  // week tonen, ook als die (deels) voor vandaag ligt. Zonder deze unie
+  // waren itemsPerDag/itemsPerWerkDag/roosterPerDag hieronder alleen
+  // geseed met de lijstweergave-range, en toonde het rooster lege dagen
+  // zodra je terugbladerde naar een eerdere week (of naar dagen eerder
+  // deze week, voor vandaag).
+  const dagenVoorRooster = useMemo(() => {
+    const geziene = new Set<string>();
+    const dagen: Date[] = [];
+    for (const dag of [...weekDagen, ...lijstDagen]) {
+      const iso = naarIsoDatum(dag);
+      if (geziene.has(iso)) continue;
+      geziene.add(iso);
+      dagen.push(dag);
+    }
+    return dagen;
+  }, [weekDagen, lijstDagen]);
+
   // Due_date-gebaseerd: wat is er deze dag daadwerkelijk verschuldigd - blijft
   // dus op de dag van de deadline zelf, ook als het werkmoment (zie hieronder)
   // ergens anders staat. Gebruikt voor de deadline-badges op rooster-blokjes
   // en "gemist"-detectie - overal waar het echt om de deadline zelf gaat.
   const itemsPerDag = useMemo(() => {
     const map = new Map<string, PlanningItem[]>();
-    for (const dag of lijstDagen) map.set(naarIsoDatum(dag), []);
+    for (const dag of dagenVoorRooster) map.set(naarIsoDatum(dag), []);
     for (const item of items) {
       const lijst = map.get(item.due_date);
       if (lijst) lijst.push(item);
     }
     return map;
-  }, [items, lijstDagen]);
+  }, [items, dagenVoorRooster]);
 
   // Werkdatum-gebaseerd: op welke dag dit item ZICHTBAAR/gepland staat (zie
   // werkDatum hierboven). Voor de meeste items hetzelfde als itemsPerDag
@@ -508,22 +526,18 @@ export function AgendaBoard({
   // op DIE dag zien staan, niet (nog eens) op de deadline-dag zelf.
   const itemsPerWerkDag = useMemo(() => {
     const map = new Map<string, PlanningItem[]>();
-    for (const dag of lijstDagen) map.set(naarIsoDatum(dag), []);
+    for (const dag of dagenVoorRooster) map.set(naarIsoDatum(dag), []);
     for (const item of items) {
       const lijst = map.get(werkDatum(item));
       if (lijst) lijst.push(item);
     }
     return map;
-  }, [items, lijstDagen]);
+  }, [items, dagenVoorRooster]);
 
   const vandaagItems = useMemo(
     () => items.filter((i) => werkDatum(i) === vandaagIso && i.status !== "voorstel"),
     [items, vandaagIso]
   );
-  // Prive bezet wel tijd (zie capaciteit.ts) maar is geen afvinkbare taak -
-  // telt daarom niet mee in dit taken-overzicht.
-  const vandaagOpenItems = vandaagItems.filter((i) => i.status !== "klaar" && i.type !== "prive");
-  const vandaagMinuten = vandaagOpenItems.reduce((som, i) => som + (i.estimated_minutes ?? 0), 0);
 
   // Vandaag apart, want die valt buiten de getoonde week zodra je vooruitbladert.
   const vandaagRoosterBlokken = useMemo(
@@ -537,16 +551,6 @@ export function AgendaBoard({
         jaarEvents
       ),
     [vandaagIso, periodes, roosterItems, uitzonderingen, reistijdMinuten, jaarEvents]
-  );
-
-  const vandaagCapaciteit = useMemo(
-    () =>
-      berekenDagCapaciteit({
-        roosterBlokken: vandaagRoosterBlokken,
-        items: items.filter((i) => werkDatum(i) === vandaagIso),
-        ritme: ritmesPerWeek.get(naarIsoWeekdag(new Date(vandaagIso + "T00:00:00")))!,
-      }),
-    [items, vandaagIso, vandaagRoosterBlokken, ritmesPerWeek]
   );
 
   // Leren in delen werkt alleen als je ook ziet dat je ermee bezig bent: op het
@@ -600,26 +604,16 @@ export function AgendaBoard({
   );
   const aandachtItemIds = useMemo(() => new Set(aandachtSignalen.map((s) => s.item.id)), [aandachtSignalen]);
 
-  // Herinneringen ("neem gymkleren mee") horen bij vandaag/morgen te tonen,
-  // niet bij de dag zelf begraven in een rooster-blokje - dan mis je 'm
-  // precies op het moment dat je moet inpakken.
-  const naderendeNotities = useMemo(() => {
-    const morgenIso = naarIsoDatum(voegDagenToe(new Date(vandaagIso + "T00:00:00"), 1));
-    return roosterNotities
-      .filter((n) => n.status === "open" && (n.datum === vandaagIso || n.datum === morgenIso))
-      .sort((a, b) => a.datum.localeCompare(b.datum));
-  }, [roosterNotities, vandaagIso]);
-
   const roosterPerDag = useMemo(() => {
     const map = new Map<string, RoosterBlok[]>();
-    for (const dag of lijstDagen) {
+    for (const dag of dagenVoorRooster) {
       map.set(
         naarIsoDatum(dag),
         roosterBlokkenVoorDag(dag, periodes, roosterItems, uitzonderingen, reistijdMinuten, jaarEvents)
       );
     }
     return map;
-  }, [lijstDagen, periodes, roosterItems, uitzonderingen, reistijdMinuten, jaarEvents]);
+  }, [dagenVoorRooster, periodes, roosterItems, uitzonderingen, reistijdMinuten, jaarEvents]);
 
   // Als de les waar een deadline aan hing vervalt (rooster_start_tijd matcht
   // dan geen enkel blokje meer die dag), claimt geen enkel blokje 'm meer -
@@ -1007,51 +1001,6 @@ export function AgendaBoard({
         </Card>
       )}
 
-      {naderendeNotities.length > 0 && (
-        <Card className="flex flex-col gap-2 border-accent-200 bg-accent-50/60 py-3">
-          <p className="text-sm font-semibold text-slate-900">Niet vergeten mee te nemen</p>
-          <div className="flex flex-col gap-1.5">
-            {naderendeNotities.map((n) => (
-              <div key={n.id} className="flex items-center gap-2.5">
-                <button
-                  disabled={pending}
-                  onClick={() =>
-                    startTransition(async () => {
-                      await updateRoosterNotitieStatus(n.id, "klaar");
-                      router.refresh();
-                    })
-                  }
-                  aria-label="Afgevinkt"
-                  className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-accent-300 text-accent-600 hover:bg-white disabled:opacity-50"
-                >
-                  <Icon name="check" size={12} />
-                </button>
-                <span className="min-w-0 flex-1 text-sm text-slate-700">
-                  <span className="font-medium text-accent-700">
-                    {n.datum === vandaagIso ? "Vandaag" : "Morgen"}
-                  </span>{" "}
-                  - {n.tekst}
-                  {subjectNaam(n.subject_id) && <span className="text-slate-400"> ({subjectNaam(n.subject_id)})</span>}
-                </span>
-                <button
-                  disabled={pending}
-                  onClick={() =>
-                    startTransition(async () => {
-                      await verwijderRoosterNotitie(n.id);
-                      router.refresh();
-                    })
-                  }
-                  aria-label="Verwijderen"
-                  className="shrink-0 rounded-md p-1 text-slate-400 hover:bg-white hover:text-rose-600 disabled:opacity-50"
-                >
-                  <Icon name="trash" size={12} />
-                </button>
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
-
       <HuiswerkAIImport
         subjects={subjects}
         ref={huiswerkAIImportRef}
@@ -1109,42 +1058,7 @@ export function AgendaBoard({
       {/* Ook zichtbaar voor een ouder (handig om in 1 oogopslag te zien
           waar je kind nu mee bezig is) - alleen de "Focus starten"-link
           erin is kind-only, dat regelt de voorKind-prop van dit component zelf. */}
-      <NuEnStraks items={vandaagItems} roosterBlokken={vandaagRoosterBlokken} voorKind={voorKind} />
-
-      {vandaagOpenItems.length > 0 && (
-        <Card
-          className={clsx(
-            "flex items-center gap-3 py-3",
-            vandaagCapaciteit.niveau === "over"
-              ? "border-rose-200 bg-rose-50/70"
-              : "border-accent-100 bg-accent-50/60"
-          )}
-        >
-          <span
-            className={clsx(
-              "flex h-10 w-10 shrink-0 items-center justify-center rounded-full",
-              vandaagCapaciteit.niveau === "over"
-                ? "bg-rose-100 text-rose-600"
-                : "bg-accent-100 text-accent-600"
-            )}
-          >
-            <Icon name={vandaagCapaciteit.niveau === "over" ? "alert-circle" : "target"} size={18} />
-          </span>
-          <div className="flex-1">
-            <p className="text-sm font-semibold text-slate-900">
-              Vandaag: {vandaagOpenItems.length} {vandaagOpenItems.length === 1 ? "taak" : "taken"}
-              {vandaagMinuten > 0 && ` - ongeveer ${formatMinuten(vandaagMinuten)} in totaal`}
-            </p>
-            <p className="text-xs text-slate-500">
-              {vandaagCapaciteit.niveau === "over"
-                ? `Er staat ${formatMinuten(vandaagCapaciteit.overMinuten)} meer gepland dan er past. Wat schuiven we naar een andere dag?`
-                : vandaagCapaciteit.zonderInschatting > 0
-                  ? `${vandaagCapaciteit.zonderInschatting} zonder tijdsinschatting - vul die in, dan klopt het beeld van wat er past.`
-                  : `Dit past binnen de ${formatMinuten(vandaagCapaciteit.beschikbaarMinuten)} die je vandaag hebt.`}
-            </p>
-          </div>
-        </Card>
-      )}
+      <NuEnStraks items={vandaagItems} roosterBlokken={vandaagRoosterBlokken} voorKind={voorKind} subjects={subjects} />
 
       {openstaandVerleden.length > 0 && (
         <Card className="flex flex-col gap-2.5 border-amber-200 bg-amber-50/60 py-3">

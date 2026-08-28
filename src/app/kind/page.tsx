@@ -8,10 +8,12 @@ import { WeekTerugblikVraag } from "@/components/week-terugblik-vraag";
 import { TweeMinutenOefenen } from "@/components/twee-minuten-oefenen";
 import { WerkdrukWeek } from "@/components/werkdruk-week";
 import { PlanningshulpKnop } from "@/components/planningshulp-knop";
+import { NietVergeten } from "@/components/niet-vergeten";
 import { huidigeWeekMaandag } from "@/lib/week";
 import { bepaalLaatsteOnderwerpPerVak } from "@/lib/onderwerp";
 import { bepaalOefenAdvies, type OefenSessieSamenvatting } from "@/lib/oefen-advies";
-import type { PlanningItem, Subject } from "@/lib/types";
+import { kiesDagelijkseMotivatie } from "@/lib/motiverende-tekst";
+import type { PlanningItem, RoosterNotitie, Subject } from "@/lib/types";
 
 export default async function KindOverzicht() {
   const supabase = await createClient();
@@ -24,7 +26,9 @@ export default async function KindOverzicht() {
     .eq("id", user!.id)
     .single();
 
-  const vandaag = new Date().toISOString().slice(0, 10);
+  const vandaagDatum = new Date();
+  const vandaag = vandaagDatum.toISOString().slice(0, 10);
+  const morgen = new Date(vandaagDatum.getTime() + 86400000).toISOString().slice(0, 10);
   const weekMaandag = huidigeWeekMaandag();
   const weekMaandagDatum = new Date(weekMaandag + "T00:00:00");
   const weekZondagDatum = new Date(weekMaandagDatum);
@@ -44,6 +48,7 @@ export default async function KindOverzicht() {
     { data: weekData },
     { data: openItemsData },
     { data: overhoorSessiesData },
+    { data: notitiesData },
   ] = await Promise.all([
     // Due_date = deadline (blijft altijd staan), start_date = het echte
     // werkmoment als de coach dat vóór de deadline heeft ingepland - dan wil
@@ -111,6 +116,13 @@ export default async function KindOverzicht() {
       .not("hoofdstuk", "is", null)
       .order("created_at", { ascending: false })
       .limit(100),
+    supabase
+      .from("rooster_notities")
+      .select("*")
+      .eq("family_id", profile!.family_id)
+      .eq("status", "open")
+      .in("datum", [vandaag, morgen])
+      .order("datum", { ascending: true }),
   ]);
 
   // Voor "2 minuten oefenen": welk vak heeft nu de meeste aandacht nodig
@@ -146,6 +158,8 @@ export default async function KindOverzicht() {
   const subjects = (subjectsData ?? []) as Subject[];
   const eerstvolgendeToets = toetsData as PlanningItem | null;
   const heeftTerugblikDezeWeek = Boolean(terugblikData);
+  const nietVergetenNotities = (notitiesData ?? []) as RoosterNotitie[];
+  const motivatie = kiesDagelijkseMotivatie(vandaagDatum);
 
   const kennisbankRijen = [
     ...(kennisOnderdelenData ?? []),
@@ -177,8 +191,10 @@ export default async function KindOverzicht() {
         <p className="font-heading text-2xl font-bold">
           Hoi {profile?.full_name?.split(" ")[0] || ""}!
         </p>
-        <p className="mt-1 text-sm text-white/85">Dit staat er voor je klaar vandaag.</p>
+        <p className="mt-1 text-sm text-white/85">{motivatie}</p>
       </div>
+
+      <NietVergeten notities={nietVergetenNotities} subjects={subjects} vandaagIso={vandaag} />
 
       {!heeftTerugblikDezeWeek && <WeekTerugblikVraag />}
 
