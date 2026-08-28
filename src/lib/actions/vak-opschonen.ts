@@ -9,12 +9,12 @@ import { ouderProfiel } from "@/lib/kennis-onderdelen-shared";
  * rommelige/dubbele import (bv. meerdere losse experimenten met verschillende
  * hoofdstuk-labels voor dezelfde stof) in 1 keer weg te halen voor een
  * schone herstart via de kennisbank-wizard, i.p.v. elk kaartje los te
- * moeten verwijderen.
+ * moeten verwijderen. Wist ook de inhoudsopgave (methode_hoofdstukken,
+ * cascadeert naar methode_paragrafen en de gekoppelde kennis_*-content) -
+ * de kennisbank IS de methode, dus "kennisbank leegmaken" betekent ook
+ * "opnieuw beginnen met de inhoudsopgave".
  */
-export async function wisVakInhoud(
-  subjectId: string,
-  opties: { kennisbank: boolean; materials: boolean; voortgang: boolean }
-) {
+export async function wisVakInhoud(subjectId: string, opties: { kennisbank: boolean; voortgang: boolean }) {
   const ouder = await ouderProfiel();
   if ("error" in ouder) return { error: ouder.error };
   const { supabase, familyId } = ouder;
@@ -28,11 +28,9 @@ export async function wisVakInhoud(
       supabase.from("kennis_onderdelen").delete().eq("subject_id", subjectId),
       supabase.from("kennis_paragraaf_context").delete().eq("subject_id", subjectId),
       supabase.from("kennis_oefenvragen").delete().eq("subject_id", subjectId),
-      supabase.from("kennis_woordenlijsten").delete().eq("subject_id", subjectId)
+      supabase.from("kennis_woordenlijsten").delete().eq("subject_id", subjectId),
+      supabase.from("methode_hoofdstukken").delete().eq("subject_id", subjectId)
     );
-  }
-  if (opties.materials) {
-    acties.push(supabase.from("materials").delete().eq("subject_id", subjectId));
   }
   if (opties.voortgang) {
     acties.push(supabase.from("overhoor_sessies").delete().eq("subject_id", subjectId));

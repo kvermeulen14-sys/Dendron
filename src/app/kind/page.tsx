@@ -38,7 +38,9 @@ export default async function KindOverzicht() {
     { data: toetsData },
     { data: subjectsData },
     { data: terugblikData },
-    { data: materialsData },
+    { data: kennisOnderdelenData },
+    { data: kennisContextData },
+    { data: kennisWoordenlijstenData },
     { data: weekData },
     { data: openItemsData },
     { data: overhoorSessiesData },
@@ -80,7 +82,21 @@ export default async function KindOverzicht() {
       .eq("user_id", user!.id)
       .eq("week_start", weekMaandag)
       .maybeSingle(),
-    supabase.from("materials").select("subject_id, hoofdstuk, created_at").eq("family_id", profile!.family_id),
+    supabase
+      .from("kennis_onderdelen")
+      .select("subject_id, hoofdstuk, created_at")
+      .eq("family_id", profile!.family_id)
+      .eq("status", "gepubliceerd"),
+    supabase
+      .from("kennis_paragraaf_context")
+      .select("subject_id, hoofdstuk, created_at")
+      .eq("family_id", profile!.family_id)
+      .eq("status", "gepubliceerd"),
+    supabase
+      .from("kennis_woordenlijsten")
+      .select("subject_id, hoofdstuk, created_at")
+      .eq("family_id", profile!.family_id)
+      .eq("status", "gepubliceerd"),
     supabase
       .from("planning_items")
       .select("*")
@@ -131,9 +147,14 @@ export default async function KindOverzicht() {
   const eerstvolgendeToets = toetsData as PlanningItem | null;
   const heeftTerugblikDezeWeek = Boolean(terugblikData);
 
-  const subjectIdsMetLesstof = new Set((materialsData ?? []).map((m) => m.subject_id));
+  const kennisbankRijen = [
+    ...(kennisOnderdelenData ?? []),
+    ...(kennisContextData ?? []),
+    ...(kennisWoordenlijstenData ?? []),
+  ];
+  const subjectIdsMetLesstof = new Set(kennisbankRijen.map((r) => r.subject_id));
   const subjectsMetLesstof = subjects.filter((s) => subjectIdsMetLesstof.has(s.id));
-  const laatsteOnderwerpPerVak = bepaalLaatsteOnderwerpPerVak(materialsData ?? [], overhoorSessiesData ?? []);
+  const laatsteOnderwerpPerVak = bepaalLaatsteOnderwerpPerVak(kennisbankRijen, overhoorSessiesData ?? []);
   const oefenAdvies = bepaalOefenAdvies(
     subjectsMetLesstof.map((s) => s.id),
     (oefenScoresData ?? []) as OefenSessieSamenvatting[],

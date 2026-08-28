@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto";
 import { createClient } from "@/lib/supabase/server";
 import { createGeminiClient, vereistGeminiKey, GEMINI_MODEL, GEMINI_VISION_MODEL } from "@/lib/gemini";
 import {
-  kiesRelevanteMaterialen,
   bouwKennisbankUitOnderdelen,
   type KennisOnderdeelRij,
   type KennisParagraafContextRij,
@@ -21,7 +20,6 @@ function extensieVoorMimeType(mimeType: string) {
 
 const MAX_GESCHIEDENIS = 20;
 const MAX_KENNISBANK_TEKENS = 14000;
-const MAX_AFBEELDINGEN = 3;
 
 // Deterministische visuals (grafiek/getallenlijn/tabel/diagram) die de AI in
 // zijn antwoord kan zetten als een los code-blok - zie lib/visuals.ts voor
@@ -257,11 +255,6 @@ export async function POST(request: Request) {
     .single();
   if (!subject) return NextResponse.json({ error: "Vak niet gevonden." }, { status: 404 });
 
-  const { data: materials } = await supabase
-    .from("materials")
-    .select("id, title, content, hoofdstuk, image_path")
-    .eq("subject_id", subjectId);
-
   const { data: kennisContexten } = await supabase
     .from("kennis_paragraaf_context")
     .select("paragraaf_id, titel, leerdoelen, voorkennis, kernbegrippen, coachaanpak, videos")
@@ -300,12 +293,6 @@ export async function POST(request: Request) {
     .order("created_at", { ascending: false })
     .limit(3);
 
-  // Zodra er voor dit vak gepubliceerde kennisonderdelen of woordenlijsten
-  // bestaan, is dat de enige bron van waarheid voor de lesstof - niet meer
-  // teruggrijpen op de oudere, losstaande materials-tekst (die zonder
-  // handmatige actie stil uit sync kan raken met wat hier is bijgewerkt).
-  const heeftKennisOnderdelen = (kennisOnderdelen?.length ?? 0) > 0 || (kennisWoordenlijsten?.length ?? 0) > 0;
-
   // Opdrachten-maken-modus wordt, net als de gewone chat, blijvend bewaard
   // per vak (opdracht_berichten i.p.v. chat_messages) - zelfde leespatroon.
   const { data: dbGeschiedenis } = await supabase
@@ -317,67 +304,26 @@ export async function POST(request: Request) {
     .limit(MAX_GESCHIEDENIS);
   const geschiedenisChronologisch: { role: string; content: string }[] = (dbGeschiedenis ?? []).slice().reverse();
 
-  // Recente eigen berichten meenemen in de zoektekst, zodat "opgave 38" nog
-  // steeds matcht op een paragraaf die een paar berichten eerder al genoemd is.
-  const recenteVragen = geschiedenisChronologisch
-    .filter((m) => m.role !== "model")
-    .slice(-4)
-    .map((m) => m.content)
-    .join(" ");
-  let modus: "alles" | "selectie" | "index";
-  let kennisbank: string;
+  // De kennisbank is de enige bron van waarheid voor de lesstof - altijd
+  // volledig meegeven (geen omvangsdrempel/selectie meer nodig, dat was
+  // alleen relevant bij een grote losse materials-lijst).
+  const modus: "alles" | "selectie" | "index" = "alles";
+  let kennisbank = bouwKennisbankUitOnderdelen(
+    (kennisOnderdelen ?? []) as KennisOnderdeelRij[],
+    (kennisContexten ?? []) as KennisParagraafContextRij[],
+    (kennisWoordenlijsten ?? []) as KennisWoordenlijstRij[]
+  );
+  if (kennisbank.length > MAX_KENNISBANK_TEKENS) {
+    kennisbank = kennisbank.slice(0, MAX_KENNISBANK_TEKENS) + "\n[...ingekort...]";
+  }
+  kennisbank += bouwCoachingBlok(
+    (kennisContexten ?? []) as KennisContextVoorChat[],
+    (kennisOefenvragen ?? []) as OefenvraagVoorChat[]
+  );
+  // Geen materials meer -> geen bijhorende foto's automatisch tonen bij de uitleg.
   const afbeeldingen: { url: string; title: string }[] = [];
 
-  if (heeftKennisOnderdelen) {
-    // 1 bron van waarheid zodra dit vak naar kennisonderdelen gemigreerd is
-    // - de oudere materials-tekst wordt dan niet meer gebruikt, zodat een
-    // update in de kennisonderdelen niet stil uit sync kan raken met wat de
-    // tutor nog als lesstof gebruikt. Geen materials -> ook geen bijhorende
-    // foto's om te tonen.
-    modus = "alles";
-    kennisbank = bouwKennisbankUitOnderdelen(
-      (kennisOnderdelen ?? []) as KennisOnderdeelRij[],
-      (kennisContexten ?? []) as KennisParagraafContextRij[],
-      (kennisWoordenlijsten ?? []) as KennisWoordenlijstRij[]
-    );
-    if (kennisbank.length > MAX_KENNISBANK_TEKENS) {
-      kennisbank = kennisbank.slice(0, MAX_KENNISBANK_TEKENS) + "\n[...ingekort...]";
-    }
-    kennisbank += bouwCoachingBlok(
-      (kennisContexten ?? []) as KennisContextVoorChat[],
-      (kennisOefenvragen ?? []) as OefenvraagVoorChat[]
-    );
-  } else {
-    const { modus: gekozenModus, gekozen } = kiesRelevanteMaterialen(materials ?? [], `${message} ${recenteVragen}`);
-    modus = gekozenModus;
-    if (modus === "index") {
-      kennisbank = (materials ?? [])
-        .map((m) => `- ${m.title}${m.hoofdstuk ? ` (${m.hoofdstuk})` : ""}`)
-        .join("\n");
-    } else {
-      kennisbank = gekozen.map((m) => `## ${m.title}\n${m.content}`).join("\n\n");
-      if (kennisbank.length > MAX_KENNISBANK_TEKENS) {
-        kennisbank = kennisbank.slice(0, MAX_KENNISBANK_TEKENS) + "\n[...ingekort...]";
-      }
-      kennisbank += bouwCoachingBlok((kennisContexten ?? []) as KennisContextVoorChat[]);
-    }
-
-    // Afbeeldingen die bij de gekozen lesstof horen, zodat de leerling ze
-    // opnieuw kan zien bij de uitleg.
-    const materialsMetAfbeelding = gekozen.filter((m) => m.image_path);
-    for (const m of materialsMetAfbeelding.slice(0, MAX_AFBEELDINGEN)) {
-      if (!m.image_path) continue;
-      const { data: signed } = await supabase.storage.from("lesstof").createSignedUrl(m.image_path, 3600);
-      if (signed?.signedUrl) afbeeldingen.push({ url: signed.signedUrl, title: m.title });
-    }
-  }
-
-  // Alleen zinvol als er al inhoudelijk lesstof getoond wordt - bij een
-  // kale inhoudsopgave weet de tutor nog niet welk onderwerp het is, dan
-  // zou dit alleen ruis toevoegen.
-  if (modus !== "index") {
-    kennisbank += bouwOefenGeschiedenisBlok((recenteOefenSessies ?? []) as OefenSessieVoorChat[]);
-  }
+  kennisbank += bouwOefenGeschiedenisBlok((recenteOefenSessies ?? []) as OefenSessieVoorChat[]);
 
   const historyVoorGemini = geschiedenisChronologisch.map((m) => ({
     role: (m.role === "model" ? "model" : "user") as "user" | "model",
@@ -443,11 +389,9 @@ export async function POST(request: Request) {
   }
 
   // De foto wordt altijd bij dit ene chatbericht opgeslagen (zodat het
-  // gesprek bij een refresh klopt), maar gaat NIET automatisch naar
-  // materials/de kennisbank van het vak - dat is een losse vraag, geen
-  // permanente lesstof. Bij een foto van THEORIE (zie fotoType) kan de
-  // ouder/leerling 'm zelf alsnog bewaren als lesstof, zie
-  // bewaarChatFotoAlsLesstof in lib/actions/materials.ts.
+  // gesprek bij een refresh klopt) - permanente lesstof loopt sindsdien
+  // alleen nog via de vak-inhoud-wizard (kennisbank-chat), niet meer via een
+  // losse foto-uit-de-chat-bewaarknop.
   let afbeeldingPad: string | null = null;
   if (afbeeldingInvoer) {
     const pad = `${subject.family_id}/chat/${subjectId}/${randomUUID()}.${extensieVoorMimeType(afbeeldingInvoer.mimeType)}`;

@@ -18,7 +18,7 @@ type Stijl = "open" | "meerkeuze";
 type WizardStap = "hoofdstuk" | "stijl" | null;
 type SessieFase = "vraag" | "feedback" | "klaar";
 type LesstofFragment = { titel: string; tekst: string } | null;
-type Onderwerp = { paragraafId: string; titel: string };
+type Onderwerp = { id: string; code: string; titel: string };
 type HoofdstukStructuur = { hoofdstuk: string; onderwerpen: Onderwerp[] };
 
 const LEERFASE_OPTIES: { value: Leerfase; label: string; uitleg: string }[] = [
@@ -184,7 +184,7 @@ export function OverhoorPanel({
   async function beginnen() {
     if (!gekozenStijl) return;
     const onderwerp = gekozenOnderwerp
-      ? `paragraaf ${gekozenOnderwerp.paragraafId} - "${gekozenOnderwerp.titel}" (binnen hoofdstuk "${gekozenHoofdstuk}")`
+      ? `paragraaf ${gekozenOnderwerp.code} - "${gekozenOnderwerp.titel}" (binnen hoofdstuk "${gekozenHoofdstuk}")`
       : gekozenHoofdstuk
         ? `"${gekozenHoofdstuk}"`
         : "alle beschikbare lesstof";
@@ -459,11 +459,11 @@ export function OverhoorPanel({
                           </button>
                           {h.onderwerpen.map((o) => (
                             <button
-                              key={o.paragraafId}
+                              key={o.id}
                               onClick={() => kiesOnderwerp(h.hoofdstuk, o)}
                               className="rounded-lg px-3 py-2 text-left text-sm text-slate-600 transition-colors hover:bg-white hover:text-slate-900"
                             >
-                              {o.paragraafId} - {o.titel}
+                              {o.code} - {o.titel}
                             </button>
                           ))}
                         </div>

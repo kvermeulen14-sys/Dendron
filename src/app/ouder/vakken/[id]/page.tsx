@@ -5,11 +5,22 @@ import { Icon } from "@/components/icon";
 import { vakKleur } from "@/lib/vak-kleur";
 import { VakInhoudWizard } from "@/components/vak-inhoud-wizard";
 import { VakKennisbankOverzicht } from "@/components/vak-kennisbank-overzicht";
+import { InhoudsopgaveEditor } from "@/components/inhoudsopgave-editor";
 import { OverhoorResultaten } from "@/components/overhoor-resultaten";
 import { OverhoorGeschiedenisOpschonenKnop } from "@/components/overhoor-geschiedenis-opschonen-knop";
+import { garandeerMethodeStructuur } from "@/lib/methode-structuur";
 import { VakBewerkForm } from "./vak-bewerk-form";
 import { VerwijderVakKnop } from "./verwijder-vak-knop";
-import type { KennisOefenvraag, KennisOnderdeel, KennisParagraafContext, KennisWoordenlijst, OverhoorSessie, Subject } from "@/lib/types";
+import type {
+  KennisOefenvraag,
+  KennisOnderdeel,
+  KennisParagraafContext,
+  KennisWoordenlijst,
+  MethodeHoofdstuk,
+  MethodeParagraaf,
+  OverhoorSessie,
+  Subject,
+} from "@/lib/types";
 
 export default async function VakDetailPage({
   params,
@@ -22,14 +33,28 @@ export default async function VakDetailPage({
   const { data: subject } = await supabase.from("subjects").select("*").eq("id", id).single();
   if (!subject) notFound();
 
-  const [{ data: overhoorSessies }, { data: kennisOnderdelen }, { data: kennisContexten }, { data: kennisOefenvragen }, { data: kennisWoordenlijsten }] =
-    await Promise.all([
-      supabase.from("overhoor_sessies").select("*").eq("subject_id", id).order("created_at", { ascending: false }).limit(10),
-      supabase.from("kennis_onderdelen").select("*").eq("subject_id", id),
-      supabase.from("kennis_paragraaf_context").select("*").eq("subject_id", id),
-      supabase.from("kennis_oefenvragen").select("*").eq("subject_id", id),
-      supabase.from("kennis_woordenlijsten").select("*").eq("subject_id", id),
-    ]);
+  // Best-effort, idempotent: linkt eerder geïmporteerde (nog losse) content
+  // 1x aan de inhoudsopgave-structuur - moet vóór de queries hieronder,
+  // anders mist deze paginalading net-gelinkte rijen.
+  await garandeerMethodeStructuur(id);
+
+  const [
+    { data: overhoorSessies },
+    { data: kennisOnderdelen },
+    { data: kennisContexten },
+    { data: kennisOefenvragen },
+    { data: kennisWoordenlijsten },
+    { data: hoofdstukken },
+    { data: paragrafen },
+  ] = await Promise.all([
+    supabase.from("overhoor_sessies").select("*").eq("subject_id", id).order("created_at", { ascending: false }).limit(10),
+    supabase.from("kennis_onderdelen").select("*").eq("subject_id", id),
+    supabase.from("kennis_paragraaf_context").select("*").eq("subject_id", id),
+    supabase.from("kennis_oefenvragen").select("*").eq("subject_id", id),
+    supabase.from("kennis_woordenlijsten").select("*").eq("subject_id", id),
+    supabase.from("methode_hoofdstukken").select("*").eq("subject_id", id).order("volgorde", { ascending: true }),
+    supabase.from("methode_paragrafen").select("*, methode_hoofdstukken!inner(subject_id)").eq("methode_hoofdstukken.subject_id", id).order("volgorde", { ascending: true }),
+  ]);
   const heeftKennisbank =
     (kennisOnderdelen?.length ?? 0) > 0 ||
     (kennisContexten?.length ?? 0) > 0 ||
@@ -75,6 +100,19 @@ export default async function VakDetailPage({
       </Card>
 
       <VakInhoudWizard subjectId={id} subject={subject as Subject} heeftKennisbank={heeftKennisbank} />
+
+      <div>
+        <h2 className="mb-1 text-base font-semibold text-slate-900">Inhoudsopgave</h2>
+        <p className="mb-3 text-sm text-slate-500">
+          Zo is de methode ingedeeld - hoofdstuk, categorie en paragraaf. Dit bepaalt wat het kind bij &quot;Oefenen&quot;
+          te kiezen krijgt. Wordt automatisch aangevuld bij een nieuwe upload; hernoem/herorden/verplaats hier zelf.
+        </p>
+        <InhoudsopgaveEditor
+          subjectId={id}
+          hoofdstukken={(hoofdstukken ?? []) as MethodeHoofdstuk[]}
+          paragrafen={(paragrafen ?? []) as unknown as MethodeParagraaf[]}
+        />
+      </div>
 
       <div>
         <h2 className="mb-3 text-base font-semibold text-slate-900">Wat er nu in de kennisbank staat</h2>

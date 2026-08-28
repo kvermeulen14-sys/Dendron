@@ -16,14 +16,14 @@ interface SessieBron {
   created_at: string;
 }
 
-interface MateriaalBron {
+interface KennisbankBron {
   subject_id: string;
   hoofdstuk: string | null;
   created_at: string;
 }
 
 export function bepaalLaatsteOnderwerpPerVak(
-  materials: MateriaalBron[],
+  kennisbank: KennisbankBron[],
   overhoorSessies: SessieBron[]
 ): Map<string, string> {
   const resultaat = new Map<string, string>();
@@ -40,14 +40,14 @@ export function bepaalLaatsteOnderwerpPerVak(
     resultaat.set(subjectId, laatste.hoofdstuk!);
   }
 
-  const materialsPerVak = new Map<string, MateriaalBron[]>();
-  for (const m of materials) {
+  const kennisbankPerVak = new Map<string, KennisbankBron[]>();
+  for (const m of kennisbank) {
     if (!m.hoofdstuk) continue;
-    const lijst = materialsPerVak.get(m.subject_id) ?? [];
+    const lijst = kennisbankPerVak.get(m.subject_id) ?? [];
     lijst.push(m);
-    materialsPerVak.set(m.subject_id, lijst);
+    kennisbankPerVak.set(m.subject_id, lijst);
   }
-  for (const [subjectId, lijst] of materialsPerVak) {
+  for (const [subjectId, lijst] of kennisbankPerVak) {
     if (resultaat.has(subjectId)) continue;
     const laatste = lijst.reduce((a, b) => (a.created_at > b.created_at ? a : b));
     resultaat.set(subjectId, laatste.hoofdstuk!);

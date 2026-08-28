@@ -18,7 +18,7 @@ export default async function VakkenPage() {
 
   const { data: subjects } = await supabase
     .from("subjects")
-    .select("*, materials(count)")
+    .select("*, methode_hoofdstukken(count)")
     .eq("family_id", profile!.family_id)
     .order("created_at", { ascending: true });
 
@@ -61,7 +61,7 @@ export default async function VakkenPage() {
                   )}
                 </p>
                 <p className="text-xs text-slate-500">
-                  {(s.materials as unknown as { count: number }[])?.[0]?.count ?? 0} stuk(s) lesstof
+                  {(s.methode_hoofdstukken as unknown as { count: number }[])?.[0]?.count ?? 0} hoofdstuk(ken)
                 </p>
               </div>
             </Card>

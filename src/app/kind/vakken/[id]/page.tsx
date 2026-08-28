@@ -85,74 +85,58 @@ export default async function KindVakDetailPage({
 
   // Voor Oefenen: hoofdstuk -> onderwerpen (paragrafen), zodat een leerling
   // precies kan kiezen WAT geoefend wordt i.p.v. alleen "heel hoofdstuk" of
-  // "alle lesstof" - zelfde structuur als de kennisbank-beheerpagina. Een
-  // paragraaf krijgt alleen een kennis_paragraaf_context-rij als er
-  // grammatica/leerdoelen/video's zijn (zie verwerkKennisBrontekst) - een
-  // paragraaf die ALLEEN een woordenlijst is (heel gewoon bij taalvakken)
-  // heeft dus geen context-rij, maar moet wel gewoon kiesbaar zijn. Daarom
-  // hier ook kennis_onderdelen en kennis_woordenlijsten meenemen i.p.v.
-  // alleen kennis_paragraaf_context.
-  const [{ data: kennisContexten }, { data: kennisOnderdelenPar }, { data: kennisWoordenlijstenPar }] = await Promise.all([
+  // "alle lesstof" - rechtstreeks vanuit de inhoudsopgave (methode_hoofdstukken/
+  // methode_paragrafen, migratie 0027), dus altijd de actuele structuur, ook
+  // over categorieën heen (een paragraafcode kan nu binnen 1 hoofdstuk in
+  // meerdere categorieën voorkomen - de paragraaf-UUID is de echte sleutel,
+  // niet de code). Alleen paragrafen met minstens 1 gepubliceerd stukje
+  // content zijn kiesbaar - een lege inhoudsopgave-tak toont niets.
+  const [{ data: hoofdstukkenRijen }, { data: paragrafenRijen }] = await Promise.all([
+    supabase.from("methode_hoofdstukken").select("id, naam, volgorde").eq("subject_id", id).order("volgorde"),
     supabase
-      .from("kennis_paragraaf_context")
-      .select("paragraaf_id, hoofdstuk, titel")
-      .eq("subject_id", id)
-      .eq("status", "gepubliceerd"),
-    supabase
-      .from("kennis_onderdelen")
-      .select("paragraaf_id, hoofdstuk")
-      .eq("subject_id", id)
-      .eq("status", "gepubliceerd")
-      .not("paragraaf_id", "is", null),
-    supabase
-      .from("kennis_woordenlijsten")
-      .select("paragraaf_id, hoofdstuk, titel")
-      .eq("subject_id", id)
-      .eq("status", "gepubliceerd"),
+      .from("methode_paragrafen")
+      .select("id, hoofdstuk_id, code, titel, volgorde, methode_hoofdstukken!inner(subject_id)")
+      .eq("methode_hoofdstukken.subject_id", id)
+      .order("volgorde"),
   ]);
 
-  let hoofdstukStructuur: { hoofdstuk: string; onderwerpen: { paragraafId: string; titel: string }[] }[] = [];
-  const heeftKennisbankData =
-    (kennisContexten?.length ?? 0) > 0 || (kennisOnderdelenPar?.length ?? 0) > 0 || (kennisWoordenlijstenPar?.length ?? 0) > 0;
-  if (heeftKennisbankData) {
-    // paragraaf_id -> beste titel: context-titel wint (rijkst), anders de
-    // eerste woordenlijst-titel, anders gewoon het paragraafnummer.
-    const perParagraaf = new Map<string, { hoofdstuk: string; titel: string | null }>();
-    for (const c of kennisContexten ?? []) {
-      perParagraaf.set(c.paragraaf_id, { hoofdstuk: c.hoofdstuk, titel: c.titel });
-    }
-    for (const w of kennisWoordenlijstenPar ?? []) {
-      if (!w.paragraaf_id || perParagraaf.has(w.paragraaf_id)) continue;
-      perParagraaf.set(w.paragraaf_id, { hoofdstuk: w.hoofdstuk, titel: w.titel });
-    }
-    for (const o of kennisOnderdelenPar ?? []) {
-      if (!o.paragraaf_id || perParagraaf.has(o.paragraaf_id)) continue;
-      perParagraaf.set(o.paragraaf_id, { hoofdstuk: o.hoofdstuk, titel: null });
-    }
-
-    const perHoofdstuk = new Map<string, { paragraafId: string; titel: string }[]>();
-    for (const [paragraafId, info] of perParagraaf) {
-      const lijst = perHoofdstuk.get(info.hoofdstuk) ?? [];
-      lijst.push({ paragraafId, titel: info.titel || `Paragraaf ${paragraafId}` });
-      perHoofdstuk.set(info.hoofdstuk, lijst);
-    }
-    hoofdstukStructuur = Array.from(perHoofdstuk.entries())
-      .map(([hoofdstuk, onderwerpen]) => ({
-        hoofdstuk,
-        onderwerpen: onderwerpen.sort((a, b) => a.paragraafId.localeCompare(b.paragraafId, undefined, { numeric: true })),
-      }))
-      .sort((a, b) => a.hoofdstuk.localeCompare(b.hoofdstuk, undefined, { numeric: true }));
-  } else {
-    // Vak nog niet gemigreerd naar de kennisbank - terugvallen op de oudere,
-    // platte hoofdstuk-lijst uit materials (geen onderwerp-niveau daarbinnen).
-    const { data: materialsHoofdstukken } = await supabase
-      .from("materials")
-      .select("hoofdstuk")
+  const [{ data: onderdelenPar }, { data: contextenPar }, { data: woordenlijstenPar }] = await Promise.all([
+    supabase
+      .from("kennis_onderdelen")
+      .select("methode_paragraaf_id")
       .eq("subject_id", id)
-      .not("hoofdstuk", "is", null);
-    const hoofdstukken = Array.from(new Set((materialsHoofdstukken ?? []).map((m) => m.hoofdstuk).filter(Boolean))) as string[];
-    hoofdstukStructuur = hoofdstukken.map((h) => ({ hoofdstuk: h, onderwerpen: [] }));
+      .eq("status", "gepubliceerd")
+      .not("methode_paragraaf_id", "is", null),
+    supabase
+      .from("kennis_paragraaf_context")
+      .select("methode_paragraaf_id")
+      .eq("subject_id", id)
+      .eq("status", "gepubliceerd")
+      .not("methode_paragraaf_id", "is", null),
+    supabase
+      .from("kennis_woordenlijsten")
+      .select("methode_paragraaf_id")
+      .eq("subject_id", id)
+      .eq("status", "gepubliceerd")
+      .not("methode_paragraaf_id", "is", null),
+  ]);
+  const paragrafenMetContent = new Set([
+    ...(onderdelenPar ?? []).map((o) => o.methode_paragraaf_id),
+    ...(contextenPar ?? []).map((c) => c.methode_paragraaf_id),
+    ...(woordenlijstenPar ?? []).map((w) => w.methode_paragraaf_id),
+  ]);
+
+  const hoofdstukVolgorde = (hoofdstukkenRijen ?? []) as { id: string; naam: string; volgorde: number }[];
+  const perHoofdstuk = new Map<string, { id: string; code: string; titel: string }[]>();
+  for (const p of (paragrafenRijen ?? []) as unknown as { id: string; hoofdstuk_id: string; code: string; titel: string }[]) {
+    if (!paragrafenMetContent.has(p.id)) continue;
+    const lijst = perHoofdstuk.get(p.hoofdstuk_id) ?? [];
+    lijst.push({ id: p.id, code: p.code, titel: p.titel });
+    perHoofdstuk.set(p.hoofdstuk_id, lijst);
   }
+  const hoofdstukStructuur: { hoofdstuk: string; onderwerpen: { id: string; code: string; titel: string }[] }[] = hoofdstukVolgorde
+    .map((h) => ({ hoofdstuk: h.naam, onderwerpen: perHoofdstuk.get(h.id) ?? [] }))
+    .filter((h) => h.onderwerpen.length > 0);
 
   return (
     <div className="flex flex-col gap-6">

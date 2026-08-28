@@ -6,7 +6,9 @@ import { createGeminiClient, genereerGestructureerd } from "@/lib/gemini";
 import { GETAL_EN_RUIMTE_2HV13, hoofdstukLabel } from "@/lib/data/getal-en-ruimte-2hv13";
 import { ouderProfiel, revalidateVak, slaGegenereerdeOnderdelenOp, OnderdeelSchema } from "@/lib/kennis-onderdelen-shared";
 import { wisVakInhoud } from "@/lib/actions/vak-opschonen";
-import type { KennisOnderdeelStatus, KennisWoord } from "@/lib/types";
+import { koppelAanMethodeParagraaf, getOfMaakHoofdstuk, syncKennisTekstVelden } from "@/lib/methode-structuur";
+import { publiceerMethodeParagraaf, verwijderMethodeParagraaf } from "@/lib/actions/methode-structuur";
+import type { KennisOnderdeelStatus, KennisWoord, MethodeCategorie } from "@/lib/types";
 
 const MAX_BRONTEKST_LENGTE = 60_000;
 
@@ -273,6 +275,7 @@ export async function verwerkTaalvakBrontekst(
   let aantalWoordenlijsten = 0;
   let aantalWoorden = 0;
   let volgorde = 0;
+  const methodeParagraafPerCategorie = new Map<string, string>();
   for (const [idx, categorie] of woordenlijstTypePerIndex) {
     const blok = blokken[idx];
     const rijen = parseWoordenTabel(blok.body);
@@ -283,11 +286,32 @@ export async function verwerkTaalvakBrontekst(
       .filter((w) => w.bron && w.doel);
     if (woorden.length === 0) continue;
 
+    // Koppelen aan de inhoudsopgave (migratie 0027): woordenschat en zinnen
+    // zijn altijd aparte paragrafen, ook al delen ze hetzelfde paragraafnummer.
+    let methodeParagraafId = methodeParagraafPerCategorie.get(categorie) ?? null;
+    if (!methodeParagraafId) {
+      try {
+        methodeParagraafId = await koppelAanMethodeParagraaf(
+          supabase,
+          familyId,
+          subjectId,
+          hoofdstuk,
+          categorie,
+          paragraafId,
+          categorie === "woordenschat" ? `Woordenschat ${paragraafId}` : `Zinnen & uitdrukkingen ${paragraafId}`
+        );
+        methodeParagraafPerCategorie.set(categorie, methodeParagraafId);
+      } catch {
+        // Zie toelichting bij verwerkKennisBrontekst - mag de import niet blokkeren.
+      }
+    }
+
     const { error: woordenError } = await supabase.from("kennis_woordenlijsten").insert({
       family_id: familyId,
       subject_id: subjectId,
       hoofdstuk,
       paragraaf_id: paragraafId,
+      methode_paragraaf_id: methodeParagraafId,
       titel: blok.heading,
       categorie,
       richting: "gemengd" as const,
@@ -529,6 +553,23 @@ export async function verwerkKennisBrontekst(
     oefenvragenFout = e instanceof Error ? e.message : "Oefenbank ophalen mislukt.";
   }
 
+  // Koppelen aan de inhoudsopgave (migratie 0027): grammatica-uitleg =
+  // Theorie/Grammatica, verder (alleen context/oefenbank, geen losse regels)
+  // = Praktijk/Vaardigheden.
+  const categorie: MethodeCategorie = (onderdelenRes.aantal ?? 0) > 0 ? "grammatica" : "praktijk";
+  try {
+    const methodeParagraafId = await koppelAanMethodeParagraaf(supabase, familyId, subjectId, hoofdstuk, categorie, paragraafId, titel);
+    await Promise.all([
+      supabase.from("kennis_onderdelen").update({ methode_paragraaf_id: methodeParagraafId }).eq("subject_id", subjectId).eq("hoofdstuk", hoofdstuk).eq("paragraaf_id", paragraafId),
+      supabase.from("kennis_paragraaf_context").update({ methode_paragraaf_id: methodeParagraafId }).eq("subject_id", subjectId).eq("hoofdstuk", hoofdstuk).eq("paragraaf_id", paragraafId),
+      supabase.from("kennis_oefenvragen").update({ methode_paragraaf_id: methodeParagraafId }).eq("subject_id", subjectId).eq("hoofdstuk", hoofdstuk).eq("paragraaf_id", paragraafId),
+    ]);
+  } catch {
+    // De inhoudsopgave-koppeling mag een geslaagde import nooit laten
+    // mislukken - garandeerMethodeStructuur haalt dit bij een volgend
+    // paginabezoek alsnog in.
+  }
+
   revalidateVak(subjectId);
   return {
     paragraafId,
@@ -641,74 +682,6 @@ export async function verwijderKennisOefenvraag(id: string, subjectId: string) {
 
   const { error } = await supabase.from("kennis_oefenvragen").delete().eq("id", id);
   if (error) return { error: error.message };
-
-  revalidateVak(subjectId);
-  return { success: true };
-}
-
-/**
- * Publiceert in 1 keer alle 'concept'-onderdelen, de paragraafcontext en
- * alle 'concept'-oefenvragen van 1 paragraaf - scheelt los doorklikken per
- * kaartje na een controle-ronde.
- */
-export async function publiceerParagraaf(subjectId: string, paragraafId: string) {
-  const ouder = await ouderProfiel();
-  if ("error" in ouder) return { error: ouder.error };
-  const { supabase } = ouder;
-
-  const nu = new Date().toISOString();
-  const [onderdelenRes, contextRes, oefenvragenRes, woordenlijstenRes] = await Promise.all([
-    supabase
-      .from("kennis_onderdelen")
-      .update({ status: "gepubliceerd", updated_at: nu })
-      .eq("subject_id", subjectId)
-      .eq("paragraaf_id", paragraafId)
-      .eq("status", "concept"),
-    supabase
-      .from("kennis_paragraaf_context")
-      .update({ status: "gepubliceerd", updated_at: nu })
-      .eq("subject_id", subjectId)
-      .eq("paragraaf_id", paragraafId)
-      .eq("status", "concept"),
-    supabase
-      .from("kennis_oefenvragen")
-      .update({ status: "gepubliceerd", updated_at: nu })
-      .eq("subject_id", subjectId)
-      .eq("paragraaf_id", paragraafId)
-      .eq("status", "concept"),
-    supabase
-      .from("kennis_woordenlijsten")
-      .update({ status: "gepubliceerd", updated_at: nu })
-      .eq("subject_id", subjectId)
-      .eq("paragraaf_id", paragraafId)
-      .eq("status", "concept"),
-  ]);
-  const fout = onderdelenRes.error || contextRes.error || oefenvragenRes.error || woordenlijstenRes.error;
-  if (fout) return { error: fout.message };
-
-  revalidateVak(subjectId);
-  return { success: true };
-}
-
-/**
- * Verwijdert in 1 keer alle kennisonderdelen, de paragraafcontext en alle
- * oefenvragen van 1 paragraaf (concept EN gepubliceerd) - handig om een
- * mislukte/rommelige upload in 1 keer weg te halen i.p.v. elk kaartje apart
- * te moeten verwijderen.
- */
-export async function verwijderParagraaf(subjectId: string, paragraafId: string) {
-  const ouder = await ouderProfiel();
-  if ("error" in ouder) return { error: ouder.error };
-  const { supabase } = ouder;
-
-  const [onderdelenRes, contextRes, oefenvragenRes, woordenlijstenRes] = await Promise.all([
-    supabase.from("kennis_onderdelen").delete().eq("subject_id", subjectId).eq("paragraaf_id", paragraafId),
-    supabase.from("kennis_paragraaf_context").delete().eq("subject_id", subjectId).eq("paragraaf_id", paragraafId),
-    supabase.from("kennis_oefenvragen").delete().eq("subject_id", subjectId).eq("paragraaf_id", paragraafId),
-    supabase.from("kennis_woordenlijsten").delete().eq("subject_id", subjectId).eq("paragraaf_id", paragraafId),
-  ]);
-  const fout = onderdelenRes.error || contextRes.error || oefenvragenRes.error || woordenlijstenRes.error;
-  if (fout) return { error: fout.message };
 
   revalidateVak(subjectId);
   return { success: true };
@@ -949,11 +922,12 @@ const StructuurAanpassingSchema = z.object({
       z.object({
         paragraafId: z.string(),
         hoofdstuk: z.string(),
+        categorie: z.enum(["grammatica", "woordenschat", "zinnen", "praktijk"]),
         titel: z.string(),
       })
     )
     .describe(
-      "ALLEEN meesturen als de ouder vraagt om de structuur van AL BESTAANDE (eerder geïmporteerde) kennisbank-inhoud van dit vak aan te passen - bv. hoofdstukken/units hernoemen, paragrafen anders groeperen of retitelen, zodat 'Oefenen' bij het kind en de vakdocent weer bij de theorie aansluiten. Bij invullen: de VOLLEDIGE lijst van ALLE bestaande paragrafen hieronder, ook de ongewijzigde, met EXACT dezelfde paragraafId's (die mogen nooit wijzigen - alleen hoofdstuk/titel). Leeg als hier niet om gevraagd is."
+      "ALLEEN meesturen als de ouder vraagt om de structuur van AL BESTAANDE (eerder geïmporteerde) kennisbank-inhoud van dit vak aan te passen - bv. hoofdstukken/units hernoemen, paragrafen anders groeperen (ook naar een andere categorie) of retitelen, zodat 'Oefenen' bij het kind en de vakdocent weer bij de theorie aansluiten. Bij invullen: de VOLLEDIGE lijst van ALLE bestaande paragrafen hieronder, ook de ongewijzigde, met EXACT dezelfde paragraafId's (die mogen nooit wijzigen - het zijn interne id's, geen paragraafnummers - alleen hoofdstuk/categorie/titel mogen wijzigen). Leeg als hier niet om gevraagd is."
     ),
   paragraafActies: z
     .array(
@@ -969,8 +943,7 @@ const StructuurAanpassingSchema = z.object({
     .describe("ALLEEN als de ouder expliciet vraagt om een AL BESTAANDE paragraaf te publiceren of (helemaal) te verwijderen. Anders leeg."),
   leegmaken: z
     .object({
-      kennisbank: z.boolean().describe("Alle kennisonderdelen/context/oefenvragen/woordenlijsten van dit vak wissen."),
-      materialen: z.boolean().describe("De oudere, losse lesstof-bestanden (materials) van dit vak wissen."),
+      kennisbank: z.boolean().describe("De hele kennisbank (inhoudsopgave + onderdelen/context/oefenvragen/woordenlijsten) van dit vak wissen."),
       voortgang: z.boolean().describe("De oefenresultaten/geschiedenis van dit vak wissen."),
     })
     .nullable()
@@ -981,17 +954,18 @@ const StructuurAanpassingSchema = z.object({
 });
 
 interface VakParagraaf {
-  paragraafId: string;
+  id: string;
+  hoofdstukId: string;
   hoofdstuk: string;
+  categorie: MethodeCategorie;
+  code: string;
   titel: string;
-  heeftContext: boolean;
-  status: KennisOnderdeelStatus;
 }
 
 interface VakContext {
   naam: string;
   huidigeTutorInstructies: string;
-  gepubliceerdeHoofdstukken: string[];
+  hoofdstukken: string[];
   heeftWoordenschat: boolean;
   heeftZinnen: boolean;
   paragrafen: VakParagraaf[];
@@ -1006,19 +980,19 @@ function bouwStructuurAanpassingPrompt(
   return [
     `Vak: ${vak.naam} (2 havo, methode met units/hoofdstukken).`,
     `Huidige instructietekst voor de AI-vakdocent van dit vak: ${vak.huidigeTutorInstructies ? `"${vak.huidigeTutorInstructies}"` : "(nog geen)"}`,
-    `Al gepubliceerde kennisbank: hoofdstukken ${vak.gepubliceerdeHoofdstukken.length > 0 ? vak.gepubliceerdeHoofdstukken.join(", ") : "(nog geen)"}${
+    `Bestaande hoofdstukken: ${vak.hoofdstukken.length > 0 ? vak.hoofdstukken.join(", ") : "(nog geen)"}${
       vak.heeftWoordenschat || vak.heeftZinnen
         ? `, bevat ${[vak.heeftWoordenschat && "woordenschat-lijsten", vak.heeftZinnen && "zinnen/uitdrukkingen-lijsten"].filter(Boolean).join(" en ")}`
         : ""
     }.`,
     vak.paragrafen.length > 0
-      ? `Bestaande paragrafen van dit vak (dit bepaalt zowel de indeling in "Oefenen" bij het kind als de kopjes die de vakdocent gebruikt):\n${vak.paragrafen
-          .map((p) => `- paragraafId "${p.paragraafId}": hoofdstuk "${p.hoofdstuk}", titel "${p.titel}", status ${p.status}`)
+      ? `Bestaande paragrafen van dit vak - de inhoudsopgave, dit bepaalt zowel de indeling in "Oefenen" bij het kind als de kopjes die de vakdocent gebruikt (paragraafId is een intern id, geen paragraafnummer):\n${vak.paragrafen
+          .map((p) => `- paragraafId "${p.id}": hoofdstuk "${p.hoofdstuk}", categorie "${p.categorie}", nummer "${p.code}", titel "${p.titel}"`)
           .join("\n")}`
       : "Dit vak heeft nog geen eerder geïmporteerde paragrafen.",
     "",
     "Dit is de huidige voorgestelde indeling van nu geüploade kennisbank-bestanden, nog niet opgeslagen. Elk bestand krijgt een hoofdstuk/unit, een paragraaf-/lesnummer en een titel.",
-    "Jij bent DE volledige assistent voor het beheer van de kennisbank en de AI-vakdocent van dit vak - er is geen andere manier meer om dit aan te passen dan via jou. Je mag zelf: bestanden importeren of uit de wachtrij halen, de tutor-instructies bijwerken, de hoofdstuk/titel-indeling van AL BESTAANDE paragrafen aanpassen, een bestaande paragraaf publiceren of volledig verwijderen, en (alleen op expliciet verzoek) de hele kennisbank/materialen/voortgang van dit vak wissen - niet alleen dingen voorstellen.",
+    "Jij bent DE volledige assistent voor het beheer van de kennisbank en de AI-vakdocent van dit vak - er is geen andere manier meer om dit aan te passen dan via jou. Je mag zelf: bestanden importeren of uit de wachtrij halen, de tutor-instructies bijwerken, de hoofdstuk/titel-indeling van AL BESTAANDE paragrafen aanpassen, een bestaande paragraaf publiceren of volledig verwijderen, en (alleen op expliciet verzoek) de hele kennisbank/voortgang van dit vak wissen - niet alleen dingen voorstellen.",
     "",
     "Huidige indeling van nu geüploade bestanden:",
     items.length > 0 ? items.map((it) => `- "${it.bestandsnaam}": hoofdstuk "${it.hoofdstuk}", paragraaf/les "${it.paragraafId}", titel "${it.titel}"`).join("\n") : "(geen bestanden in de wachtrij)",
@@ -1031,7 +1005,7 @@ function bouwStructuurAanpassingPrompt(
     "- Pas de indeling van de bestanden in de wachtrij aan volgens de instructie. Geef de VOLLEDIGE bijgewerkte lijst terug, met exact dezelfde bestandsnamen als hierboven (niets weglaten) - alleen hoofdstuk/paragraafId/titel mogen wijzigen. Leeg als er geen bestanden in de wachtrij staan.",
     "- Vraagt de ouder expliciet om een bestand te importeren/opslaan/verwerken, of te verwijderen/weghalen? Zet dat in 'acties'. Anders 'acties' leeg laten - een indeling aanpassen is geen actie.",
     "- Vraagt de ouder om de AI-vakdocent/tutor aan te passen of beter te laten aansluiten bij de kennisbank van dit vak? Schrijf dan in 'tutorInstructies' een VOLLEDIGE nieuwe instructietekst (geen diff) - kort en concreet, gericht op HOE de tutor moet coachen bij dit specifieke vak (bv. bij een taalvak: woordenschat/zinnen letterlijk laten overhoren, grammatica uitleggen), passend bij de hoofdstukken/categorieën/paragrafen hierboven en bij wat de ouder vraagt. Bouw voort op de huidige instructietekst i.p.v. 'm te negeren, tenzij de ouder vraagt om 'm te vervangen. Anders 'tutorInstructies': null.",
-    "- Vraagt de ouder om de structuur/indeling van AL BESTAANDE paragrafen aan te passen (hoofdstukken hernoemen, anders groeperen, paragrafen retitelen), of om 'Oefenen'/de bestaande kennisbank beter te laten aansluiten bij de theorie? Vul dan 'paragrafen' met de VOLLEDIGE bijgewerkte lijst (alle paragrafen hierboven, ook ongewijzigde), met exact dezelfde paragraafId's - alleen hoofdstuk/titel mogen wijzigen. Anders 'paragrafen' leeg laten.",
+    "- Vraagt de ouder om de structuur/indeling van AL BESTAANDE paragrafen aan te passen (hoofdstukken hernoemen, anders groeperen/verplaatsen naar een andere categorie, paragrafen retitelen), of om 'Oefenen'/de bestaande kennisbank beter te laten aansluiten bij de theorie? Vul dan 'paragrafen' met de VOLLEDIGE bijgewerkte lijst (alle paragrafen hierboven, ook ongewijzigde), met exact dezelfde paragraafId's - alleen hoofdstuk/categorie/titel mogen wijzigen. Anders 'paragrafen' leeg laten.",
     "- Vraagt de ouder om een AL BESTAANDE paragraaf te publiceren (klaar voor het kind) of volledig te verwijderen? Zet dat in 'paragraafActies' met het juiste paragraafId. Bedoelt de ouder 'alles publiceren'/'alles verwijderen'? Doe dat dan voor elke bestaande paragraaf die dat nog nodig heeft (concept -> publiceren; alles -> verwijderen). Anders leeg laten.",
     "- Vraagt de ouder ONMISKENBAAR om (een deel van) de inhoud van dit vak helemaal te wissen/leeg te maken/opnieuw te beginnen? Vul dan 'leegmaken' in met wat precies gewist moet worden. Twijfel je of dit echt bedoeld wordt (bv. een vage 'ruim het wat op')? Vraag dan EERST expliciete bevestiging in 'antwoord' en laat 'leegmaken' op null - pas invullen zodra de ouder dat bevestigt.",
     "- Twijfel je welk bestand/paragraaf bedoeld wordt (bv. bij 'doe ze allemaal' terwijl dat niet duidelijk is)? Vraag in 'antwoord' om verduidelijking en laat 'acties'/'paragrafen'/'paragraafActies'/'leegmaken' dan leeg.",
@@ -1063,47 +1037,39 @@ export async function pasKennisbankStructuurAan(
   const { data: subject } = await supabase.from("subjects").select("name, ai_instructions, family_id").eq("id", subjectId).single();
   if (!subject || subject.family_id !== familyId) return { error: "Vak niet gevonden." };
 
-  const [{ data: hoofdstukRijen }, { data: woordenlijstRijen }, { data: contextRijen }, { data: onderdelenRijen }] = await Promise.all([
-    supabase.from("kennis_paragraaf_context").select("hoofdstuk").eq("subject_id", subjectId).eq("status", "gepubliceerd"),
-    supabase.from("kennis_woordenlijsten").select("categorie").eq("subject_id", subjectId).eq("status", "gepubliceerd"),
-    supabase.from("kennis_paragraaf_context").select("paragraaf_id, hoofdstuk, titel, status").eq("subject_id", subjectId),
-    supabase.from("kennis_onderdelen").select("paragraaf_id, hoofdstuk, status").eq("subject_id", subjectId).not("paragraaf_id", "is", null),
-  ]);
+  const { data: paragraafRijen } = await supabase
+    .from("methode_paragrafen")
+    .select("id, hoofdstuk_id, categorie, code, titel, methode_hoofdstukken!inner(subject_id, naam)")
+    .eq("methode_hoofdstukken.subject_id", subjectId);
 
-  // Alle bestaande paragrafen van dit vak, met context als leidende bron
-  // (rijkst) en onderdelen als terugval voor een paragraaf die alleen
-  // losse regels heeft (nog) zonder eigen context-rij.
   const paragraafMap = new Map<string, VakParagraaf>();
-  for (const c of contextRijen ?? []) {
-    paragraafMap.set(c.paragraaf_id, {
-      paragraafId: c.paragraaf_id,
-      hoofdstuk: c.hoofdstuk,
-      titel: c.titel,
-      heeftContext: true,
-      status: c.status as KennisOnderdeelStatus,
-    });
-  }
-  for (const o of onderdelenRijen ?? []) {
-    const pid = o.paragraaf_id as string;
-    if (paragraafMap.has(pid)) continue;
-    paragraafMap.set(pid, {
-      paragraafId: pid,
-      hoofdstuk: o.hoofdstuk,
-      titel: `Paragraaf ${pid}`,
-      heeftContext: false,
-      status: o.status as KennisOnderdeelStatus,
+  for (const p of (paragraafRijen ?? []) as unknown as {
+    id: string;
+    hoofdstuk_id: string;
+    categorie: MethodeCategorie;
+    code: string;
+    titel: string;
+    methode_hoofdstukken: { naam: string };
+  }[]) {
+    paragraafMap.set(p.id, {
+      id: p.id,
+      hoofdstukId: p.hoofdstuk_id,
+      hoofdstuk: p.methode_hoofdstukken.naam,
+      categorie: p.categorie,
+      code: p.code,
+      titel: p.titel,
     });
   }
 
   const vak: VakContext = {
     naam: subject.name,
     huidigeTutorInstructies: subject.ai_instructions ?? "",
-    gepubliceerdeHoofdstukken: Array.from(new Set((hoofdstukRijen ?? []).map((r) => r.hoofdstuk))).sort((a, b) =>
+    hoofdstukken: Array.from(new Set(Array.from(paragraafMap.values()).map((p) => p.hoofdstuk))).sort((a, b) =>
       a.localeCompare(b, undefined, { numeric: true })
     ),
-    heeftWoordenschat: (woordenlijstRijen ?? []).some((r) => r.categorie === "woordenschat"),
-    heeftZinnen: (woordenlijstRijen ?? []).some((r) => r.categorie === "zinnen"),
-    paragrafen: Array.from(paragraafMap.values()).sort((a, b) => a.paragraafId.localeCompare(b.paragraafId, undefined, { numeric: true })),
+    heeftWoordenschat: Array.from(paragraafMap.values()).some((p) => p.categorie === "woordenschat"),
+    heeftZinnen: Array.from(paragraafMap.values()).some((p) => p.categorie === "zinnen"),
+    paragrafen: Array.from(paragraafMap.values()).sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true })),
   };
 
   if (items.length === 0 && vak.paragrafen.length === 0) {
@@ -1119,51 +1085,47 @@ export async function pasKennisbankStructuurAan(
   }
 
   // Herstructurering van bestaande paragrafen meteen toepassen (niet aan de
-  // client overlaten) - paragraaf_id zelf blijft altijd hetzelfde, dus dit
-  // kan nooit botsen met de unique-constraint op (subject_id, paragraaf_id).
+  // client overlaten) - het interne id zelf wijzigt nooit (voorkomt
+  // botsingen met de unique-constraint op (hoofdstuk_id, categorie, code)),
+  // alleen hoofdstuk/categorie/titel.
   let paragrafenBijgewerkt = 0;
   for (const p of res.paragrafen) {
     const huidig = paragraafMap.get(p.paragraafId);
     if (!huidig) continue; // AI kan geen nieuwe paragraaf verzinnen via dit pad
-    const hoofdstukGewijzigd = p.hoofdstuk.trim() && p.hoofdstuk !== huidig.hoofdstuk;
-    const titelGewijzigd = huidig.heeftContext && p.titel.trim() && p.titel !== huidig.titel;
-    if (!hoofdstukGewijzigd && !titelGewijzigd) continue;
+    const hoofdstukNaam = p.hoofdstuk.trim() || huidig.hoofdstuk;
+    const categorie = p.categorie || huidig.categorie;
+    const titel = p.titel.trim() || huidig.titel;
+    const hoofdstukGewijzigd = hoofdstukNaam !== huidig.hoofdstuk;
+    const categorieGewijzigd = categorie !== huidig.categorie;
+    const titelGewijzigd = titel !== huidig.titel;
+    if (!hoofdstukGewijzigd && !categorieGewijzigd && !titelGewijzigd) continue;
 
-    if (hoofdstukGewijzigd) {
-      await Promise.all([
-        supabase.from("kennis_onderdelen").update({ hoofdstuk: p.hoofdstuk }).eq("subject_id", subjectId).eq("paragraaf_id", p.paragraafId),
-        supabase.from("kennis_oefenvragen").update({ hoofdstuk: p.hoofdstuk }).eq("subject_id", subjectId).eq("paragraaf_id", p.paragraafId),
-        supabase.from("kennis_woordenlijsten").update({ hoofdstuk: p.hoofdstuk }).eq("subject_id", subjectId).eq("paragraaf_id", p.paragraafId),
-      ]);
+    try {
+      const hoofdstukId = hoofdstukGewijzigd ? await getOfMaakHoofdstuk(supabase, familyId, subjectId, hoofdstukNaam) : huidig.hoofdstukId;
+      const { error } = await supabase
+        .from("methode_paragrafen")
+        .update({ hoofdstuk_id: hoofdstukId, categorie, titel, updated_at: new Date().toISOString() })
+        .eq("id", p.paragraafId);
+      if (error) continue; // bv. botsing met een al bestaande paragraaf onder het doel-hoofdstuk/categorie - deze ene overslaan
+      await syncKennisTekstVelden(supabase, p.paragraafId, hoofdstukNaam, huidig.code, titel);
+      paragrafenBijgewerkt++;
+    } catch {
+      // Best-effort per paragraaf - 1 mislukte verplaatsing mag de rest van de batch niet blokkeren.
     }
-    if (huidig.heeftContext) {
-      const patch: { hoofdstuk?: string; titel?: string } = {};
-      if (hoofdstukGewijzigd) patch.hoofdstuk = p.hoofdstuk;
-      if (titelGewijzigd) patch.titel = p.titel;
-      if (Object.keys(patch).length > 0) {
-        await supabase.from("kennis_paragraaf_context").update(patch).eq("subject_id", subjectId).eq("paragraaf_id", p.paragraafId);
-      }
-    } else if (hoofdstukGewijzigd) {
-      // Geen context-rij (paragraaf bestaat alleen uit losse onderdelen) -
-      // hoofdstuk stond dan alleen op kennis_onderdelen, hierboven al gezet.
-    }
-    paragrafenBijgewerkt++;
   }
-  // Publiceren/verwijderen van AL BESTAANDE paragrafen - hergebruikt dezelfde
-  // beproefde acties als de oude beheer-knoppen.
+  // Publiceren/verwijderen van AL BESTAANDE paragrafen.
   for (const pa of res.paragraafActies) {
     if (!paragraafMap.has(pa.paragraafId)) continue;
-    if (pa.actie === "publiceren") await publiceerParagraaf(subjectId, pa.paragraafId);
-    else await verwijderParagraaf(subjectId, pa.paragraafId);
+    if (pa.actie === "publiceren") await publiceerMethodeParagraaf(subjectId, pa.paragraafId);
+    else await verwijderMethodeParagraaf(subjectId, pa.paragraafId);
     paragrafenBijgewerkt++;
   }
 
   // Vak (deels) leegmaken - alleen als de AI dit expliciet aangevraagd zag
   // (zie prompt: bij twijfel vraagt de AI eerst bevestiging i.p.v. dit te vullen).
-  if (res.leegmaken && (res.leegmaken.kennisbank || res.leegmaken.materialen || res.leegmaken.voortgang)) {
+  if (res.leegmaken && (res.leegmaken.kennisbank || res.leegmaken.voortgang)) {
     const wisResultaat = await wisVakInhoud(subjectId, {
       kennisbank: res.leegmaken.kennisbank,
-      materials: res.leegmaken.materialen,
       voortgang: res.leegmaken.voortgang,
     });
     if ("error" in wisResultaat && wisResultaat.error) {

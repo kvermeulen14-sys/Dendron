@@ -114,23 +114,12 @@ export async function verwijderVak(subjectId: string) {
     return { error: "Alleen ouders kunnen een vak verwijderen." };
   }
 
-  const { data: materials } = await supabase
-    .from("materials")
-    .select("file_url")
-    .eq("subject_id", subjectId)
-    .not("file_url", "is", null);
-
   const { error } = await supabase
     .from("subjects")
     .delete()
     .eq("id", subjectId)
     .eq("family_id", profile.family_id);
   if (error) return { error: error.message };
-
-  const bestandsPaden = (materials ?? []).map((m) => m.file_url).filter((p): p is string => Boolean(p));
-  if (bestandsPaden.length > 0) {
-    await supabase.storage.from("lesstof").remove(bestandsPaden);
-  }
 
   revalidatePath("/ouder/vakken");
   revalidatePath("/kind/vakken");

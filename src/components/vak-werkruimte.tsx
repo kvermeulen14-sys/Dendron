@@ -31,7 +31,7 @@ export function VakWerkruimte({
   initialMessages: ChatMessage[];
   initialOpdrachtMessages?: ChatMessage[];
   initialModus?: (typeof TABS)[number]["modus"];
-  hoofdstukStructuur?: { hoofdstuk: string; onderwerpen: { paragraafId: string; titel: string }[] }[];
+  hoofdstukStructuur?: { hoofdstuk: string; onderwerpen: { id: string; code: string; titel: string }[] }[];
   overhoorSessies?: OverhoorSessie[];
   /** Dagen tot de eerstvolgende toets voor dit vak (null = geen toets gepland) - stuurt het automatische leerfase-advies bij Oefenen. */
   dagenTotToets?: number | null;

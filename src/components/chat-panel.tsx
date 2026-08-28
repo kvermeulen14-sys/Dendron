@@ -8,7 +8,6 @@ import { ChatInvoer } from "@/components/ui/chat-invoer";
 import { MarkdownTekst } from "@/components/markdown-tekst";
 import { VisualWeergave } from "@/components/visuals/visual-weergave";
 import { extraheerVisuals } from "@/lib/visuals";
-import { bewaarChatFotoAlsLesstof } from "@/lib/actions/materials";
 import type { ChatMessage } from "@/lib/types";
 
 type WeergaveBericht = ChatMessage & {
@@ -17,10 +16,6 @@ type WeergaveBericht = ChatMessage & {
   previewImageUrl?: string;
   /** Voor eerder opgeslagen berichten (na een refresh): getekende URL, opgelost bij het laden van de pagina. */
   imageUrl?: string;
-  /** Alleen voor een net-ontvangen antwoord op een foto: of die foto theorie of een opgave toont (zie /api/chat). */
-  fotoType?: "theorie" | "opgave" | null;
-  /** Opslagpad van de bijgevoegde foto van het VORIGE (user-)bericht - nodig om 'm evt. als lesstof te bewaren. */
-  fotoPadOmTeBewaren?: string | null;
 };
 type Modus = "algemeen" | "opdracht";
 
@@ -77,19 +72,9 @@ export function ChatPanel({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [foto, setFoto] = useState<{ previewUrl: string; base64: string; mimeType: string } | null>(null);
-  const [bewaardeFotoIds, setBewaardeFotoIds] = useState<Set<string>>(new Set());
-  const [bewaarBezigId, setBewaarBezigId] = useState<string | null>(null);
   const fotoInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const tekst = MODUS_TEKST[modus];
-
-  async function bewaarAlsLesstof(bericht: WeergaveBericht) {
-    if (!bericht.fotoPadOmTeBewaren) return;
-    setBewaarBezigId(bericht.id);
-    const res = await bewaarChatFotoAlsLesstof(subjectId, bericht.fotoPadOmTeBewaren, `Foto - ${subjectName}`, bericht.content);
-    setBewaarBezigId(null);
-    if (!res.error) setBewaardeFotoIds((prev) => new Set(prev).add(bericht.id));
-  }
 
   async function fotoGekozen(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -160,8 +145,6 @@ export function ChatPanel({
           image_path: null,
           created_at: new Date().toISOString(),
           images: data.images,
-          fotoType: data.fotoType ?? null,
-          fotoPadOmTeBewaren: data.imagePath ?? null,
         },
       ]);
     } catch (e) {
@@ -232,25 +215,6 @@ export function ChatPanel({
                       <img src={img.url} alt={img.title} className="h-28 w-auto object-cover" />
                     </a>
                   ))}
-                </div>
-              )}
-              {m.fotoType === "theorie" && m.fotoPadOmTeBewaren && (
-                <div className="mt-1.5">
-                  {bewaardeFotoIds.has(m.id) ? (
-                    <p className="flex items-center gap-1.5 text-xs font-medium text-emerald-600">
-                      <Icon name="check" size={13} />
-                      Toegevoegd aan lesstof
-                    </p>
-                  ) : (
-                    <button
-                      onClick={() => bewaarAlsLesstof(m)}
-                      disabled={bewaarBezigId === m.id}
-                      className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700 disabled:opacity-50"
-                    >
-                      <Icon name={bewaarBezigId === m.id ? "loader" : "book-open"} size={13} className={bewaarBezigId === m.id ? "animate-spin" : undefined} />
-                      Deze foto is theorie - bewaar als lesstof
-                    </button>
-                  )}
                 </div>
               )}
             </div>

@@ -2,7 +2,6 @@ export type Role = "ouder" | "kind";
 
 export type PlanningType = "huiswerk" | "toets" | "prive" | "leermoment";
 export type PlanningStatus = "voorstel" | "open" | "klaar";
-export type MaterialBron = "tekst" | "pdf" | "foto";
 export type RoosterType = "school" | "anders";
 export type UitzonderingType = "vervallen" | "gewijzigd" | "extra";
 export type JaarEventType = "vakantie" | "toetsweek" | "anders";
@@ -39,22 +38,6 @@ export interface Subject {
   color: string;
   ai_instructions: string;
   created_by: string;
-  created_at: string;
-}
-
-export interface Material {
-  id: string;
-  family_id: string;
-  subject_id: string;
-  title: string;
-  content: string;
-  file_url: string | null;
-  hoofdstuk: string | null;
-  opdrachten: string | null;
-  image_path: string | null;
-  bron_type: MaterialBron;
-  uploaded_by: string;
-  uploaded_by_role: Role;
   created_at: string;
 }
 
@@ -181,12 +164,38 @@ export interface ChatMessage {
 
 export type KennisOnderdeelStatus = "concept" | "gepubliceerd";
 
+/** De inhoudsopgave van de methode van 1 vak: Hoofdstuk -> Categorie -> Paragraaf. Alle kennis_*-content hangt hieraan via methode_paragraaf_id. */
+export type MethodeCategorie = "grammatica" | "woordenschat" | "zinnen" | "praktijk";
+
+export interface MethodeHoofdstuk {
+  id: string;
+  family_id: string;
+  subject_id: string;
+  naam: string;
+  volgorde: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MethodeParagraaf {
+  id: string;
+  family_id: string;
+  hoofdstuk_id: string;
+  categorie: MethodeCategorie;
+  code: string;
+  titel: string;
+  volgorde: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface KennisOnderdeel {
   id: string;
   family_id: string;
   subject_id: string;
   hoofdstuk: string;
   paragraaf_id: string | null;
+  methode_paragraaf_id: string | null;
   naam: string;
   volgorde: number;
   regel: string;
@@ -213,6 +222,7 @@ export interface KennisParagraafContext {
   subject_id: string;
   hoofdstuk: string;
   paragraaf_id: string;
+  methode_paragraaf_id: string | null;
   titel: string;
   leerdoelen: string | null;
   voorkennis: string | null;
@@ -233,6 +243,7 @@ export interface KennisOefenvraag {
   subject_id: string;
   hoofdstuk: string;
   paragraaf_id: string;
+  methode_paragraaf_id: string | null;
   kennis_onderdeel_id: string | null;
   niveau: string | null;
   vraag: string;
@@ -262,6 +273,7 @@ export interface KennisWoordenlijst {
   subject_id: string;
   hoofdstuk: string;
   paragraaf_id: string;
+  methode_paragraaf_id: string | null;
   titel: string;
   categorie: KennisWoordenlijstCategorie;
   richting: KennisWoordenlijstRichting;

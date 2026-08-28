@@ -3,20 +3,14 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createGeminiClient, vereistGeminiKey, genereerGestructureerd } from "@/lib/gemini";
 import {
-  GROTE_KENNISBANK_DREMPEL,
-  kiesBesteMateriaal,
-  kiesWillekeurigeSelectie,
   bouwKennisbankUitOnderdelen,
-  onderdelenAlsMateriaalRijen,
   type KennisOnderdeelRij,
   type KennisParagraafContextRij,
   type KennisWoordenlijstRij,
-  type MateriaalRij,
 } from "@/lib/kennisbank";
 import { bouwOefenGeschiedenisBlok, type OefenSessieVoorChat } from "@/lib/oefengeschiedenis";
 
 const MAX_KENNISBANK_TEKENS = 14000;
-const MAX_OVERHOOR_MATERIALEN = 6;
 
 const ResponsSchema = z.object({
   feedback: z.string().describe("Korte, vriendelijke feedback op het vorige antwoord, of leeg als er nog geen antwoord was"),
@@ -83,27 +77,6 @@ const OPMAAK_INSTRUCTIE = `Opmaak:
 \`\`\`
 ("operator" is "×", "+", "-" of "÷"; "uitkomst" is optioneel, laat weg als je die nog niet geeft; zet dit blok in de vraag- of feedbacktekst zelf op de plek waar de breuk zou staan)`;
 
-const MAX_FRAGMENT_TEKENS = 500;
-
-// Toont een kort, LETTERLIJK stukje uit de eigen lesstof bij de feedback
-// (i.p.v. dat de AI de theorie parafraseert, wat kan hallucineren) - de
-// leerling kan zo de echte uitleg uit het boek erbij lezen. Puur
-// deterministisch (geen AI-call), hergebruikt dezelfde matching als de
-// vakdocent-chat. `materialen` kan hier ook een MateriaalRij-projectie van
-// kennisonderdelen zijn (zie onderdelenAlsMateriaalRijen).
-function kiesLesstofFragment(materialen: MateriaalRij[], zoekTekst: string) {
-  const beste = kiesBesteMateriaal(materialen, zoekTekst);
-  if (!beste || !beste.content.trim()) return null;
-
-  let fragment = beste.content.trim();
-  if (fragment.length > MAX_FRAGMENT_TEKENS) {
-    const afgekapt = fragment.slice(0, MAX_FRAGMENT_TEKENS);
-    const laatstePunt = Math.max(afgekapt.lastIndexOf(". "), afgekapt.lastIndexOf(".\n"));
-    fragment = (laatstePunt > 100 ? afgekapt.slice(0, laatstePunt + 1) : afgekapt) + "...";
-  }
-  return { titel: beste.title, tekst: fragment };
-}
-
 const UitlegSchema = z.object({
   uitleg: z
     .string()
@@ -132,11 +105,6 @@ export async function POST(request: Request) {
   const { data: subject } = await supabase.from("subjects").select("id, name").eq("id", subjectId).single();
   if (!subject) return NextResponse.json({ error: "Vak niet gevonden." }, { status: 404 });
 
-  const { data: materials } = await supabase
-    .from("materials")
-    .select("id, title, content, hoofdstuk")
-    .eq("subject_id", subjectId);
-
   const { data: kennisOnderdelen } = await supabase
     .from("kennis_onderdelen")
     .select("paragraaf_id, naam, regel, voorbeelden, gecombineerd_voorbeeld, tip, uitzondering, fout_voorbeeld")
@@ -164,24 +132,14 @@ export async function POST(request: Request) {
     .order("created_at", { ascending: false })
     .limit(3);
 
-  // Zelfde "1 bron van waarheid"-regel als de vakdocent-chat: zodra dit vak
-  // gepubliceerde kennisonderdelen of woordenlijsten heeft, gebruikt Oefenen
-  // die - niet meer de oudere materials-tekst.
   const heeftKennisOnderdelen = (kennisOnderdelen?.length ?? 0) > 0 || (kennisWoordenlijsten?.length ?? 0) > 0;
 
-  if (!heeftKennisOnderdelen && (!materials || materials.length === 0)) {
+  if (!heeftKennisOnderdelen) {
     return NextResponse.json(
       { error: "Er is nog geen lesstof voor dit vak, dus overhoren kan nog niet." },
       { status: 400 }
     );
   }
-
-  // Gebruikt voor het kiezen van het lesstof-fragment bij feedback (en, bij
-  // een grote kennisbank, voor de willekeurige deelselectie hieronder) -
-  // bij kennisonderdelen is dit een projectie ervan naar hetzelfde vorm.
-  const materialenVoorMatching: MateriaalRij[] = heeftKennisOnderdelen
-    ? onderdelenAlsMateriaalRijen((kennisOnderdelen ?? []) as KennisOnderdeelRij[])
-    : (materials ?? []);
 
   const leerfaseInstructie = LEERFASE_INSTRUCTIE[leerfase] ?? LEERFASE_INSTRUCTIE.tussentijds;
 
@@ -191,21 +149,11 @@ export async function POST(request: Request) {
   if (modus === "uitleg") {
     if (!vorigeVraag) return NextResponse.json({ error: "Geen vraag om uit te leggen." }, { status: 400 });
 
-    let kennisbankUitleg: string;
-    if (heeftKennisOnderdelen) {
-      kennisbankUitleg = bouwKennisbankUitOnderdelen(
-        (kennisOnderdelen ?? []) as KennisOnderdeelRij[],
-        (kennisContexten ?? []) as KennisParagraafContextRij[],
-        (kennisWoordenlijsten ?? []) as KennisWoordenlijstRij[]
-      );
-    } else {
-      const materialenLijst = materials ?? [];
-      const overhoorMaterialenUitleg =
-        materialenLijst.length > GROTE_KENNISBANK_DREMPEL
-          ? kiesWillekeurigeSelectie(materialenLijst, MAX_OVERHOOR_MATERIALEN)
-          : materialenLijst;
-      kennisbankUitleg = overhoorMaterialenUitleg.map((m) => `## ${m.title}\n${m.content}`).join("\n\n");
-    }
+    let kennisbankUitleg: string = bouwKennisbankUitOnderdelen(
+      (kennisOnderdelen ?? []) as KennisOnderdeelRij[],
+      (kennisContexten ?? []) as KennisParagraafContextRij[],
+      (kennisWoordenlijsten ?? []) as KennisWoordenlijstRij[]
+    );
     if (kennisbankUitleg.length > MAX_KENNISBANK_TEKENS) {
       kennisbankUitleg = kennisbankUitleg.slice(0, MAX_KENNISBANK_TEKENS) + "\n[...ingekort...]";
     }
@@ -233,19 +181,11 @@ ${kennisbankUitleg}`;
     }
   }
 
-  let kennisbank: string;
-  if (heeftKennisOnderdelen) {
-    kennisbank = bouwKennisbankUitOnderdelen(
-      (kennisOnderdelen ?? []) as KennisOnderdeelRij[],
-      (kennisContexten ?? []) as KennisParagraafContextRij[],
-      (kennisWoordenlijsten ?? []) as KennisWoordenlijstRij[]
-    );
-  } else {
-    const materialenLijst = materials ?? [];
-    const overhoorMaterialen =
-      materialenLijst.length > GROTE_KENNISBANK_DREMPEL ? kiesWillekeurigeSelectie(materialenLijst, MAX_OVERHOOR_MATERIALEN) : materialenLijst;
-    kennisbank = overhoorMaterialen.map((m) => `## ${m.title}\n${m.content}`).join("\n\n");
-  }
+  let kennisbank: string = bouwKennisbankUitOnderdelen(
+    (kennisOnderdelen ?? []) as KennisOnderdeelRij[],
+    (kennisContexten ?? []) as KennisParagraafContextRij[],
+    (kennisWoordenlijsten ?? []) as KennisWoordenlijstRij[]
+  );
   if (kennisbank.length > MAX_KENNISBANK_TEKENS) {
     kennisbank = kennisbank.slice(0, MAX_KENNISBANK_TEKENS) + "\n[...ingekort...]";
   }
@@ -296,35 +236,22 @@ ${kennisbank}`;
 
     // Bij een niet-volledig-goed antwoord: het echte lesstof-fragment erbij
     // zoeken (deterministisch, geen AI-parafrase) zodat de leerling de
-    // theorie zelf kan naslaan terwijl het nog vers is.
-    //
-    // Bij kennisonderdelen eerst proberen het onderdeel op te zoeken dat de
-    // AI zelf noemde (beoordeeldOnderdeelNaam) - exact en betrouwbaar, i.p.v.
-    // te gokken via woord-overlap. Die keyword-matching (kiesLesstofFragment)
-    // was gebouwd voor hele materials-paragrafen (met een paragraafnummer als
-    // sterk signaal); bij korte, losse kennisonderdelen zonder paragraafnummer
-    // in de vraagtekst zelf bleek die matching onbetrouwbaar en koos hij
-    // geregeld een onderdeel dat inhoudelijk niets met de vraag te maken had.
+    // theorie zelf kan naslaan terwijl het nog vers is. Alleen via het
+    // onderdeel dat de AI zelf noemde (beoordeeldOnderdeelNaam) - exact en
+    // betrouwbaar, i.p.v. te gokken via woord-overlap. Zonder geldige
+    // naam-match liever geen fragment tonen dan een willekeurig/irrelevant
+    // onderdeel via zwakke keyword-matching.
     let lesstofFragment: { titel: string; tekst: string } | null = null;
-    if (vorigeVraag && vorigAntwoord && (geparsed.beoordeling === "deels" || geparsed.beoordeling === "fout")) {
-      const onderdeelViaNaam =
-        heeftKennisOnderdelen && geparsed.beoordeeldOnderdeelNaam
-          ? (kennisOnderdelen ?? []).find(
-              (o) => o.naam.trim().toLowerCase() === geparsed.beoordeeldOnderdeelNaam!.trim().toLowerCase()
-            )
-          : undefined;
-
+    if (vorigeVraag && vorigAntwoord && (geparsed.beoordeling === "deels" || geparsed.beoordeling === "fout") && geparsed.beoordeeldOnderdeelNaam) {
+      const onderdeelViaNaam = (kennisOnderdelen ?? []).find(
+        (o) => o.naam.trim().toLowerCase() === geparsed.beoordeeldOnderdeelNaam!.trim().toLowerCase()
+      );
       if (onderdeelViaNaam) {
         lesstofFragment = {
           titel: onderdeelViaNaam.naam,
           tekst: [onderdeelViaNaam.regel, ...onderdeelViaNaam.voorbeelden].join(" "),
         };
-      } else if (!heeftKennisOnderdelen) {
-        lesstofFragment = kiesLesstofFragment(materialenVoorMatching, `${vorigeVraag} ${vorigAntwoord}`);
       }
-      // heeftKennisOnderdelen zonder geldige naam-match: liever geen fragment
-      // tonen dan een willekeurig/irrelevant onderdeel via de zwakke
-      // keyword-matching.
     }
 
     return NextResponse.json({ ...geparsed, lesstofFragment });
