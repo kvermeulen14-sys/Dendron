@@ -173,6 +173,14 @@ export function VakInhoudWizard({
       else if (actie.actie === "verwijderen") verwijderItem(item.id);
     }
 
+    if (res.paragrafenBijgewerkt > 0) router.refresh();
+
+    if ("leegmaakFout" in res && res.leegmaakFout) {
+      setChatBerichten((huidig) => [...huidig, { rol: "ai", tekst: `Leegmaken mislukt: ${res.leegmaakFout}` }]);
+    } else if (res.leegmaken) {
+      router.refresh();
+    }
+
     if (res.tutorInstructies !== null) {
       const formData = new FormData();
       formData.set("name", subject.name);
@@ -196,11 +204,12 @@ export function VakInhoudWizard({
           <Icon name="sparkles" size={18} />
         </span>
         <div className="min-w-0">
-          <p className="text-sm font-semibold text-slate-900">Lesstof toevoegen</p>
+          <p className="text-sm font-semibold text-slate-900">Vakdocent &amp; kennisbank</p>
           <p className="text-xs text-slate-500">
-            Sleep 1 of meerdere bestanden hierheen (foto, PDF, tekst/markdown) - de AI stelt per bestand een indeling
-            voor (hoofdstuk/paragraaf), die je hieronder kunt controleren en aanpassen voor het wordt opgeslagen.
-            Alles komt als concept binnen, publiceren doe je verderop.
+            Sleep hier 1 of meerdere bestanden heen (foto, PDF, tekst/markdown) - de AI stelt per bestand een indeling
+            voor (hoofdstuk/paragraaf) die je hieronder kunt controleren en aanpassen. Alles komt eerst als concept
+            binnen. Vraag daarna in de chat verderop om te publiceren, te herstructureren, de vakdocent af te
+            stemmen, of iets te verwijderen - dat gaat allemaal via die chat, er zijn geen aparte knoppen meer voor.
           </p>
         </div>
       </div>
@@ -371,14 +380,13 @@ export function VakInhoudWizard({
             <p className="text-sm font-semibold text-slate-900">Overzicht & bijsturen</p>
           </div>
           <p className="text-xs text-slate-500">
-            Dit is de indeling van alle bestanden hierboven samen. Typ hieronder een aanpassing (bv. &quot;zet
-            U1_L3_A.md bij Unit 2&quot;) of een opdracht (bv. &quot;importeer deze 3&quot;, &quot;haal dit bestand
-            weg&quot;, &quot;stem de vakdocent af op deze kennisbank&quot; of &quot;groepeer de bestaande paragrafen
-            opnieuw zodat Oefenen weer bij de theorie past&quot;) - de bot mag de indeling aanpassen, bestanden direct
-            importeren (als concept) of uit de wachtrij halen, de instructies van de AI-vakdocent bijwerken, én de
-            hoofdstuk/titel-indeling van AL eerder geïmporteerde paragrafen van dit vak herstructureren (dat bepaalt
-            zowel &quot;Oefenen&quot; bij het kind als de vakdocent). De velden per bestand blijven ook gewoon met de
-            hand aan te passen.
+            Dit is de indeling van alle bestanden hierboven samen. Typ hieronder wat je wilt - bv. &quot;zet
+            U1_L3_A.md bij Unit 2&quot;, &quot;importeer deze 3&quot;, &quot;haal dit bestand weg&quot;, &quot;stem de
+            vakdocent af op deze kennisbank&quot;, &quot;groepeer de bestaande paragrafen opnieuw zodat Oefenen weer
+            bij de theorie past&quot;, &quot;publiceer paragraaf 1.2&quot; of &quot;gooi de hele kennisbank van dit
+            vak weg, ik begin opnieuw&quot;. Dit is de enige plek om de kennisbank en de AI-vakdocent van dit vak te
+            beheren - het overzicht hieronder is puur om te zien wat er al staat. De velden per bestand hierboven
+            blijven ook gewoon met de hand aan te passen.
           </p>
 
           <div className="flex flex-col gap-2 rounded-lg bg-white p-2.5 text-xs">

@@ -5,6 +5,7 @@ import { z } from "zod";
 import { createGeminiClient, genereerGestructureerd } from "@/lib/gemini";
 import { GETAL_EN_RUIMTE_2HV13, hoofdstukLabel } from "@/lib/data/getal-en-ruimte-2hv13";
 import { ouderProfiel, revalidateVak, slaGegenereerdeOnderdelenOp, OnderdeelSchema } from "@/lib/kennis-onderdelen-shared";
+import { wisVakInhoud } from "@/lib/actions/vak-opschonen";
 import type { KennisOnderdeelStatus, KennisWoord } from "@/lib/types";
 
 const MAX_BRONTEKST_LENGTE = 60_000;
@@ -954,6 +955,28 @@ const StructuurAanpassingSchema = z.object({
     .describe(
       "ALLEEN meesturen als de ouder vraagt om de structuur van AL BESTAANDE (eerder geïmporteerde) kennisbank-inhoud van dit vak aan te passen - bv. hoofdstukken/units hernoemen, paragrafen anders groeperen of retitelen, zodat 'Oefenen' bij het kind en de vakdocent weer bij de theorie aansluiten. Bij invullen: de VOLLEDIGE lijst van ALLE bestaande paragrafen hieronder, ook de ongewijzigde, met EXACT dezelfde paragraafId's (die mogen nooit wijzigen - alleen hoofdstuk/titel). Leeg als hier niet om gevraagd is."
     ),
+  paragraafActies: z
+    .array(
+      z.object({
+        paragraafId: z.string(),
+        actie: z
+          .enum(["publiceren", "verwijderen"])
+          .describe(
+            "'publiceren' = alle concept-inhoud van deze AL BESTAANDE paragraaf definitief publiceren (zichtbaar voor het kind in Oefenen/de vakdocent). 'verwijderen' = alle inhoud (concept EN gepubliceerd) van deze paragraaf permanent weghalen."
+          ),
+      })
+    )
+    .describe("ALLEEN als de ouder expliciet vraagt om een AL BESTAANDE paragraaf te publiceren of (helemaal) te verwijderen. Anders leeg."),
+  leegmaken: z
+    .object({
+      kennisbank: z.boolean().describe("Alle kennisonderdelen/context/oefenvragen/woordenlijsten van dit vak wissen."),
+      materialen: z.boolean().describe("De oudere, losse lesstof-bestanden (materials) van dit vak wissen."),
+      voortgang: z.boolean().describe("De oefenresultaten/geschiedenis van dit vak wissen."),
+    })
+    .nullable()
+    .describe(
+      "ALLEEN invullen als de ouder EXPLICIET en ONMISKENBAAR vraagt om (een deel van) de inhoud van dit vak helemaal leeg te maken/wissen/opnieuw te beginnen (bv. 'gooi alle kennisbank van dit vak weg', 'begin dit vak opnieuw'). Dit is PERMANENT en onomkeerbaar - vraag bij twijfel eerst ter bevestiging in 'antwoord' en laat dit dan null. Anders altijd null."
+    ),
   antwoord: z.string().describe("Kort, vriendelijk antwoord aan de ouder over wat je hebt aangepast/gedaan (of een vraag als de instructie onduidelijk is). Max 2 zinnen."),
 });
 
@@ -962,6 +985,7 @@ interface VakParagraaf {
   hoofdstuk: string;
   titel: string;
   heeftContext: boolean;
+  status: KennisOnderdeelStatus;
 }
 
 interface VakContext {
@@ -989,12 +1013,12 @@ function bouwStructuurAanpassingPrompt(
     }.`,
     vak.paragrafen.length > 0
       ? `Bestaande paragrafen van dit vak (dit bepaalt zowel de indeling in "Oefenen" bij het kind als de kopjes die de vakdocent gebruikt):\n${vak.paragrafen
-          .map((p) => `- paragraafId "${p.paragraafId}": hoofdstuk "${p.hoofdstuk}", titel "${p.titel}"`)
+          .map((p) => `- paragraafId "${p.paragraafId}": hoofdstuk "${p.hoofdstuk}", titel "${p.titel}", status ${p.status}`)
           .join("\n")}`
       : "Dit vak heeft nog geen eerder geïmporteerde paragrafen.",
     "",
     "Dit is de huidige voorgestelde indeling van nu geüploade kennisbank-bestanden, nog niet opgeslagen. Elk bestand krijgt een hoofdstuk/unit, een paragraaf-/lesnummer en een titel.",
-    "Jij bent de assistent van deze wizard en mag zelf bestanden importeren of uit de wachtrij halen als de ouder dat vraagt, de tutor-instructies van dit vak bijwerken, en de hoofdstuk/titel-indeling van AL BESTAANDE paragrafen aanpassen - niet alleen dingen voorstellen.",
+    "Jij bent DE volledige assistent voor het beheer van de kennisbank en de AI-vakdocent van dit vak - er is geen andere manier meer om dit aan te passen dan via jou. Je mag zelf: bestanden importeren of uit de wachtrij halen, de tutor-instructies bijwerken, de hoofdstuk/titel-indeling van AL BESTAANDE paragrafen aanpassen, een bestaande paragraaf publiceren of volledig verwijderen, en (alleen op expliciet verzoek) de hele kennisbank/materialen/voortgang van dit vak wissen - niet alleen dingen voorstellen.",
     "",
     "Huidige indeling van nu geüploade bestanden:",
     items.length > 0 ? items.map((it) => `- "${it.bestandsnaam}": hoofdstuk "${it.hoofdstuk}", paragraaf/les "${it.paragraafId}", titel "${it.titel}"`).join("\n") : "(geen bestanden in de wachtrij)",
@@ -1008,7 +1032,9 @@ function bouwStructuurAanpassingPrompt(
     "- Vraagt de ouder expliciet om een bestand te importeren/opslaan/verwerken, of te verwijderen/weghalen? Zet dat in 'acties'. Anders 'acties' leeg laten - een indeling aanpassen is geen actie.",
     "- Vraagt de ouder om de AI-vakdocent/tutor aan te passen of beter te laten aansluiten bij de kennisbank van dit vak? Schrijf dan in 'tutorInstructies' een VOLLEDIGE nieuwe instructietekst (geen diff) - kort en concreet, gericht op HOE de tutor moet coachen bij dit specifieke vak (bv. bij een taalvak: woordenschat/zinnen letterlijk laten overhoren, grammatica uitleggen), passend bij de hoofdstukken/categorieën/paragrafen hierboven en bij wat de ouder vraagt. Bouw voort op de huidige instructietekst i.p.v. 'm te negeren, tenzij de ouder vraagt om 'm te vervangen. Anders 'tutorInstructies': null.",
     "- Vraagt de ouder om de structuur/indeling van AL BESTAANDE paragrafen aan te passen (hoofdstukken hernoemen, anders groeperen, paragrafen retitelen), of om 'Oefenen'/de bestaande kennisbank beter te laten aansluiten bij de theorie? Vul dan 'paragrafen' met de VOLLEDIGE bijgewerkte lijst (alle paragrafen hierboven, ook ongewijzigde), met exact dezelfde paragraafId's - alleen hoofdstuk/titel mogen wijzigen. Anders 'paragrafen' leeg laten.",
-    "- Twijfel je welk bestand/paragraaf bedoeld wordt (bv. bij 'doe ze allemaal' terwijl dat niet duidelijk is)? Vraag in 'antwoord' om verduidelijking en laat 'acties'/'paragrafen' dan leeg.",
+    "- Vraagt de ouder om een AL BESTAANDE paragraaf te publiceren (klaar voor het kind) of volledig te verwijderen? Zet dat in 'paragraafActies' met het juiste paragraafId. Bedoelt de ouder 'alles publiceren'/'alles verwijderen'? Doe dat dan voor elke bestaande paragraaf die dat nog nodig heeft (concept -> publiceren; alles -> verwijderen). Anders leeg laten.",
+    "- Vraagt de ouder ONMISKENBAAR om (een deel van) de inhoud van dit vak helemaal te wissen/leeg te maken/opnieuw te beginnen? Vul dan 'leegmaken' in met wat precies gewist moet worden. Twijfel je of dit echt bedoeld wordt (bv. een vage 'ruim het wat op')? Vraag dan EERST expliciete bevestiging in 'antwoord' en laat 'leegmaken' op null - pas invullen zodra de ouder dat bevestigt.",
+    "- Twijfel je welk bestand/paragraaf bedoeld wordt (bv. bij 'doe ze allemaal' terwijl dat niet duidelijk is)? Vraag in 'antwoord' om verduidelijking en laat 'acties'/'paragrafen'/'paragraafActies'/'leegmaken' dan leeg.",
   ].join("\n");
 }
 
@@ -1040,8 +1066,8 @@ export async function pasKennisbankStructuurAan(
   const [{ data: hoofdstukRijen }, { data: woordenlijstRijen }, { data: contextRijen }, { data: onderdelenRijen }] = await Promise.all([
     supabase.from("kennis_paragraaf_context").select("hoofdstuk").eq("subject_id", subjectId).eq("status", "gepubliceerd"),
     supabase.from("kennis_woordenlijsten").select("categorie").eq("subject_id", subjectId).eq("status", "gepubliceerd"),
-    supabase.from("kennis_paragraaf_context").select("paragraaf_id, hoofdstuk, titel").eq("subject_id", subjectId),
-    supabase.from("kennis_onderdelen").select("paragraaf_id, hoofdstuk").eq("subject_id", subjectId).not("paragraaf_id", "is", null),
+    supabase.from("kennis_paragraaf_context").select("paragraaf_id, hoofdstuk, titel, status").eq("subject_id", subjectId),
+    supabase.from("kennis_onderdelen").select("paragraaf_id, hoofdstuk, status").eq("subject_id", subjectId).not("paragraaf_id", "is", null),
   ]);
 
   // Alle bestaande paragrafen van dit vak, met context als leidende bron
@@ -1049,12 +1075,24 @@ export async function pasKennisbankStructuurAan(
   // losse regels heeft (nog) zonder eigen context-rij.
   const paragraafMap = new Map<string, VakParagraaf>();
   for (const c of contextRijen ?? []) {
-    paragraafMap.set(c.paragraaf_id, { paragraafId: c.paragraaf_id, hoofdstuk: c.hoofdstuk, titel: c.titel, heeftContext: true });
+    paragraafMap.set(c.paragraaf_id, {
+      paragraafId: c.paragraaf_id,
+      hoofdstuk: c.hoofdstuk,
+      titel: c.titel,
+      heeftContext: true,
+      status: c.status as KennisOnderdeelStatus,
+    });
   }
   for (const o of onderdelenRijen ?? []) {
     const pid = o.paragraaf_id as string;
     if (paragraafMap.has(pid)) continue;
-    paragraafMap.set(pid, { paragraafId: pid, hoofdstuk: o.hoofdstuk, titel: `Paragraaf ${pid}`, heeftContext: false });
+    paragraafMap.set(pid, {
+      paragraafId: pid,
+      hoofdstuk: o.hoofdstuk,
+      titel: `Paragraaf ${pid}`,
+      heeftContext: false,
+      status: o.status as KennisOnderdeelStatus,
+    });
   }
 
   const vak: VakContext = {
@@ -1111,6 +1149,28 @@ export async function pasKennisbankStructuurAan(
     }
     paragrafenBijgewerkt++;
   }
+  // Publiceren/verwijderen van AL BESTAANDE paragrafen - hergebruikt dezelfde
+  // beproefde acties als de oude beheer-knoppen.
+  for (const pa of res.paragraafActies) {
+    if (!paragraafMap.has(pa.paragraafId)) continue;
+    if (pa.actie === "publiceren") await publiceerParagraaf(subjectId, pa.paragraafId);
+    else await verwijderParagraaf(subjectId, pa.paragraafId);
+    paragrafenBijgewerkt++;
+  }
+
+  // Vak (deels) leegmaken - alleen als de AI dit expliciet aangevraagd zag
+  // (zie prompt: bij twijfel vraagt de AI eerst bevestiging i.p.v. dit te vullen).
+  if (res.leegmaken && (res.leegmaken.kennisbank || res.leegmaken.materialen || res.leegmaken.voortgang)) {
+    const wisResultaat = await wisVakInhoud(subjectId, {
+      kennisbank: res.leegmaken.kennisbank,
+      materials: res.leegmaken.materialen,
+      voortgang: res.leegmaken.voortgang,
+    });
+    if ("error" in wisResultaat && wisResultaat.error) {
+      return { ...res, paragrafenBijgewerkt, leegmaakFout: wisResultaat.error };
+    }
+  }
+
   if (paragrafenBijgewerkt > 0) revalidateVak(subjectId);
 
   return { ...res, paragrafenBijgewerkt };
