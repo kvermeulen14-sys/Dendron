@@ -19,6 +19,21 @@ function formatMinuten(minuten: number) {
   return `${uren}u ${rest}m`;
 }
 
+function tijdKort(tijd: string) {
+  return tijd.slice(0, 5);
+}
+
+/** Zelfde format als toetsAftelling in agenda-board.tsx - "nog hoeveel dagen tot de deadline". */
+function aftelling(dueDateIso: string) {
+  const vandaag = new Date();
+  vandaag.setHours(0, 0, 0, 0);
+  const dagen = Math.round((new Date(dueDateIso + "T00:00:00").getTime() - vandaag.getTime()) / 86400000);
+  if (dagen < 0) return "geweest";
+  if (dagen === 0) return "vandaag";
+  if (dagen === 1) return "nog 1 dag";
+  return `nog ${dagen} dagen`;
+}
+
 /** Kleurblok per categorie - zelfde kleursysteem als de rest van de tool
  * (theme.css), hier alleen prominenter ingezet: een volle kleurtint i.p.v.
  * een dun randje, zodat "wat voor soort taak dit is" in 1 oogopslag
@@ -88,6 +103,16 @@ function KindVandaagItem({
   const isKlaar = item.status === "klaar";
   const { fase, bezig, vraagBevestiging, annuleer, bevestig, meldDuur } = useKlaarBevestiging();
 
+  // Huiswerk/toets krijgen de volledige naam letterlijk in de titelregel
+  // verwerkt ("Huiswerk Wiskunde: Opgave 1 t/m 5") i.p.v. alleen een
+  // vak-afkorting ernaast - in 1 oogopslag duidelijk welk vak het is, ook
+  // zonder de afkortingen uit je hoofd te kennen. Leermoment/prive houden
+  // de kortere titel (die heeft vaak zelf al genoeg context).
+  const heeftVolledigeTitel = item.type === "huiswerk" || item.type === "toets";
+  const titelTekst = heeftVolledigeTitel
+    ? `${meta.label}${subjectNaam ? ` ${subjectNaam}` : ""}: ${item.title}`
+    : item.title;
+
   async function heropen() {
     await updatePlanningStatus(item.id, "open");
     router.refresh();
@@ -110,12 +135,19 @@ function KindVandaagItem({
     router.refresh();
   }
 
+  const detailDelen = [
+    item.estimated_minutes ? `~${formatMinuten(item.estimated_minutes)}` : null,
+    item.start_time ? `om ${tijdKort(item.start_time)}` : null,
+    heeftVolledigeTitel && !isKlaar ? aftelling(item.due_date) : null,
+    !heeftVolledigeTitel && !subjectCode && subjectNaam ? subjectNaam : null,
+  ].filter(Boolean);
+
   return (
     <li
       onClick={() => fase === "rust" && router.push(`/kind/focus/${item.id}`)}
       className={clsx(
         "relative flex cursor-pointer flex-col gap-2.5 rounded-[22px] p-4 transition-colors",
-        fase === "duur" || item.type === "prive" ? "pb-4" : "pb-12",
+        fase === "duur" || item.type === "prive" ? "pb-4" : "pb-14",
         isKlaar
           ? "bg-slate-100"
           : variant === "verlopen"
@@ -140,24 +172,32 @@ function KindVandaagItem({
                 isKlaar && "text-slate-500 line-through"
               )}
             >
-              {item.title}
+              {titelTekst}
             </p>
-            {subjectCode && (
+            {!heeftVolledigeTitel && subjectCode && (
               <span className="shrink-0 rounded-full bg-white/70 px-1.5 py-0.5 text-[10px] font-bold text-slate-600">
                 {subjectCode}
               </span>
             )}
           </div>
-          {((!subjectCode && subjectNaam) || item.estimated_minutes) && (
+          {item.description && (
             <p
               className={clsx(
-                "truncate text-xs font-medium",
+                "mt-0.5 truncate text-xs",
+                isKlaar ? "text-slate-400" : variant === "verlopen" ? "text-rose-700/80" : "text-slate-600"
+              )}
+            >
+              {item.description}
+            </p>
+          )}
+          {detailDelen.length > 0 && (
+            <p
+              className={clsx(
+                "mt-0.5 truncate text-xs font-medium",
                 isKlaar ? "text-slate-400" : variant === "verlopen" ? "text-rose-700" : stijl.label
               )}
             >
-              {[!subjectCode ? subjectNaam : null, item.estimated_minutes ? `~${formatMinuten(item.estimated_minutes)}` : null]
-                .filter(Boolean)
-                .join(" · ")}
+              {detailDelen.join(" · ")}
             </p>
           )}
         </div>
@@ -167,18 +207,18 @@ function KindVandaagItem({
       {item.type === "prive" ? null : fase === "bevestigen" ? (
         <div
           onClick={(e) => e.stopPropagation()}
-          className="absolute inset-x-3 bottom-3 flex items-center justify-end gap-1.5"
+          className="absolute bottom-3 right-3 flex items-center gap-2 rounded-full bg-white p-1.5 pl-3.5 shadow-lg ring-1 ring-slate-200"
         >
-          <span className="mr-auto text-xs font-medium text-slate-600">Zeker weten?</span>
+          <span className="whitespace-nowrap text-xs font-medium text-slate-600">Zeker weten?</span>
           <button
             onClick={annuleer}
-            className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-slate-500 shadow-sm hover:bg-slate-50"
+            className="whitespace-nowrap rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-500 hover:bg-slate-200"
           >
             Toch niet
           </button>
           <button
             onClick={markeerKlaar}
-            className="flex items-center gap-1 rounded-full bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-600"
+            className="flex items-center gap-1 whitespace-nowrap rounded-full bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-600"
           >
             <Icon name="check" size={14} />
             Ja, {kiesKlaarLabel(item.id).toLowerCase()}
@@ -208,13 +248,13 @@ function KindVandaagItem({
           disabled={bezig}
           aria-label={isKlaar ? "Weer openzetten" : "Afvinken"}
           className={clsx(
-            "absolute bottom-3 right-3 flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold shadow-sm transition-colors disabled:opacity-50",
+            "absolute bottom-3 right-3 flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-bold shadow-md transition-colors disabled:opacity-50",
             isKlaar
-              ? "bg-emerald-500 text-white"
-              : "bg-white/85 text-slate-600 hover:bg-white active:scale-95"
+              ? "bg-emerald-500 text-white hover:bg-emerald-600"
+              : "bg-white text-slate-800 ring-1 ring-slate-900/5 hover:bg-emerald-500 hover:text-white active:scale-95"
           )}
         >
-          <Icon name={bezig ? "loader" : "check"} size={14} className={bezig ? "animate-spin" : undefined} />
+          <Icon name={bezig ? "loader" : "check"} size={16} className={bezig ? "animate-spin" : undefined} />
           {isKlaar ? "Klaar" : kiesKlaarLabel(item.id)}
         </button>
       )}

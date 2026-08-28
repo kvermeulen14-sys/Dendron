@@ -797,6 +797,17 @@ export function AgendaBoard({
       const slot = vindEersteVrijeSlot(bezet, duur);
       await accepteerPlanningItem(item.id, minutenNaarTijd(slot));
       router.refresh();
+
+      // Huiswerk/toets: net als bij het toevoegen ervan altijd meteen de
+      // coach erbij halen, ook via deze "Prima zo, plan in"-snelkoppeling -
+      // anders blijft het losse eerste-vrije-slotje staan zonder dat er
+      // echt over de planning is nagedacht.
+      if (item.type === "huiswerk" || item.type === "toets") {
+        const vak = subjects.find((s) => s.id === item.subject_id)?.name;
+        setPlanningshulp({
+          openingsbericht: `Ik heb net ${item.type === "toets" ? "een toets" : "huiswerk"}${vak ? ` voor ${vak}` : ""} ("${item.title}") ingepland op ${formatDatumLabel(item.due_date)} om ${minutenNaarTijd(slot)}. Past dat wel goed, of kun je een beter moment voorstellen rekening houdend met de rest van mijn week?`,
+        });
+      }
     });
   }
 
@@ -2354,21 +2365,29 @@ export function AgendaBoard({
                           {overgenomenInBlok.length > 0 && (
                             <Icon name="arrow-right-circle" size={9} className="mr-0.5 mb-px inline text-amber-600" />
                           )}
-                          {heeftNotitie && <Icon name="check" size={9} className="mr-0.5 mb-px inline text-rose-600" />}
                           <span className="line-clamp-2">
                             {!b.isFietsen && `${b.tijd.split("-")[0]} `}
                             {b.titel}
                           </span>
                           {klikbaar && !heeftDeadline && <Icon name="plus" size={9} className="ml-0.5 mb-px inline text-accent-500" />}
                         </span>
-                        {heeftDeadline && (
-                          <span
-                            className={clsx(
-                              "flex h-4 w-4 shrink-0 items-center justify-center rounded",
-                              heeftToets ? "bg-toets-500" : "bg-huiswerk-500"
+                        {(heeftDeadline || heeftNotitie) && (
+                          <span className="flex shrink-0 items-center gap-0.5">
+                            {heeftDeadline && (
+                              <span
+                                className={clsx(
+                                  "flex h-4 w-4 shrink-0 items-center justify-center rounded",
+                                  heeftToets ? "bg-toets-500" : "bg-huiswerk-500"
+                                )}
+                              >
+                                <Icon name={heeftToets ? "target" : "pencil-line"} size={10} className="text-white" />
+                              </span>
                             )}
-                          >
-                            <Icon name={heeftToets ? "target" : "pencil-line"} size={10} className="text-white" />
+                            {heeftNotitie && (
+                              <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded bg-rose-500">
+                                <Icon name="bell" size={10} className="text-white" />
+                              </span>
+                            )}
                           </span>
                         )}
                       </div>
@@ -2697,7 +2716,7 @@ export function AgendaBoard({
                               )}
                               {!heeftAandacht && heeftNotitie && (
                                 <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-rose-500 text-white ring-2 ring-white">
-                                  <Icon name="check" size={9} />
+                                  <Icon name="bell" size={9} />
                                 </span>
                               )}
                               {heeftDeadline && !alleKlaar ? (

@@ -18,9 +18,15 @@ export default async function VakkenPage() {
 
   const { data: subjects } = await supabase
     .from("subjects")
-    .select("*, methode_hoofdstukken(count)")
+    .select(
+      "*, kennis_onderdelen(count), kennis_paragraaf_context(count), kennis_oefenvragen(count), kennis_woordenlijsten(count)"
+    )
     .eq("family_id", profile!.family_id)
     .order("created_at", { ascending: true });
+
+  function telling(rijen: unknown) {
+    return (rijen as { count: number }[] | null)?.[0]?.count ?? 0;
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -61,7 +67,11 @@ export default async function VakkenPage() {
                   )}
                 </p>
                 <p className="text-xs text-slate-500">
-                  {(s.methode_hoofdstukken as unknown as { count: number }[])?.[0]?.count ?? 0} hoofdstuk(ken)
+                  {telling(s.kennis_onderdelen) +
+                    telling(s.kennis_paragraaf_context) +
+                    telling(s.kennis_oefenvragen) +
+                    telling(s.kennis_woordenlijsten)}{" "}
+                  kennisbank-item(s)
                 </p>
               </div>
             </Card>

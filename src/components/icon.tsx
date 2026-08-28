@@ -44,6 +44,7 @@ import {
   User,
   TriangleAlert,
   ArrowRightCircle,
+  Bell,
   type LucideProps,
 } from "lucide-react";
 
@@ -94,6 +95,7 @@ export const ICONS = {
   user: User,
   "arrow-right-circle": ArrowRightCircle,
   palette: Palette,
+  bell: Bell,
 } as const;
 
 export type IconName = keyof typeof ICONS;
