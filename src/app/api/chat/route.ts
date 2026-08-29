@@ -58,6 +58,17 @@ Voor een MEETKUNDIGE figuur (driehoek, vierhoek, elke figuur met rechte zijden t
 
 Zet dit blok NIET in plaats van je uitleg, maar erbij - je normale tekst blijft gewoon het antwoord.`;
 
+// Zonder deze regel kan de AI een verdict ("bijna goed") typen voordat haar
+// eigen berekening af is, en zichzelf een paar zinnen later tegenspreken
+// (het "eerst fout zeggen, dan blijkt het toch goed"-scenario). Het interne
+// blok dwingt "eerst zelf uitrekenen, dan pas oordelen" binnen 1 antwoord af
+// (geen 2e API-call nodig) - zie verwijderInterneUitwerking hieronder.
+const ZELF_UITWERKEN_INSTRUCTIE = `Eerst zelf uitwerken, dan pas beoordelen: elke keer dat je gaat beoordelen of een stap/antwoord van de leerling goed, deels goed of fout is, doe dat ALTIJD in exact deze volgorde:
+1. Werk de opgave (of dit onderdeel ervan) EERST volledig en zelfstandig uit, in een blok dat begint met [INTERN_UITWERKING] en eindigt met [/INTERN_UITWERKING] - dit wordt automatisch verwijderd en NOOIT aan de leerling getoond, dus schrijf hier gewoon je eigen volledige berekening/redenering, zo uitgebreid als nodig om zeker van je zaak te zijn.
+2. Vergelijk PAS DAARNA je eigen uitkomst met wat de leerling gaf. Let op: verschillende schrijfwijzen van hetzelfde antwoord (bv. "-1mn" versus "-mn" versus een andere volgorde van dezelfde factoren) kunnen inhoudelijk identiek zijn - beoordeel op inhoudelijke gelijkheid, niet op exacte tekstgelijkheid.
+3. Schrijf pas NA deze 2 stappen je zichtbare reactie (bevestiging/hint/uitleg), gebaseerd op die vergelijking - typ nooit een oordeel (zoals "bijna goed" of "dat klopt niet") voordat je eigen uitwerking in stap 1 helemaal klaar en gecontroleerd is.
+Sla deze 3 stappen over als je nog helemaal niets beoordeelt (bv. de allereerste hint bij een nieuwe opgave, of een verduidelijkingsvraag zonder dat de leerling een antwoord gaf).`;
+
 const OPMAAK_INSTRUCTIE = `Opmaak:
 - Je mag markdown gebruiken (**vet**, opsommingen met "-", genummerde stappen) om je antwoord makkelijker leesbaar te maken - gebruik dit om structuur te geven, niet overdreven.
 - Gebruik ECHT NOOIT LaTeX-notatie, ook niet voor iets kleins tussendoor. Dit is dus FOUT: "$6 \\times 7$", "$a \\times b$", "\\frac{2}{3}", "$x^2$" - een leerling kent die syntax niet en ziet dan alleen rare dollartekens/backslashes, geen wiskunde. Schrijf wiskunde ALTIJD in gewone, leesbare tekst met echte Unicode-tekens: "6 × 7", "a × b", "x²", "√2", "3 x + 5 = 11". Twijfel je even of iets "misschien LaTeX telt"? Schrijf het dan sowieso als gewone tekst.
@@ -79,6 +90,19 @@ function haalFotoTypeEnStripAntwoord(antwoord: string): { antwoord: string; foto
     antwoord: antwoord.slice(0, match.index).trimEnd(),
     fotoType: match[1] === "THEORIE" ? "theorie" : "opgave",
   };
+}
+
+// De AI moet, vóórdat ze een stap/antwoord van de leerling beoordeelt, dat
+// antwoord EERST zelf helemaal uitwerken en dat pas DAARNA vergelijken -
+// zonder die volgorde kan ze een verdict ("bijna goed") typen voordat haar
+// eigen berekening klaar is, en zichzelf een paar zinnen later tegenspreken
+// (precies het "eerst fout, dan toch goed"-scenario). Dit interne blok
+// dwingt die volgorde af binnen 1 antwoord, zonder een 2e API-call nodig te
+// hebben, en wordt hier weggehaald voor het bij de leerling terechtkomt.
+const INTERNE_UITWERKING_REGEX = /\[INTERN_UITWERKING\][\s\S]*?\[\/INTERN_UITWERKING\]\s*/g;
+
+function verwijderInterneUitwerking(antwoord: string): string {
+  return antwoord.replace(INTERNE_UITWERKING_REGEX, "").trimStart();
 }
 
 interface KennisContextVoorChat {
@@ -156,6 +180,8 @@ Jouw belangrijkste doel is de leerling te helpen ZELF te leren en begrijpen - ni
 4. Pas als het na deze stappen nog niet lukt, of als er expliciet om het antwoord gevraagd wordt ("geef me gewoon het antwoord"): geef de volledige, rustig opgebouwde uitleg of uitwerking in 1 keer.
 Bevestig een juiste stap altijd kort en concreet (in 1 zin WAAROM hij klopt), voordat je verdergaat - dat maakt ook een gokje dat toevallig goed was leerzaam. Wees kort, vriendelijk en bemoedigend. Dit is een chatgesprek, geen collegetekst.
 
+${ZELF_UITWERKEN_INSTRUCTIE}
+
 Blijf inhoudelijk dicht bij de lesstof van dit vak hieronder - dat is wat er op school behandeld wordt. Ga niet breeduit op andere onderwerpen in, tenzij de leerling daar zelf expliciet naar vraagt.
 
 Belangrijke regels over de lesstof hieronder:
@@ -207,6 +233,8 @@ Werkwijze (pas op STAP 0 klaar is - de opgave is vastgelegd en bevestigd):
 3. Heeft de vastgelegde opgave meerdere onderdelen (a, b, c, ...) en is het huidige onderdeel klaar? Dan mag je zelf doorgaan naar het eerstvolgende onderdeel UIT DE VASTGELEGDE TEKST (nooit een onderdeel dat daar niet in stond).
 4. Let op notatie, tekens, eenheden en afronding; benoem hooguit een fout tegelijk, vriendelijk.
 5. Wees kort. Dit is een chatgesprek, geen collegetekst.
+
+${ZELF_UITWERKEN_INSTRUCTIE}
 
 Belangrijke regels over de lesstof hieronder:
 - Verzin nooit de letterlijke tekst van een boekopgave die je zelf niet hebt - als de leerling die niet zelf getypt/gefotografeerd heeft EN die ook niet letterlijk in de lesstof of in een intern blok hieronder staat, vraag dan om een foto of om de opgave over te typen.
@@ -385,7 +413,7 @@ export async function POST(request: Request) {
     const ruweAntwoord = response.text ?? "";
     if (!ruweAntwoord.trim()) throw new Error(`Leeg antwoord van de AI (finishReason: ${response.candidates?.[0]?.finishReason})`);
     const gestript = haalFotoTypeEnStripAntwoord(ruweAntwoord);
-    antwoord = saneerLatexNotatie(gestript.antwoord);
+    antwoord = saneerLatexNotatie(verwijderInterneUitwerking(gestript.antwoord));
     if (afbeeldingInvoer) fotoType = gestript.fotoType;
   } catch (e) {
     console.error("Chat: AI-verwerking mislukt.", e);
