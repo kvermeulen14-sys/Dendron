@@ -9,21 +9,13 @@ import { Icon } from "@/components/icon";
 import { MarkdownTekst } from "@/components/markdown-tekst";
 import { VisualWeergave } from "@/components/visuals/visual-weergave";
 import { slaOverhoorResultaatOp, type OverhoorTranscriptRegel } from "@/lib/actions/overhoor";
-import { eenRegel, normaliseerWiskundeNotatie } from "@/lib/tekst";
+import { eenRegel } from "@/lib/tekst";
 import { extraheerVisuals, type VisualSpec } from "@/lib/visuals";
 import { bepaalLeerfaseAdvies, type OefenAdvies } from "@/lib/oefen-advies";
 import type { Leerfase, Subject } from "@/lib/types";
 
 type Beoordeling = "goed" | "deels" | "fout" | "geen";
 type Fase = "kies" | "vraag" | "feedback" | "klaar";
-type LesstofFragment = { titel: string; tekst: string } | null;
-
-function normFragment(f: unknown): LesstofFragment {
-  if (!f || typeof f !== "object") return null;
-  const rec = f as Record<string, unknown>;
-  if (typeof rec.titel === "string" && typeof rec.tekst === "string") return { titel: rec.titel, tekst: rec.tekst };
-  return null;
-}
 
 const AANTAL_VRAGEN = 2;
 const LETTERS = ["a", "b", "c", "d", "e", "f"];
@@ -75,7 +67,7 @@ export function TweeMinutenOefenen({
   const [laatsteAntwoord, setLaatsteAntwoord] = useState("");
   const [feedback, setFeedback] = useState<{ tekst: string; beoordeling: Beoordeling } | null>(null);
   const [feedbackVisuals, setFeedbackVisuals] = useState<VisualSpec[]>([]);
-  const [lesstofFragment, setLesstofFragment] = useState<LesstofFragment>(null);
+  const [theorieHint, setTheorieHint] = useState<string | null>(null);
   const [juisteAntwoord, setJuisteAntwoord] = useState<string | null>(null);
   const [zelfCheck, setZelfCheck] = useState(false);
   const [zelfCheckAntwoord, setZelfCheckAntwoord] = useState<string | null>(null);
@@ -109,7 +101,7 @@ export function TweeMinutenOefenen({
     setAntwoord("");
     setFeedback(null);
     setFeedbackVisuals([]);
-    setLesstofFragment(null);
+    setTheorieHint(null);
     setJuisteAntwoord(null);
     setZelfCheck(false);
     setZelfCheckAntwoord(null);
@@ -195,6 +187,7 @@ export function TweeMinutenOefenen({
           gesteldeVragen,
           vorigeVraag: vraag,
           vorigAntwoord: antwoordTeControleren,
+          vorigeOpties: opties,
           scopeInstructie,
         }),
       });
@@ -208,7 +201,7 @@ export function TweeMinutenOefenen({
       setJuisteOptie(typeof data.juisteOptie === "string" ? data.juisteOptie : null);
       setJuisteAntwoord(typeof data.juisteAntwoord === "string" ? data.juisteAntwoord : null);
       setLaatsteWasZelfCheck(dieZelfCheckWas);
-      setLesstofFragment(normFragment(data.lesstofFragment));
+      setTheorieHint(typeof data.theorieHint === "string" ? data.theorieHint : null);
       if (beoordeling === "goed" || beoordeling === "deels" || beoordeling === "fout") {
         setScore((s) => ({ ...s, [beoordeling]: s[beoordeling] + 1 }));
       }
@@ -252,7 +245,7 @@ export function TweeMinutenOefenen({
     setVraagNr((n) => n + 1);
     setFeedback(null);
     setFeedbackVisuals([]);
-    setLesstofFragment(null);
+    setTheorieHint(null);
     setJuisteAntwoord(null);
     setUitleg(null);
     setFase("vraag");
@@ -521,13 +514,13 @@ export function TweeMinutenOefenen({
                 ))}
               </div>
 
-              {lesstofFragment && (
+              {theorieHint && (
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
                   <p className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
                     <Icon name="book-open" size={13} />
-                    Uit je lesstof - {lesstofFragment.titel}
+                    De regel in het kort
                   </p>
-                  <p className="whitespace-pre-wrap">{normaliseerWiskundeNotatie(lesstofFragment.tekst)}</p>
+                  <MarkdownTekst>{theorieHint}</MarkdownTekst>
                 </div>
               )}
 

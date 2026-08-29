@@ -14,10 +14,16 @@ import { saneerLatexNotatie } from "@/lib/tekst";
 const MAX_KENNISBANK_TEKENS = 14000;
 
 const ResponsSchema = z.object({
-  feedback: z.string().describe("Korte, vriendelijke feedback op het vorige antwoord, of leeg als er nog geen antwoord was"),
+  feedback: z
+    .string()
+    .describe(
+      "Korte, vriendelijke feedback specifiek op DEZE poging van de leerling (wat ging goed/fout in wat hij deed), of leeg als er nog geen antwoord was. Dit is geen theorie-uitleg (zie 'theorieHint' daarvoor) - dit gaat over de poging zelf."
+    ),
   beoordeling: z
     .enum(["goed", "deels", "fout", "geen"])
-    .describe("Beoordeling van het vorige antwoord, of 'geen' als er nog geen antwoord was"),
+    .describe(
+      "Beoordeling van het vorige antwoord, of 'geen' als er nog geen antwoord was. BELANGRIJK bij een meerkeuzevraag (herkenbaar aan 'Opties van de vorige vraag' hieronder): dan is dit ALTIJD 'goed' of 'fout', NOOIT 'deels' - 1 aangeklikte optie is exact goed of exact fout, 'een beetje goed' bestaat niet bij meerkeuze. 'deels' is alleen mogelijk bij een open (getypte) vraag, voor een antwoord dat inhoudelijk deels klopt."
+    ),
   vraag: z
     .string()
     .describe("De volgende overhoor-vraag. Bij een meerkeuzevraag NOOIT de opties zelf in deze tekst herhalen (a/b/c/d) - die horen apart in 'opties'."),
@@ -31,13 +37,13 @@ const ResponsSchema = z.object({
     .string()
     .nullable()
     .describe(
-      "Alleen bij een meerkeuzevraag: de letterlijke tekst van de juiste optie uit de 'opties' van de NET beoordeelde vraag (dus niet de nieuwe vraag hierboven) - hiermee kan de app die groen markeren. Null als er nog geen antwoord was, bij een open vraag, of als de vorige vraag geen meerkeuzevraag was."
+      "Verplicht (nooit null) als de ZOJUIST beoordeelde vraag een meerkeuzevraag was (zie 'Opties van de vorige vraag') en de beoordeling niet 'goed' is: de EXACTE, woord-voor-woord identieke tekst van de juiste optie uit die lijst - de app vergelijkt dit als platte tekst om 'm groen te markeren, dus GEEN parafrase. Null als er nog geen antwoord was, bij een open vraag, of als de beoordeling 'goed' is."
     ),
-  beoordeeldOnderdeelNaam: z
+  theorieHint: z
     .string()
     .nullable()
     .describe(
-      "Alleen als de lesstof hieronder is opgebouwd uit kennisonderdelen (herkenbaar aan '### naam'-koppen): de EXACTE naam van het onderdeel waar de ZOJUIST BEOORDEELDE vraag over ging (niet de nieuwe vraag hierboven). Null als er nog geen vorige vraag was, of de lesstof geen kennisonderdelen-koppen bevat."
+      "Alleen bij beoordeling 'deels' of 'fout': een korte (2-3 zinnen), zelfstandige herformulering van de onderliggende regel/theorie die bij dit onderdeel hoort - je EIGEN interpretatie in gewone taal, GEEN letterlijke aanhaling van de lesstof-tekst hieronder. Dit is de EERSTE, korte hint die de leerling meteen te zien krijgt (in plaats van de leerling zelf de ruwe lesstof te laten lezen) - dus wél de kern van de regel, maar los van de specifieke fout in deze poging (dat hoort in 'feedback'). Pas als de leerling daarna nog om extra uitleg vraagt, volgt een uitgebreidere versie. Null bij 'goed' of 'geen'."
     ),
   juisteAntwoord: z
     .string()
@@ -99,8 +105,9 @@ export async function POST(request: Request) {
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Niet ingelogd." }, { status: 401 });
 
-  const { subjectId, spellingStrict, leerfase, gesteldeVragen, vorigeVraag, vorigAntwoord, scopeInstructie, modus, eerdereUitleg } =
+  const { subjectId, spellingStrict, leerfase, gesteldeVragen, vorigeVraag, vorigAntwoord, vorigeOpties, scopeInstructie, modus, eerdereUitleg } =
     await request.json();
+  const vorigeWasMeerkeuze = Array.isArray(vorigeOpties) && vorigeOpties.length > 0;
   if (!subjectId) return NextResponse.json({ error: "subjectId is verplicht." }, { status: 400 });
 
   const { data: subject } = await supabase.from("subjects").select("id, name").eq("id", subjectId).single();
@@ -211,8 +218,10 @@ ${
 ${
   vorigeVraag && vorigAntwoord
     ? vorigAntwoord.startsWith("(zelf gecontroleerd:")
-      ? `De leerling heeft de vorige vraag op papier uitgewerkt en zelf tegen het juiste antwoord gecontroleerd, met dit resultaat: ${vorigAntwoord}\nVraag: ${vorigeVraag}\nVertrouw dit zelf-gerapporteerde resultaat direct - beoordeel niet zelf opnieuw. Zet "beoordeling" op 'goed' bij "had ik goed", of 'fout' bij "nog niet helemaal goed". Geef bij 'goed' een korte felicitatie. Geef bij 'fout' een korte, bemoedigende uitleg (2-3 zinnen) van het onderliggende idee, zodat het de volgende keer wel lukt. Laat "juisteAntwoord" op null (de leerling heeft het antwoord al gezien) en vul "beoordeeldOnderdeelNaam" in zoals hieronder beschreven.\n\n`
-      : `Beoordeel eerst dit antwoord van de leerling:\nVraag: ${vorigeVraag}\nAntwoord van de leerling: ${vorigAntwoord}\nGeef een beoordeling (goed/deels/fout). Bij 'goed': korte felicitatie MET in 1 zin WAAROM het klopt (zo blijft ook een gokje dat toevallig goed was leerzaam, en wordt goed gokken niet beloond met niets). Bij 'deels' of 'fout': geef GEEN kale foutmelding en niet alleen een hint, maar een echte, behulpzame uitleg (2-4 zinnen) die het onderliggende idee verduidelijkt - zodat de leerling begrijpt WAAROM het niet (helemaal) klopte en hoe het wel zit, EN vul "juisteAntwoord" in met het exacte juiste antwoord (kort, geen uitleg - alleen bij een open vraag, niet bij meerkeuze). BELANGRIJK: een antwoord dat geen echte inhoudelijke poging is (bijvoorbeeld enkel "?", "weet niet", "geen idee", of duidelijk willekeurige tekst) is ALTIJD 'fout' - beoordeel zo'n antwoord nooit als 'goed' of 'deels', ook al lijkt het toevallig ergens op te passen. Vul ook "beoordeeldOnderdeelNaam" in als de lesstof hieronder "### naam"-koppen bevat: de EXACTE naam van het kopje waar deze zojuist beoordeelde vraag het beste bij past.\n\n`
+      ? `De leerling heeft de vorige vraag op papier uitgewerkt en zelf tegen het juiste antwoord gecontroleerd, met dit resultaat: ${vorigAntwoord}\nVraag: ${vorigeVraag}\nVertrouw dit zelf-gerapporteerde resultaat direct - beoordeel niet zelf opnieuw. Zet "beoordeling" op 'goed' bij "had ik goed", of 'fout' bij "nog niet helemaal goed". Geef bij 'goed' een korte felicitatie. Geef bij 'fout' een korte, bemoedigende "feedback" (2-3 zinnen) over deze poging EN vul "theorieHint" in. Laat "juisteAntwoord" op null (de leerling heeft het antwoord al gezien).\n\n`
+      : vorigeWasMeerkeuze
+        ? `Dit was een MEERKEUZEVRAAG met deze opties:\n${(vorigeOpties as string[]).map((o) => `- ${o}`).join("\n")}\nDe leerling koos: "${vorigAntwoord}"\nBepaal of dit EXACT de juiste optie was. Zet "beoordeling" ALTIJD op 'goed' (de juiste optie gekozen) of 'fout' (een andere optie gekozen) - NOOIT 'deels', want 1 aangeklikte optie is exact goed of exact fout, "een beetje goed" bestaat niet bij meerkeuze. Geef bij 'goed' een korte felicitatie MET in 1 zin WAAROM het klopt. Geef bij 'fout' een korte, vriendelijke "feedback" (waarom deze optie niet klopt) EN vul "juisteOptie" VERPLICHT in met de EXACTE tekst van de juiste optie uit de lijst hierboven (woord-voor-woord identiek, want de app vergelijkt dit als platte tekst) EN vul "theorieHint" in. Laat "juisteAntwoord" op null (die is alleen voor open vragen).\n\n`
+        : `Beoordeel eerst dit antwoord van de leerling:\nVraag: ${vorigeVraag}\nAntwoord van de leerling: ${vorigAntwoord}\nGeef een beoordeling (goed/deels/fout). Bij 'goed': korte felicitatie MET in 1 zin WAAROM het klopt (zo blijft ook een gokje dat toevallig goed was leerzaam, en wordt goed gokken niet beloond met niets). Bij 'deels' of 'fout': geef in "feedback" een korte, concrete reactie (2-3 zinnen) op WAT er in DEZE poging misging - niet de theorie in het algemeen, dat hoort in "theorieHint" - EN vul "juisteAntwoord" in met het exacte juiste antwoord (kort, geen uitleg) EN vul "theorieHint" in. BELANGRIJK: een antwoord dat geen echte inhoudelijke poging is (bijvoorbeeld enkel "?", "weet niet", "geen idee", of duidelijk willekeurige tekst) is ALTIJD 'fout' - beoordeel zo'n antwoord nooit als 'goed' of 'deels', ook al lijkt het toevallig ergens op te passen.\n\n`
     : "Er is nog geen vorig antwoord - laat feedback leeg en beoordeling op 'geen'.\n\n"
 }${
   oefenGeschiedenisBlok
@@ -235,26 +244,6 @@ ${kennisbank}`;
       3072
     );
 
-    // Bij een niet-volledig-goed antwoord: het echte lesstof-fragment erbij
-    // zoeken (deterministisch, geen AI-parafrase) zodat de leerling de
-    // theorie zelf kan naslaan terwijl het nog vers is. Alleen via het
-    // onderdeel dat de AI zelf noemde (beoordeeldOnderdeelNaam) - exact en
-    // betrouwbaar, i.p.v. te gokken via woord-overlap. Zonder geldige
-    // naam-match liever geen fragment tonen dan een willekeurig/irrelevant
-    // onderdeel via zwakke keyword-matching.
-    let lesstofFragment: { titel: string; tekst: string } | null = null;
-    if (vorigeVraag && vorigAntwoord && (geparsed.beoordeling === "deels" || geparsed.beoordeling === "fout") && geparsed.beoordeeldOnderdeelNaam) {
-      const onderdeelViaNaam = (kennisOnderdelen ?? []).find(
-        (o) => o.naam.trim().toLowerCase() === geparsed.beoordeeldOnderdeelNaam!.trim().toLowerCase()
-      );
-      if (onderdeelViaNaam) {
-        lesstofFragment = {
-          titel: onderdeelViaNaam.naam,
-          tekst: [onderdeelViaNaam.regel, ...onderdeelViaNaam.voorbeelden].join(" "),
-        };
-      }
-    }
-
     return NextResponse.json({
       ...geparsed,
       feedback: saneerLatexNotatie(geparsed.feedback),
@@ -263,7 +252,7 @@ ${kennisbank}`;
       juisteOptie: geparsed.juisteOptie ? saneerLatexNotatie(geparsed.juisteOptie) : geparsed.juisteOptie,
       juisteAntwoord: geparsed.juisteAntwoord ? saneerLatexNotatie(geparsed.juisteAntwoord) : geparsed.juisteAntwoord,
       zelfCheckAntwoord: geparsed.zelfCheckAntwoord ? saneerLatexNotatie(geparsed.zelfCheckAntwoord) : geparsed.zelfCheckAntwoord,
-      lesstofFragment,
+      theorieHint: geparsed.theorieHint ? saneerLatexNotatie(geparsed.theorieHint) : geparsed.theorieHint,
     });
   } catch (e) {
     return NextResponse.json(

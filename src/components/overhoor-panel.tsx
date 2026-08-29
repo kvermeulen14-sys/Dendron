@@ -8,7 +8,7 @@ import { Icon } from "@/components/icon";
 import { MarkdownTekst } from "@/components/markdown-tekst";
 import { VisualWeergave } from "@/components/visuals/visual-weergave";
 import { slaOverhoorResultaatOp, type OverhoorTranscriptRegel } from "@/lib/actions/overhoor";
-import { eenRegel, normaliseerWiskundeNotatie } from "@/lib/tekst";
+import { eenRegel } from "@/lib/tekst";
 import { extraheerVisuals, type VisualSpec } from "@/lib/visuals";
 import { bepaalLeerfaseAdvies } from "@/lib/oefen-advies";
 import type { Leerfase } from "@/lib/types";
@@ -17,7 +17,6 @@ type Beoordeling = "goed" | "deels" | "fout" | "geen";
 type Stijl = "open" | "meerkeuze";
 type WizardStap = "hoofdstuk" | "stijl" | null;
 type SessieFase = "vraag" | "feedback" | "klaar";
-type LesstofFragment = { titel: string; tekst: string } | null;
 type Onderwerp = { id: string; code: string; titel: string };
 type HoofdstukStructuur = { hoofdstuk: string; onderwerpen: Onderwerp[] };
 
@@ -48,13 +47,6 @@ const LETTERS = ["a", "b", "c", "d", "e", "f"];
 
 function normOpties(o: unknown): string[] | null {
   return Array.isArray(o) && o.length > 0 ? (o as string[]) : null;
-}
-
-function normFragment(f: unknown): LesstofFragment {
-  if (!f || typeof f !== "object") return null;
-  const rec = f as Record<string, unknown>;
-  if (typeof rec.titel === "string" && typeof rec.tekst === "string") return { titel: rec.titel, tekst: rec.tekst };
-  return null;
 }
 
 export function OverhoorPanel({
@@ -109,7 +101,7 @@ export function OverhoorPanel({
   const [feedback, setFeedback] = useState<string | null>(null);
   const [feedbackVisuals, setFeedbackVisuals] = useState<VisualSpec[]>([]);
   const [beoordeling, setBeoordeling] = useState<Beoordeling | null>(null);
-  const [lesstofFragment, setLesstofFragment] = useState<LesstofFragment>(null);
+  const [theorieHint, setTheorieHint] = useState<string | null>(null);
   const [juisteAntwoord, setJuisteAntwoord] = useState<string | null>(null);
   const [uitleg, setUitleg] = useState<string | null>(null);
   const [uitlegBezig, setUitlegBezig] = useState(false);
@@ -134,7 +126,7 @@ export function OverhoorPanel({
     setFeedback(null);
     setFeedbackVisuals([]);
     setBeoordeling(null);
-    setLesstofFragment(null);
+    setTheorieHint(null);
     setJuisteAntwoord(null);
     setUitleg(null);
     setZelfCheck(false);
@@ -236,6 +228,7 @@ export function OverhoorPanel({
           gesteldeVragen,
           vorigeVraag: vraag,
           vorigAntwoord: gegevenAntwoord,
+          vorigeOpties: opties,
           scopeInstructie,
         }),
       });
@@ -253,7 +246,7 @@ export function OverhoorPanel({
       setJuisteOptie(typeof data.juisteOptie === "string" ? data.juisteOptie : null);
       setJuisteAntwoord(typeof data.juisteAntwoord === "string" ? data.juisteAntwoord : null);
       setLaatsteWasZelfCheck(dieZelfCheckWas);
-      setLesstofFragment(normFragment(data.lesstofFragment));
+      setTheorieHint(typeof data.theorieHint === "string" ? data.theorieHint : null);
       setLaatsteAntwoord(gegevenAntwoord);
       setGesteldeVragen((prev) => [...prev, vraag]);
       setTranscript((prev) => [
@@ -324,7 +317,7 @@ export function OverhoorPanel({
     setFeedback(null);
     setFeedbackVisuals([]);
     setBeoordeling(null);
-    setLesstofFragment(null);
+    setTheorieHint(null);
     setJuisteAntwoord(null);
     setUitleg(null);
     setVraagIndex((n) => n + 1);
@@ -706,13 +699,13 @@ export function OverhoorPanel({
                         </div>
                       </div>
                     )}
-                    {lesstofFragment && (
+                    {theorieHint && (
                       <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
                         <p className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
                           <Icon name="book-open" size={13} />
-                          Uit je lesstof - {lesstofFragment.titel}
+                          De regel in het kort
                         </p>
-                        <p className="whitespace-pre-wrap">{normaliseerWiskundeNotatie(lesstofFragment.tekst)}</p>
+                        <MarkdownTekst>{theorieHint}</MarkdownTekst>
                       </div>
                     )}
                     {uitleg && (
