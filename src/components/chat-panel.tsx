@@ -27,7 +27,8 @@ const MODUS_TEKST: Record<
     titel: "Vakdocent",
     ondertitel: "Stelt liever vragen terug dan het antwoord te geven",
     icon: "chat",
-    leeg: (naam) => `Stel gerust een vraag over ${naam} - bijvoorbeeld over je huiswerk of iets wat je niet snapt.`,
+    leeg: (naam) =>
+      `Stel gerust een vraag over ${naam} - bijvoorbeeld als je iets niet snapt of meer uitleg wilt. Wil je hulp bij 1 specifieke opgave? Gebruik dan het tabblad 'Opdracht maken'.`,
     placeholder: "Typ je vraag...",
   },
   opdracht: {

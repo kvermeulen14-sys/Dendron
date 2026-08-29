@@ -9,6 +9,7 @@ import {
   type KennisWoordenlijstRij,
 } from "@/lib/kennisbank";
 import { bouwOefenGeschiedenisBlok, type OefenSessieVoorChat } from "@/lib/oefengeschiedenis";
+import { saneerLatexNotatie } from "@/lib/tekst";
 
 const MAX_AFBEELDING_BYTES = 8 * 1024 * 1024; // 8MB (ruim voor een foto, zonder de request onnodig groot te maken)
 const TOEGESTANE_AFBEELDING_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/heic", "image/heif"];
@@ -59,7 +60,7 @@ Zet dit blok NIET in plaats van je uitleg, maar erbij - je normale tekst blijft 
 
 const OPMAAK_INSTRUCTIE = `Opmaak:
 - Je mag markdown gebruiken (**vet**, opsommingen met "-", genummerde stappen) om je antwoord makkelijker leesbaar te maken - gebruik dit om structuur te geven, niet overdreven.
-- Gebruik NOOIT LaTeX-notatie (dus geen $...$, \\frac{}{}, \\times, \\cdot e.d.) - een leerling kent die syntax niet en ziet dan alleen rare tekens. Schrijf wiskunde in gewone, leesbare tekst: "x²", "√2", "3 x + 5 = 11".
+- Gebruik ECHT NOOIT LaTeX-notatie, ook niet voor iets kleins tussendoor. Dit is dus FOUT: "$6 \\times 7$", "$a \\times b$", "\\frac{2}{3}", "$x^2$" - een leerling kent die syntax niet en ziet dan alleen rare dollartekens/backslashes, geen wiskunde. Schrijf wiskunde ALTIJD in gewone, leesbare tekst met echte Unicode-tekens: "6 × 7", "a × b", "x²", "√2", "3 x + 5 = 11". Twijfel je even of iets "misschien LaTeX telt"? Schrijf het dan sowieso als gewone tekst.
 - Voor een BREUK geldt een uitzondering: schrijf die nooit als platte tekst zoals "2/3" (een leerling ziet dan geen teller/noemer) - gebruik altijd het breuk-blok hierboven, ook als je er zelf naar verwijst in je uitleg (zeg dan bv. "kijk naar de breuk hieronder" i.p.v. de breuk zelf uit te typen).`;
 
 const AFBEELDING_INSTRUCTIE = `Bij de foto die is bijgevoegd: lees eerst zorgvuldig en LETTERLIJK wat erop staat (de exacte opgavetekst, cijfers, letters/variabelen, labels in een figuur) voordat je erop reageert. Vertrouw alleen wat je op de foto kunt onderscheiden - verzin of vul nooit een woord, cijfer of teken aan dat je niet goed kunt lezen, en verwar bijvoorbeeld nooit rechthoek/figuur I met II of een a met een b. Vat de opgave zo dicht mogelijk bij de letterlijke tekst op de foto samen. Is de foto onscherp, schuin gefotografeerd of gedeeltelijk onleesbaar, of twijfel je over een cijfer/teken? Zeg dat dan expliciet en vraag om een scherpere/rechtere foto of om het stukje over te typen, in plaats van te gokken.
@@ -188,16 +189,22 @@ function bouwOpdrachtSysteemPrompt(
         ? "Hieronder staat een SELECTIE van de meest relevante lesstof op basis van wat de leerling tot nu toe heeft gezegd."
         : "Hieronder staat de volledige beschikbare lesstof voor dit vak.";
 
-  return `Je helpt een leerling in de tweede klas van het Havo met het maken van een SPECIFIEKE huiswerkopgave voor het vak "${subjectName}" - dit is geen algemeen uitlegkanaal, maar gericht op 1 opgave tegelijk.
+  return `Je helpt een leerling in de tweede klas van het Havo met het maken van een SPECIFIEKE huiswerkopgave voor het vak "${subjectName}" - dit is geen algemeen uitlegkanaal, maar gericht op 1 opgave tegelijk, en precisie weegt hier zwaarder dan bij een los uitlegkanaal: de leerling wil hulp bij PRECIES díe opgave, niet bij iets wat er ongeveer op lijkt.
 
-Werkwijze:
-1. Als nog niet duidelijk is welke opgave het is, vraag dat EERST: welk hoofdstuk/paragraaf/bladzijde en opgavenummer, of vraag om een foto/overgetypte opgave. Ga pas inhoudelijk verder zodra dit duidelijk is (tenzij de leerling de opgave al letterlijk heeft getypt of gefotografeerd).
-2. Volg daarna deze hint-opbouw, stap voor stap (sla een stap over zodra die overduidelijk al gelukt is):
+STAP 0 - de opgave vastleggen (ALTIJD eerst, voordat je ook maar 1 hint geeft):
+- Is nog niet duidelijk welke opgave het is? Vraag dat eerst: welk hoofdstuk/paragraaf/bladzijde en opgavenummer, of vraag om een foto/overgetypte opgave.
+- Zodra de leerling een NIEUWE opgave typt of een foto stuurt (de eerste keer in dit gesprek, of duidelijk een andere/volgende opgave dan waar jullie het al over hadden): schrijf ZELF eerst de VOLLEDIGE, LETTERLIJKE opgavetekst over in je antwoord - inclusief ALLE onderdelen die je ziet (bv. a t/m e als die er allemaal staan), exact zoals ze er staan, geen enkel onderdeel overslaan of alvast zelf invullen/bedenken. Vraag daarna expliciet of dit helemaal klopt en compleet is (bv. "Klopt dit helemaal zo? Laat het weten als er iets mist of anders is."). Geef in DEZE beurt nog GEEN hint of uitleg - eerst controleren, dan pas helpen.
+- Bevestigt de leerling dat het klopt (of corrigeert die 'm)? Dan is dat de vastgelegde, juiste versie van de opgave voor de rest van dit gesprek - gebruik vanaf nu ALLEEN die vastgelegde tekst als bron, nooit meer de foto/eigen geheugen opnieuw "inschatten".
+- Vraagt de leerling later naar een onderdeel dat niet in de vastgelegde tekst stond (bv. een 1f die er niet bij zat)? Verzin die dan NOOIT zelf erbij - zeg gewoon dat je dat onderdeel niet hebt gezien en vraag erom (typen of een nieuwe foto).
+
+Werkwijze (pas op STAP 0 klaar is - de opgave is vastgelegd en bevestigd):
+1. Volg deze hint-opbouw, stap voor stap (sla een stap over zodra die overduidelijk al gelukt is, en start opnieuw bij a. zodra je overgaat naar een volgend onderdeel van dezelfde vastgelegde opgave, bv. van c naar d):
    a. Vraag wat de leerling zelf al probeerde, of noem in 1 zin welke regel/aanpak hier van toepassing is - laat de leerling zelf de eerste concrete stap zetten.
    b. Geen (goede) poging, of loopt die vast? Geef een concrete hint die naar de eerstvolgende stap wijst - nog geen (deel van de) uitwerking.
    c. Nog steeds vast? Werk zelf 1 kleine tussenstap voor, laat de rest weer aan de leerling.
    d. Pas als het na deze stappen nog niet lukt, of expliciet om de uitwerking gevraagd wordt: geef de volledige uitwerking in 1 keer.
-3. Bevestig een juiste stap altijd kort en concreet (waarom hij klopt) voordat je verdergaat.
+2. Bevestig een juiste stap altijd kort en concreet (waarom hij klopt) voordat je verdergaat.
+3. Heeft de vastgelegde opgave meerdere onderdelen (a, b, c, ...) en is het huidige onderdeel klaar? Dan mag je zelf doorgaan naar het eerstvolgende onderdeel UIT DE VASTGELEGDE TEKST (nooit een onderdeel dat daar niet in stond).
 4. Let op notatie, tekens, eenheden en afronding; benoem hooguit een fout tegelijk, vriendelijk.
 5. Wees kort. Dit is een chatgesprek, geen collegetekst.
 
@@ -378,7 +385,7 @@ export async function POST(request: Request) {
     const ruweAntwoord = response.text ?? "";
     if (!ruweAntwoord.trim()) throw new Error(`Leeg antwoord van de AI (finishReason: ${response.candidates?.[0]?.finishReason})`);
     const gestript = haalFotoTypeEnStripAntwoord(ruweAntwoord);
-    antwoord = gestript.antwoord;
+    antwoord = saneerLatexNotatie(gestript.antwoord);
     if (afbeeldingInvoer) fotoType = gestript.fotoType;
   } catch (e) {
     console.error("Chat: AI-verwerking mislukt.", e);

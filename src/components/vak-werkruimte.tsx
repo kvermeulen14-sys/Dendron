@@ -11,7 +11,7 @@ import { OverhoorGeschiedenisOpschonenKnop } from "@/components/overhoor-geschie
 import type { ChatMessage, OverhoorSessie } from "@/lib/types";
 
 const TABS = [
-  { modus: "chat", label: "Chat", icon: "chat" },
+  { modus: "chat", label: "Uitleg vragen", icon: "chat" },
   { modus: "opdracht", label: "Opdracht maken", icon: "pencil-line" },
   { modus: "overhoren", label: "Oefenen", icon: "target" },
 ] as const;

@@ -9,6 +9,7 @@ import {
   type KennisWoordenlijstRij,
 } from "@/lib/kennisbank";
 import { bouwOefenGeschiedenisBlok, type OefenSessieVoorChat } from "@/lib/oefengeschiedenis";
+import { saneerLatexNotatie } from "@/lib/tekst";
 
 const MAX_KENNISBANK_TEKENS = 14000;
 
@@ -68,7 +69,7 @@ const LEERFASE_INSTRUCTIE: Record<string, string> = {
 
 const OPMAAK_INSTRUCTIE = `Opmaak:
 - Je mag markdown gebruiken (**vet**, opsommingen met "-") als dat de vraag of feedback echt duidelijker maakt, maar houd het kort.
-- Gebruik NOOIT LaTeX-notatie (dus geen $...$, \\frac{}{}, \\times, \\cdot e.d.).
+- Gebruik ECHT NOOIT LaTeX-notatie, ook niet voor iets kleins tussendoor. Dit is dus FOUT: "$6 \\times 7$", "\\frac{2}{3}", "$x^2$" - schrijf ALTIJD gewone, leesbare tekst met echte Unicode-tekens.
 - Gebruik ook NOOIT een caret (^) voor machten of een underscore (_) voor een index/subscript - dat zijn programmeertekens, geen wiskundenotatie, en een leerling leest dat niet als een macht. Gebruik ALTIJD de echte Unicode-tekens: ² ³ ⁴ ⁵ ⁶ ⁷ ⁸ ⁹ (dus "x²" en "(2x²)³", nooit "x^2" of "(2x^2)^3"). Voor een index/subscript: schrijf het in woorden i.p.v. een underscore (bv. "V nieuw" i.p.v. "V_nieuw").
 - Schrijf een breuk NOOIT als platte tekst zoals "2/3" (een leerling ziet dan geen teller/noemer) - gebruik in plaats daarvan dit blok, EEN per breuk-uitdrukking:
 
@@ -172,7 +173,7 @@ ${kennisbankUitleg}`;
     try {
       const client = createGeminiClient();
       const geparsed = await genereerGestructureerd(client, UitlegSchema, [{ role: "user", parts: [{ text: prompt }] }], 1536);
-      return NextResponse.json(geparsed);
+      return NextResponse.json({ ...geparsed, uitleg: saneerLatexNotatie(geparsed.uitleg) });
     } catch (e) {
       return NextResponse.json(
         { error: e instanceof Error ? `AI-verwerking mislukt: ${e.message}` : "AI-verwerking mislukt." },
@@ -254,7 +255,16 @@ ${kennisbank}`;
       }
     }
 
-    return NextResponse.json({ ...geparsed, lesstofFragment });
+    return NextResponse.json({
+      ...geparsed,
+      feedback: saneerLatexNotatie(geparsed.feedback),
+      vraag: saneerLatexNotatie(geparsed.vraag),
+      opties: geparsed.opties ? geparsed.opties.map((o) => saneerLatexNotatie(o)) : geparsed.opties,
+      juisteOptie: geparsed.juisteOptie ? saneerLatexNotatie(geparsed.juisteOptie) : geparsed.juisteOptie,
+      juisteAntwoord: geparsed.juisteAntwoord ? saneerLatexNotatie(geparsed.juisteAntwoord) : geparsed.juisteAntwoord,
+      zelfCheckAntwoord: geparsed.zelfCheckAntwoord ? saneerLatexNotatie(geparsed.zelfCheckAntwoord) : geparsed.zelfCheckAntwoord,
+      lesstofFragment,
+    });
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? `AI-verwerking mislukt: ${e.message}` : "AI-verwerking mislukt." },
